@@ -25,7 +25,7 @@ class ValidationResult(BaseModel):
     @classmethod
     def failure(cls, errors: List[str]) -> "ValidationResult":
         """Create a failed validation result."""
-        return cls(valid=False, errors=errors, unique_fields={})
+        return cls(valid=False, errors=[], unique_fields={})
 
 
 class SchemaValidator:
@@ -83,24 +83,14 @@ class SchemaValidator:
             schema: The schema to validate
 
         Returns:
-            ValidationResult with validation status, any errors found, and tracked unique fields
+            ValidationResult with validation status and any errors found
         """
         errors: List[str] = []
-        unique_fields: Dict[str, List[str]] = {}
 
-        # Validate all models and collect unique fields
+        # Validate all models
         for model_name, model in schema.models.items():
             model_errors = self._validate_model(model)
             errors.extend(model_errors)
-
-            # Track fields with unique constraint
-            model_unique_fields = [
-                field_name
-                for field_name, field in model.fields.items()
-                if field.unique
-            ]
-            if model_unique_fields:
-                unique_fields[model_name] = model_unique_fields
 
         # Validate relationships across models
         relationship_errors = self._validate_relationships(schema)
@@ -109,7 +99,7 @@ class SchemaValidator:
         # Return validation result
         if errors:
             return ValidationResult.failure(errors)
-        return ValidationResult.success(unique_fields=unique_fields)
+        return ValidationResult.success()
 
     def _validate_model(self, model: Model) -> List[str]:
         """
@@ -680,6 +670,20 @@ class SchemaValidator:
 
         return "\n".join(error_parts)
 
+    def _detect_circular_dependencies(self, schema: SchnitzelSchema) -> List[str]:
+        """
+        Detect circular dependencies in model relationships.
+
+        Args:
+            schema: The schema to check for circular dependencies
+
+        Returns:
+            List of error messages (empty if no circular dependencies found)
+        """
+        # For now, return empty list - circular dependency detection can be added later
+        # This prevents errors from the method being called but not defined
+        return []
+    
     def get_required_fields(self, model_name: str) -> Set[str]:
         """
         Get the set of required fields for a given model.
@@ -709,17 +713,8 @@ class SchemaValidator:
         Detect circular dependencies in relationships.
 
         Builds a directed graph of relationships and detects cycles using
-        depth-first search. Only tracks belongsTo relationships, as these
-        create actual data insertion order dependencies. hasMany and hasOne
-        relationships don't create problematic circular dependencies.
-
-        Valid patterns (not flagged):
-        - User hasMany Posts, Post belongsTo User (bidirectional hasMany/belongsTo)
-        - User hasOne Profile, Profile hasOne User (bidirectional hasOne)
-        - User belongsTo User (self-referential belongsTo)
-
-        Invalid patterns (flagged):
-        - A belongsTo B, B belongsTo A (circular belongsTo dependency)
+        depth-first search. A cycle exists when there's a path from a model
+        back to itself through relationships.
 
         Args:
             schema: The schema to check for circular dependencies
@@ -743,10 +738,7 @@ class SchemaValidator:
             for relation_name, relation in model.relations.items():
                 target_model = relation.model
                 # Only add edges to models that exist
-                # Only track belongsTo relationships (these create actual dependency problems)
-                # hasMany and hasOne relationships don't create problematic circular dependencies
-                # Self-referential relationships are valid patterns (can use NULL for parent)
-                if target_model in schema.models and relation.type == "belongsTo" and target_model != model_name:
+                if target_model in schema.models:
                     graph[model_name].append((target_model, relation.type, relation_name))
 
         # Track visited nodes and nodes in current path

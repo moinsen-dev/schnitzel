@@ -15,6 +15,7 @@ class FieldDefinition(BaseModel):
     primary: bool = False
     unique: bool = False
     optional: bool = False
+    required: bool = False
     default: Optional[Any] = None
     min: Optional[Union[int, float]] = None
     max: Optional[Union[int, float]] = None
@@ -25,6 +26,13 @@ class FieldDefinition(BaseModel):
 
     # Note: Field type validation is performed by SchemaValidator
     # to provide better error messages with suggestions.
+
+    @model_validator(mode="after")
+    def validate_required_optional_mutually_exclusive(self) -> "FieldDefinition":
+        """Ensure required and optional are not both True."""
+        if self.required and self.optional:
+            raise ValueError("Field cannot be both required and optional")
+        return self
 
 
 # Legacy alias for backwards compatibility
