@@ -1,0 +1,2273 @@
+[
+  {
+    "category": "functional",
+    "description": "Schema parser can load a valid YAML file with basic model definition",
+    "steps": [
+      "Create a minimal YAML schema file with one model (User) and two fields (id: uuid, name: string)",
+      "Call SchemaParser.parse(filepath) with the test file",
+      "Verify parser returns a SchnitzelSchema object",
+      "Verify schema.models contains exactly one model",
+      "Verify model.name equals 'User'",
+      "Verify model has two fields with correct names and types",
+      "Verify no parse errors are raised"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema parser raises clear error for invalid YAML syntax",
+    "steps": [
+      "Create a YAML file with invalid syntax (unclosed brackets, invalid indentation)",
+      "Call SchemaParser.parse(filepath)",
+      "Verify YAMLParseError is raised",
+      "Verify error message includes line number and description",
+      "Verify error message is human-readable",
+      "Verify parser doesn't crash"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema parser can resolve single-level imports",
+    "steps": [
+      "Create base.yaml with User model",
+      "Create main.yaml with imports: [base.yaml] and Post model",
+      "Call SchemaParser.parse('main.yaml')",
+      "Verify parsed schema contains both User and Post models",
+      "Verify import resolution happens before validation",
+      "Verify relative paths are resolved correctly",
+      "Verify no duplicate models exist"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema parser can resolve multi-level nested imports",
+    "steps": [
+      "Create level0.yaml with BaseModel",
+      "Create level1.yaml importing level0.yaml with UserModel",
+      "Create level2.yaml importing level1.yaml with PostModel",
+      "Call SchemaParser.parse('level2.yaml')",
+      "Verify all three models are present in final schema",
+      "Verify import chain is resolved in correct order",
+      "Verify no circular import issues",
+      "Verify models from all levels are accessible"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema parser detects and reports circular imports",
+    "steps": [
+      "Create a.yaml with imports: [b.yaml]",
+      "Create b.yaml with imports: [a.yaml]",
+      "Call SchemaParser.parse('a.yaml')",
+      "Verify CircularImportError is raised",
+      "Verify error message shows the circular dependency chain",
+      "Verify error includes both file names",
+      "Verify parser stops gracefully without infinite loop"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema parser can merge feature schemas without conflicts",
+    "steps": [
+      "Create auth.yaml with User and Session models",
+      "Create posts.yaml with Post and Comment models",
+      "Create main.yaml importing both feature files",
+      "Call SchemaParser.parse('main.yaml')",
+      "Verify final schema contains all 4 models",
+      "Verify no naming conflicts",
+      "Verify each model retains its original fields",
+      "Verify relationships across feature boundaries work"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema parser raises error when importing non-existent file",
+    "steps": [
+      "Create main.yaml with imports: [nonexistent.yaml]",
+      "Call SchemaParser.parse('main.yaml')",
+      "Verify FileNotFoundError or ImportError is raised",
+      "Verify error message includes the missing filename",
+      "Verify error message includes the importing file name",
+      "Verify helpful suggestion to check file path"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema parser validates Pydantic schema models during parsing",
+    "steps": [
+      "Create schema.yaml with required sections (name, version, models)",
+      "Add a model with missing required field 'name'",
+      "Call SchemaParser.parse('schema.yaml')",
+      "Verify ValidationError is raised",
+      "Verify error indicates which model/field is invalid",
+      "Verify error explains what's missing",
+      "Verify Pydantic validation happens after YAML parse"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator accepts valid model with all supported field types",
+    "steps": [
+      "Create schema with model containing: string, uuid, int, float, bool, datetime, json fields",
+      "Call SchemaValidator.validate(schema)",
+      "Verify validation passes with no errors",
+      "Verify all field types are recognized",
+      "Verify validator returns empty error list",
+      "Verify schema is marked as valid"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator rejects model with unsupported field type",
+    "steps": [
+      "Create schema with User model having field: age with type 'decimal'",
+      "Call SchemaValidator.validate(schema)",
+      "Verify validation fails",
+      "Verify error message lists unsupported type 'decimal'",
+      "Verify error suggests valid alternatives (float, int)",
+      "Verify error includes field name and model name"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator verifies belongsTo relationship target exists",
+    "steps": [
+      "Create schema with Post model having belongsTo: author pointing to User",
+      "Create schema WITHOUT User model",
+      "Call SchemaValidator.validate(schema)",
+      "Verify validation fails",
+      "Verify error indicates User model doesn't exist",
+      "Verify error shows the relationship definition",
+      "Verify error includes both model names (Post and User)"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator verifies hasMany relationship target exists",
+    "steps": [
+      "Create schema with User model having hasMany: posts pointing to Post",
+      "Create schema WITHOUT Post model",
+      "Call SchemaValidator.validate(schema)",
+      "Verify validation fails",
+      "Verify error indicates Post model doesn't exist",
+      "Verify error shows the relationship definition",
+      "Verify error includes relationship type (hasMany)"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator accepts valid bidirectional relationship",
+    "steps": [
+      "Create User model with hasMany: posts",
+      "Create Post model with belongsTo: author referencing User",
+      "Call SchemaValidator.validate(schema)",
+      "Verify validation passes",
+      "Verify both relationships are recognized",
+      "Verify no circular dependency warning for valid relationship",
+      "Verify relationship graph is built correctly"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator enforces PascalCase naming for models",
+    "steps": [
+      "Create schema with model named 'user_profile' (snake_case)",
+      "Call SchemaValidator.validate(schema)",
+      "Verify validation fails",
+      "Verify error indicates naming convention violation",
+      "Verify error suggests correct name 'UserProfile'",
+      "Verify error references naming convention rules"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator enforces snake_case naming for fields",
+    "steps": [
+      "Create User model with field named 'firstName' (camelCase)",
+      "Call SchemaValidator.validate(schema)",
+      "Verify validation fails",
+      "Verify error indicates field naming violation",
+      "Verify error suggests correct name 'first_name'",
+      "Verify error includes model name and field name"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator detects circular dependency in relationships",
+    "steps": [
+      "Create A model with belongsTo: b",
+      "Create B model with belongsTo: a",
+      "Call SchemaValidator.validate(schema)",
+      "Verify validation fails or warns about circular dependency",
+      "Verify error shows the dependency cycle (A -> B -> A)",
+      "Verify error explains why this is problematic",
+      "Verify error suggests breaking the cycle"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator validates required field constraints",
+    "steps": [
+      "Create User model with field: email marked as required: true",
+      "Create another field: bio with required: false",
+      "Call SchemaValidator.validate(schema)",
+      "Verify validation passes",
+      "Verify required constraint is parsed correctly",
+      "Verify optional fields are recognized",
+      "Verify validator tracks which fields are required"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator validates unique field constraints",
+    "steps": [
+      "Create User model with email field marked as unique: true",
+      "Call SchemaValidator.validate(schema)",
+      "Verify validation passes",
+      "Verify unique constraint is recognized",
+      "Verify validator tracks unique fields for database generation"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator validates min/max constraints for numeric fields",
+    "steps": [
+      "Create Product model with price field (float) with min: 0, max: 1000000",
+      "Call SchemaValidator.validate(schema)",
+      "Verify validation passes",
+      "Verify min/max constraints are parsed",
+      "Verify constraints are stored for code generation",
+      "Verify validator tracks validation rules per field"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator validates format constraints for string fields",
+    "steps": [
+      "Create User model with email field (string) with format: email",
+      "Create another field: phone with format: phone",
+      "Call SchemaValidator.validate(schema)",
+      "Verify validation passes",
+      "Verify format constraints are recognized",
+      "Verify supported formats are validated"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python model generator creates valid Pydantic v2 model from simple schema",
+    "steps": [
+      "Create schema with User model: id (uuid), name (string), created_at (datetime)",
+      "Call PythonModelGenerator.generate(schema)",
+      "Verify output contains 'class User(BaseModel):'",
+      "Verify id field has type UUID",
+      "Verify name field has type str",
+      "Verify created_at field has type datetime",
+      "Verify imports include UUID and datetime",
+      "Run pyright on generated code and verify no errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python model generator maps all field types correctly",
+    "steps": [
+      "Create schema with fields: str_field (string), int_field (int), float_field (float), bool_field (bool), uuid_field (uuid), datetime_field (datetime), json_field (json)",
+      "Call PythonModelGenerator.generate(schema)",
+      "Verify str_field maps to str",
+      "Verify int_field maps to int",
+      "Verify float_field maps to float",
+      "Verify bool_field maps to bool",
+      "Verify uuid_field maps to UUID",
+      "Verify datetime_field maps to datetime",
+      "Verify json_field maps to dict or Dict[str, Any]",
+      "Verify all necessary imports are present"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python model generator handles optional fields correctly",
+    "steps": [
+      "Create User model with required field: email and optional field: bio (optional: true)",
+      "Call PythonModelGenerator.generate(schema)",
+      "Verify email field has no Optional wrapper",
+      "Verify bio field has Optional[str] type",
+      "Verify bio field has default value None",
+      "Verify Pydantic v2 syntax is used (not v1)"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python model generator handles default values correctly",
+    "steps": [
+      "Create User model with status field (string) with default: 'active'",
+      "Create count field (int) with default: 0",
+      "Call PythonModelGenerator.generate(schema)",
+      "Verify status field has default='active' in field definition",
+      "Verify count field has default=0",
+      "Verify defaults are properly quoted for strings",
+      "Verify defaults are unquoted for numbers"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python model generator generates validation rules using Pydantic Field",
+    "steps": [
+      "Create Product model with price (float) with min: 0, max: 100000",
+      "Create name (string) with max_length: 200",
+      "Call PythonModelGenerator.generate(schema)",
+      "Verify price field uses Field(ge=0, le=100000)",
+      "Verify name field uses Field(max_length=200)",
+      "Verify Field is imported from pydantic",
+      "Run pyright on generated code and verify no errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python model generator generates belongsTo relationship with type hint",
+    "steps": [
+      "Create Post model with belongsTo: author referencing User",
+      "Call PythonModelGenerator.generate(schema)",
+      "Verify Post model has author_id field with UUID type",
+      "Verify Post model has author field with Optional['User'] type",
+      "Verify forward reference is used if User is defined after Post",
+      "Verify relationship is properly typed"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python model generator generates hasMany relationship with type hint",
+    "steps": [
+      "Create User model with hasMany: posts referencing Post",
+      "Call PythonModelGenerator.generate(schema)",
+      "Verify User model has posts field with List['Post'] type",
+      "Verify List is imported from typing",
+      "Verify forward reference is used correctly",
+      "Verify hasMany relationships are optional by default"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python model generator includes model_dump() for JSON serialization",
+    "steps": [
+      "Create User model with basic fields",
+      "Call PythonModelGenerator.generate(schema)",
+      "Verify generated code inherits from BaseModel",
+      "Verify model_dump() is available (Pydantic v2 feature)",
+      "Verify model_dump_json() is available",
+      "Write test to instantiate model and call model_dump()",
+      "Verify serialization works correctly"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python model generator creates models.py in correct output directory",
+    "steps": [
+      "Set output directory to backend/app/generated/",
+      "Call PythonModelGenerator.generate(schema, output_dir)",
+      "Verify models.py file is created at backend/app/generated/models.py",
+      "Verify directory is created if it doesn't exist",
+      "Verify existing file is overwritten with warning",
+      "Verify file has proper header comment with generation timestamp"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python model generator produces code that passes pyright strict type checking",
+    "steps": [
+      "Create schema with complex model: User with relationships, validations, optional fields",
+      "Call PythonModelGenerator.generate(schema)",
+      "Save generated code to temp file",
+      "Run pyright on the file with --strict flag",
+      "Verify exit code is 0 (no errors)",
+      "Verify no type errors in output",
+      "Verify all type hints are correct"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Dart model generator creates valid Freezed model from simple schema",
+    "steps": [
+      "Create schema with User model: id (uuid), name (string), createdAt (datetime)",
+      "Call DartModelGenerator.generate(schema)",
+      "Verify output contains '@freezed' annotation",
+      "Verify output contains 'class User with _$User'",
+      "Verify factory constructor exists: factory User({...})",
+      "Verify fromJson method exists",
+      "Verify toJson method exists",
+      "Run dart analyze on generated code and verify no errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Dart model generator maps all field types correctly",
+    "steps": [
+      "Create schema with fields: string, uuid, int, float, bool, datetime, json",
+      "Call DartModelGenerator.generate(schema)",
+      "Verify string maps to String",
+      "Verify uuid maps to String",
+      "Verify int maps to int",
+      "Verify float maps to double",
+      "Verify bool maps to bool",
+      "Verify datetime maps to DateTime",
+      "Verify json maps to Map<String, dynamic>",
+      "Verify all imports are present (freezed, json_annotation)"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Dart model generator handles optional/nullable fields correctly",
+    "steps": [
+      "Create User model with required field: email and optional field: bio",
+      "Call DartModelGenerator.generate(schema)",
+      "Verify email field has type String (non-nullable)",
+      "Verify bio field has type String? (nullable)",
+      "Verify required annotation is used for required fields",
+      "Verify optional fields allow null in factory constructor"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Dart model generator handles default values in factory constructor",
+    "steps": [
+      "Create User model with status field (string) with default: 'active'",
+      "Create count field (int) with default: 0",
+      "Call DartModelGenerator.generate(schema)",
+      "Verify status field has @Default('active') annotation",
+      "Verify count field has @Default(0) annotation",
+      "Verify Default is imported from freezed_annotation",
+      "Verify factory constructor includes defaults"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Dart model generator generates JSON serialization annotations",
+    "steps": [
+      "Create User model with id, name, email fields",
+      "Call DartModelGenerator.generate(schema)",
+      "Verify @JsonSerializable() annotation is present",
+      "Verify factory User.fromJson(Map<String, dynamic> json) exists",
+      "Verify fromJson calls _$UserFromJson(json)",
+      "Verify toJson method exists and calls _$UserToJson(this)",
+      "Verify json_annotation import is present"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Dart model generator supports copyWith via Freezed",
+    "steps": [
+      "Create User model with name and email fields",
+      "Call DartModelGenerator.generate(schema)",
+      "Verify class uses Freezed mixin: 'class User with _$User'",
+      "Write test to instantiate User and call copyWith",
+      "Verify copyWith allows partial updates",
+      "Verify copyWith returns new instance",
+      "Verify original instance is immutable"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Dart model generator handles snake_case to camelCase conversion",
+    "steps": [
+      "Create User model with fields: first_name, last_name, created_at",
+      "Call DartModelGenerator.generate(schema)",
+      "Verify generated fields use camelCase: firstName, lastName, createdAt",
+      "Verify @JsonKey annotation maps to snake_case: @JsonKey(name: 'first_name')",
+      "Verify JSON serialization uses snake_case",
+      "Verify Dart API uses camelCase"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Dart model generator creates models.dart in correct output directory",
+    "steps": [
+      "Set output directory to packages/shared/lib/generated/",
+      "Call DartModelGenerator.generate(schema, output_dir)",
+      "Verify models.dart file is created at packages/shared/lib/generated/models.dart",
+      "Verify directory is created if it doesn't exist",
+      "Verify file has proper header comment",
+      "Verify file includes part directive for generated file"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Dart model generator produces code that passes dart analyze",
+    "steps": [
+      "Create schema with complex User model: relationships, optional fields, validations",
+      "Call DartModelGenerator.generate(schema)",
+      "Save generated code to temp file",
+      "Run dart analyze on the file",
+      "Verify exit code is 0 (no errors)",
+      "Verify no warnings or hints",
+      "Verify all Dart conventions are followed"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Init command creates project directory structure",
+    "steps": [
+      "Run: schnitzel init myapp",
+      "Verify myapp/ directory is created",
+      "Verify backend/ subdirectory exists",
+      "Verify packages/ subdirectory exists",
+      "Verify packages/app/ subdirectory exists",
+      "Verify packages/shared/ subdirectory exists",
+      "Verify schema.schnitzel.yaml exists in root",
+      "Verify .gitignore is created"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Init command generates schema.schnitzel.yaml from minimal template",
+    "steps": [
+      "Run: schnitzel init myapp --template minimal",
+      "Verify schema.schnitzel.yaml is created",
+      "Read schema file and verify it's valid YAML",
+      "Verify schema has name, version, models sections",
+      "Verify minimal template includes only basic User model",
+      "Verify schema can be parsed by SchemaParser"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Init command generates schema.schnitzel.yaml from full template",
+    "steps": [
+      "Run: schnitzel init myapp --template full",
+      "Verify schema.schnitzel.yaml is created",
+      "Read schema file and verify it includes multiple models",
+      "Verify template includes User, Post, Comment models",
+      "Verify template includes relationships",
+      "Verify template includes endpoints section",
+      "Verify template includes services section"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Init command runs flutter create for packages/app",
+    "steps": [
+      "Run: schnitzel init myapp",
+      "Verify command executes 'flutter create packages/app'",
+      "Verify packages/app/pubspec.yaml is created",
+      "Verify packages/app/lib/main.dart exists",
+      "Verify Flutter project structure is valid",
+      "Verify command shows progress: 'Creating Flutter app...'",
+      "Verify error handling if Flutter is not installed"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Init command runs uv init for backend",
+    "steps": [
+      "Run: schnitzel init myapp",
+      "Verify command executes 'uv init backend/'",
+      "Verify backend/pyproject.toml is created",
+      "Verify backend/.venv is created",
+      "Verify Python project structure is valid",
+      "Verify command shows progress: 'Creating Python backend...'",
+      "Verify error handling if UV is not installed"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Init command generates docker-compose.yaml",
+    "steps": [
+      "Run: schnitzel init myapp",
+      "Verify docker-compose.yaml is created in root",
+      "Read docker-compose.yaml and verify valid YAML",
+      "Verify postgres service is defined",
+      "Verify redis service is defined",
+      "Verify services have correct images and ports",
+      "Verify volumes are configured for persistence"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Init command generates workspace pubspec.yaml",
+    "steps": [
+      "Run: schnitzel init myapp",
+      "Verify pubspec.yaml is created in root",
+      "Read pubspec.yaml and verify workspace configuration",
+      "Verify packages/app and packages/shared are listed",
+      "Verify Dart SDK constraints are correct",
+      "Verify workspace resolution is configured"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Init command generates backend pyproject.toml with dependencies",
+    "steps": [
+      "Run: schnitzel init myapp",
+      "Verify backend/pyproject.toml is created",
+      "Read pyproject.toml and verify dependencies",
+      "Verify fastapi is listed",
+      "Verify sqlalchemy is listed",
+      "Verify pydantic is listed with version 2.x",
+      "Verify uvicorn is listed",
+      "Verify all required dependencies are present"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Init command fails gracefully if directory already exists",
+    "steps": [
+      "Create directory: myapp/",
+      "Run: schnitzel init myapp",
+      "Verify command fails with error",
+      "Verify error message indicates directory exists",
+      "Verify error suggests using --force flag or different name",
+      "Verify no files are modified in existing directory",
+      "Verify exit code is non-zero"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Init command displays progress with Rich",
+    "steps": [
+      "Run: schnitzel init myapp",
+      "Verify progress is displayed in terminal",
+      "Verify steps are shown: Creating directories, Generating schema, Running flutter create, etc.",
+      "Verify spinner or progress bar is shown",
+      "Verify success message is displayed at end",
+      "Verify output uses Rich formatting (colors, styling)"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generate command parses and validates schema before generation",
+    "steps": [
+      "Create project with valid schema.schnitzel.yaml",
+      "Run: schnitzel generate",
+      "Verify command outputs: 'Parsing schema...'",
+      "Verify command outputs: 'Validating schema...'",
+      "Verify validation passes",
+      "Verify generation proceeds",
+      "Verify progress is shown for each step"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generate command stops if schema validation fails",
+    "steps": [
+      "Create project with invalid schema (missing required field)",
+      "Run: schnitzel generate",
+      "Verify command outputs validation errors",
+      "Verify generation does not proceed",
+      "Verify error messages are clear and actionable",
+      "Verify exit code is non-zero",
+      "Verify no files are generated"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generate command with --target all generates Python, Dart, and Docker files",
+    "steps": [
+      "Create project with valid schema",
+      "Run: schnitzel generate --target all",
+      "Verify backend/app/generated/models.py is created",
+      "Verify packages/shared/lib/generated/models.dart is created",
+      "Verify docker-compose.yaml is updated",
+      "Verify all generators run successfully",
+      "Verify success message shown for all targets"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generate command with --target python generates only Python files",
+    "steps": [
+      "Create project with valid schema",
+      "Run: schnitzel generate --target python",
+      "Verify backend/app/generated/models.py is created",
+      "Verify Dart files are NOT generated",
+      "Verify Docker files are NOT updated",
+      "Verify command output indicates Python-only generation",
+      "Verify exit code is 0"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generate command with --target flutter generates only Dart files",
+    "steps": [
+      "Create project with valid schema",
+      "Run: schnitzel generate --target flutter",
+      "Verify packages/shared/lib/generated/models.dart is created",
+      "Verify Python files are NOT generated",
+      "Verify Docker files are NOT updated",
+      "Verify command output indicates Flutter-only generation",
+      "Verify exit code is 0"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generate command with --target docker generates only Docker Compose file",
+    "steps": [
+      "Create project with valid schema",
+      "Run: schnitzel generate --target docker",
+      "Verify docker-compose.yaml is updated",
+      "Verify Python models are NOT generated",
+      "Verify Dart models are NOT generated",
+      "Verify command output indicates Docker-only generation",
+      "Verify exit code is 0"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generate command with --watch mode monitors schema file for changes",
+    "steps": [
+      "Create project with valid schema",
+      "Run: schnitzel generate --watch in background",
+      "Verify command outputs: 'Watching for changes...'",
+      "Modify schema.schnitzel.yaml (add new field)",
+      "Wait 1-2 seconds",
+      "Verify generation runs automatically",
+      "Verify updated models are generated",
+      "Verify command continues watching",
+      "Stop watch process and verify clean exit"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generate command with --dry-run shows what would be generated without writing files",
+    "steps": [
+      "Create project with valid schema",
+      "Run: schnitzel generate --dry-run",
+      "Verify command shows list of files that would be generated",
+      "Verify backend/app/generated/models.py is listed",
+      "Verify packages/shared/lib/generated/models.dart is listed",
+      "Verify NO actual files are created",
+      "Verify command outputs: 'Dry run - no files written'",
+      "Verify exit code is 0"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generate command displays generation progress with Rich",
+    "steps": [
+      "Create project with schema containing 5 models",
+      "Run: schnitzel generate",
+      "Verify progress bar or spinner is shown",
+      "Verify each generation step is logged",
+      "Verify steps include: Parse, Validate, Generate Python, Generate Dart, Generate Docker",
+      "Verify success indicators (checkmarks) for completed steps",
+      "Verify final summary with counts (models generated, files written)"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generate command handles generation errors gracefully",
+    "steps": [
+      "Create schema that causes generator error (e.g., invalid template)",
+      "Run: schnitzel generate",
+      "Verify error is caught and displayed",
+      "Verify error message indicates which generator failed",
+      "Verify partial files are cleaned up or marked incomplete",
+      "Verify exit code is non-zero",
+      "Verify helpful error message guides user to fix"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Docker Compose generator creates PostgreSQL 16 service",
+    "steps": [
+      "Create schema with database configuration",
+      "Call DockerComposeGenerator.generate(schema)",
+      "Verify docker-compose.yaml includes postgres service",
+      "Verify image is postgres:16",
+      "Verify port is exposed (5432)",
+      "Verify environment variables: POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD",
+      "Verify volume is mounted for persistence"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Docker Compose generator adds pgvector extension to PostgreSQL",
+    "steps": [
+      "Create schema with vector database requirements",
+      "Call DockerComposeGenerator.generate(schema)",
+      "Verify postgres service includes command or init script",
+      "Verify pgvector extension is enabled",
+      "Verify extension setup runs on container start",
+      "Verify extension is available before app starts"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Docker Compose generator creates Redis 7 service",
+    "steps": [
+      "Create schema with cache configuration",
+      "Call DockerComposeGenerator.generate(schema)",
+      "Verify docker-compose.yaml includes redis service",
+      "Verify image is redis:7",
+      "Verify port is exposed (6379)",
+      "Verify volume is mounted for persistence",
+      "Verify redis.conf is configured if needed"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Docker Compose generator adds health checks for PostgreSQL",
+    "steps": [
+      "Call DockerComposeGenerator.generate(schema)",
+      "Verify postgres service includes healthcheck",
+      "Verify healthcheck uses pg_isready command",
+      "Verify healthcheck interval is reasonable (10-30s)",
+      "Verify healthcheck timeout is set",
+      "Verify healthcheck retries are configured",
+      "Verify dependent services wait for healthy status"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Docker Compose generator adds health checks for Redis",
+    "steps": [
+      "Call DockerComposeGenerator.generate(schema)",
+      "Verify redis service includes healthcheck",
+      "Verify healthcheck uses redis-cli ping command",
+      "Verify healthcheck interval is reasonable",
+      "Verify healthcheck timeout is set",
+      "Verify healthcheck retries are configured"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Docker Compose generator handles environment variable substitution",
+    "steps": [
+      "Create schema with env vars: DB_USER=${DB_USER}, DB_PASSWORD=${DB_PASSWORD}",
+      "Call DockerComposeGenerator.generate(schema)",
+      "Verify docker-compose.yaml uses ${VAR} syntax",
+      "Verify .env.example file is created with placeholders",
+      "Verify documentation explains env var usage",
+      "Verify docker-compose.yaml validates correctly"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Docker Compose generator prevents port collisions",
+    "steps": [
+      "Create schema requesting port 5432 for postgres",
+      "Check if port 5432 is already in use",
+      "Call DockerComposeGenerator.generate(schema)",
+      "If port in use, verify generator suggests alternative port",
+      "Verify generator checks port availability before generating",
+      "Verify error message is helpful if port conflict detected"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Docker Compose generator configures volume mounts for data persistence",
+    "steps": [
+      "Call DockerComposeGenerator.generate(schema)",
+      "Verify postgres service has named volume",
+      "Verify redis service has named volume",
+      "Verify volumes section defines volumes at top level",
+      "Verify volume names are project-specific",
+      "Verify volumes are listed in docker-compose.yaml volumes section"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Integration test: full generation pipeline produces working code",
+    "steps": [
+      "Create minimal test schema with User model (id, name, email)",
+      "Run full pipeline: parse -> validate -> generate Python -> generate Dart",
+      "Verify models.py is created and valid",
+      "Verify models.dart is created and valid",
+      "Import models.py in Python test and instantiate User",
+      "Run build_runner on Dart code to generate Freezed code",
+      "Import models.dart in Dart test and instantiate User",
+      "Verify Python model serialization works",
+      "Verify Dart model serialization works",
+      "Verify pyright passes on Python code",
+      "Verify dart analyze passes on Dart code"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Integration test: generate code from FoodieAI example schema",
+    "steps": [
+      "Load FoodieAI example schema from examples/foodie-ai/schema.yaml",
+      "Parse schema using SchemaParser",
+      "Validate schema using SchemaValidator",
+      "Generate Python models",
+      "Generate Dart models",
+      "Verify all FoodieAI models are generated (User, Recipe, Ingredient, etc.)",
+      "Verify relationships are correctly represented",
+      "Run pyright on generated Python code",
+      "Run dart analyze on generated Dart code",
+      "Verify no errors or warnings"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Integration test: generated Python models can be instantiated and serialized",
+    "steps": [
+      "Generate models.py from test schema",
+      "Import User model from generated code",
+      "Create User instance: User(id=uuid4(), name='John', email='john@test.com')",
+      "Call user.model_dump() and verify dict output",
+      "Call user.model_dump_json() and verify JSON string output",
+      "Verify JSON round-trip: User.model_validate_json(json_str)",
+      "Verify all fields serialize correctly"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Integration test: generated Dart models can be instantiated and serialized",
+    "steps": [
+      "Generate models.dart from test schema",
+      "Run build_runner to generate Freezed code",
+      "Import User model from generated code",
+      "Create User instance: User(id: uuid, name: 'John', email: 'john@test.com')",
+      "Call user.toJson() and verify Map output",
+      "Call User.fromJson(json) and verify round-trip",
+      "Call user.copyWith(name: 'Jane') and verify immutability",
+      "Verify all fields serialize correctly"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Integration test: Docker Compose services start successfully",
+    "steps": [
+      "Generate docker-compose.yaml from test schema",
+      "Run: docker-compose up -d",
+      "Wait for services to start (up to 30 seconds)",
+      "Verify postgres container is running",
+      "Verify redis container is running",
+      "Verify postgres health check passes",
+      "Verify redis health check passes",
+      "Connect to postgres on localhost:5432 and verify connection",
+      "Connect to redis on localhost:6379 and verify connection",
+      "Run: docker-compose down",
+      "Verify clean shutdown"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "CLI entry point is accessible via 'schnitzel' command",
+    "steps": [
+      "Install schnitzel-cli package",
+      "Run: schnitzel --help",
+      "Verify help text is displayed",
+      "Verify available commands are listed: init, generate",
+      "Verify Typer CLI framework is working",
+      "Verify Rich formatting is applied to help text",
+      "Verify version flag: schnitzel --version shows correct version"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema parser handles empty models section gracefully",
+    "steps": [
+      "Create schema.yaml with models: [] (empty list)",
+      "Call SchemaParser.parse()",
+      "Verify parser succeeds",
+      "Verify schema.models is empty list",
+      "Call SchemaValidator.validate()",
+      "Verify validation warns about empty schema",
+      "Verify generation proceeds without errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema parser handles very large schema files (1000+ models)",
+    "steps": [
+      "Generate test schema with 1000 models",
+      "Call SchemaParser.parse()",
+      "Measure parse time and verify it's reasonable (<10 seconds)",
+      "Verify all 1000 models are parsed",
+      "Verify parser memory usage is reasonable",
+      "Verify no performance degradation"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator detects duplicate model names",
+    "steps": [
+      "Create schema with two models both named 'User'",
+      "Call SchemaValidator.validate()",
+      "Verify validation fails",
+      "Verify error indicates duplicate model name",
+      "Verify error shows both definitions",
+      "Verify error suggests renaming one model"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator detects duplicate field names in same model",
+    "steps": [
+      "Create User model with two fields both named 'email'",
+      "Call SchemaValidator.validate()",
+      "Verify validation fails",
+      "Verify error indicates duplicate field name",
+      "Verify error shows model name (User)",
+      "Verify error suggests removing or renaming duplicate"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python generator handles models with no relationships",
+    "steps": [
+      "Create simple Tag model with only id and name fields (no relationships)",
+      "Call PythonModelGenerator.generate()",
+      "Verify valid Pydantic model is generated",
+      "Verify no relationship fields are present",
+      "Verify model can be instantiated",
+      "Verify pyright validation passes"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python generator handles models with many-to-many relationships",
+    "steps": [
+      "Create User and Role models with many-to-many relationship",
+      "Call PythonModelGenerator.generate()",
+      "Verify User model has roles field with List['Role'] type",
+      "Verify Role model has users field with List['User'] type",
+      "Verify junction table reference is noted in comment",
+      "Verify generated code is valid"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Dart generator handles models with nested JSON fields",
+    "steps": [
+      "Create Config model with settings field of type json",
+      "Call DartModelGenerator.generate()",
+      "Verify settings field has type Map<String, dynamic>",
+      "Verify JSON serialization works for nested objects",
+      "Verify fromJson handles nested JSON",
+      "Verify toJson outputs correct nested structure"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Dart generator handles enum fields (if supported in schema)",
+    "steps": [
+      "Create User model with status field as enum: [active, inactive, suspended]",
+      "Call DartModelGenerator.generate()",
+      "Verify enum is generated: enum UserStatus { active, inactive, suspended }",
+      "Verify status field has type UserStatus",
+      "Verify JSON serialization handles enum values",
+      "Verify dart analyze passes"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Init command with --force flag overwrites existing directory",
+    "steps": [
+      "Create existing directory: myapp/",
+      "Run: schnitzel init myapp --force",
+      "Verify command proceeds without error",
+      "Verify warning is shown about overwriting",
+      "Verify new files overwrite old files",
+      "Verify project structure is recreated",
+      "Verify exit code is 0"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generate command runs in current directory if schema exists",
+    "steps": [
+      "Create project with schnitzel init myapp",
+      "cd into myapp/",
+      "Run: schnitzel generate (no arguments)",
+      "Verify command finds schema.schnitzel.yaml in current directory",
+      "Verify generation proceeds normally",
+      "Verify output files are created in correct subdirectories"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generate command with --schema flag uses specified schema file",
+    "steps": [
+      "Create custom schema file: my-custom-schema.yaml",
+      "Run: schnitzel generate --schema my-custom-schema.yaml",
+      "Verify command uses specified schema file",
+      "Verify command doesn't look for schema.schnitzel.yaml",
+      "Verify generation proceeds with custom schema",
+      "Verify exit code is 0"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema parser preserves field order from YAML file",
+    "steps": [
+      "Create schema with User model fields in specific order: id, email, name, created_at",
+      "Call SchemaParser.parse()",
+      "Verify parsed schema preserves field order",
+      "Verify generated code has fields in same order",
+      "Verify field order consistency in both Python and Dart output"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator validates email format constraint",
+    "steps": [
+      "Create User model with email field (string) with format: email",
+      "Call SchemaValidator.validate()",
+      "Verify validation passes",
+      "Verify format constraint is recognized",
+      "Verify Python generator adds EmailStr type from Pydantic",
+      "Verify Dart generator adds appropriate validation"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator validates URL format constraint",
+    "steps": [
+      "Create Profile model with website field (string) with format: url",
+      "Call SchemaValidator.validate()",
+      "Verify validation passes",
+      "Verify format constraint is recognized",
+      "Verify Python generator adds HttpUrl type from Pydantic",
+      "Verify Dart generator adds appropriate validation"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python generator handles UUID fields with proper imports",
+    "steps": [
+      "Create model with uuid field",
+      "Call PythonModelGenerator.generate()",
+      "Verify output includes: from uuid import UUID",
+      "Verify field has type UUID",
+      "Verify UUID serialization works with Pydantic",
+      "Verify generated code passes pyright"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python generator handles datetime fields with proper imports",
+    "steps": [
+      "Create model with datetime field",
+      "Call PythonModelGenerator.generate()",
+      "Verify output includes: from datetime import datetime",
+      "Verify field has type datetime",
+      "Verify datetime serialization works with Pydantic",
+      "Verify timezone handling is documented"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Dart generator handles DateTime fields with proper serialization",
+    "steps": [
+      "Create model with datetime field: created_at",
+      "Call DartModelGenerator.generate()",
+      "Verify field has type DateTime",
+      "Verify @JsonKey annotation includes DateTime converter if needed",
+      "Verify fromJson parses ISO 8601 strings",
+      "Verify toJson outputs ISO 8601 strings"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "CLI shows helpful error when run outside project directory",
+    "steps": [
+      "cd to directory without schema.schnitzel.yaml",
+      "Run: schnitzel generate",
+      "Verify error message: 'No schema file found'",
+      "Verify error suggests running 'schnitzel init' first",
+      "Verify error suggests using --schema flag to specify file",
+      "Verify exit code is non-zero"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "CLI has --verbose flag for detailed logging",
+    "steps": [
+      "Create project with valid schema",
+      "Run: schnitzel generate --verbose",
+      "Verify detailed logs are shown",
+      "Verify logs include: file paths, generator details, timing information",
+      "Verify verbose output helps debug issues",
+      "Verify normal operation without --verbose is less verbose"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "CLI has --quiet flag for minimal output",
+    "steps": [
+      "Create project with valid schema",
+      "Run: schnitzel generate --quiet",
+      "Verify only errors and final status are shown",
+      "Verify progress bars are suppressed",
+      "Verify quiet mode is suitable for CI/CD",
+      "Verify exit code still reflects success/failure"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Docker Compose generator handles custom ports from schema",
+    "steps": [
+      "Create schema with services config specifying custom ports: postgres: 5433, redis: 6380",
+      "Call DockerComposeGenerator.generate()",
+      "Verify docker-compose.yaml uses port 5433 for postgres",
+      "Verify docker-compose.yaml uses port 6380 for redis",
+      "Verify port mapping is correct (host:container)",
+      "Verify services start on custom ports"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Docker Compose generator creates networks for service isolation",
+    "steps": [
+      "Call DockerComposeGenerator.generate()",
+      "Verify docker-compose.yaml includes networks section",
+      "Verify custom network is created (e.g., schnitzel-net)",
+      "Verify all services are on the same network",
+      "Verify network allows inter-service communication",
+      "Verify external access is properly configured"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema parser handles comments in YAML files",
+    "steps": [
+      "Create schema.yaml with YAML comments (# comment lines)",
+      "Call SchemaParser.parse()",
+      "Verify parser ignores comments",
+      "Verify comments don't affect parsing",
+      "Verify no errors from comments",
+      "Verify schema is parsed correctly"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema parser handles YAML anchors and aliases",
+    "steps": [
+      "Create schema.yaml using YAML anchors (&anchor) and aliases (*anchor)",
+      "Call SchemaParser.parse()",
+      "Verify anchors are resolved correctly",
+      "Verify aliases reference correct values",
+      "Verify PyYAML handles YAML features",
+      "Verify final schema has expanded values"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python generator includes docstrings in generated models",
+    "steps": [
+      "Create User model with description field in schema",
+      "Call PythonModelGenerator.generate()",
+      "Verify generated class has docstring with model description",
+      "Verify docstring includes generation timestamp",
+      "Verify docstring warns about auto-generation",
+      "Verify pyright accepts docstrings"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Dart generator includes documentation comments in generated models",
+    "steps": [
+      "Create User model with description field in schema",
+      "Call DartModelGenerator.generate()",
+      "Verify generated class has /// doc comments",
+      "Verify doc comment includes model description",
+      "Verify doc comment warns about auto-generation",
+      "Verify dart analyze accepts doc comments"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generated files include 'DO NOT EDIT' warning header",
+    "steps": [
+      "Generate models.py and models.dart",
+      "Read both files and verify header comments",
+      "Verify header warns: 'This file is auto-generated. Do not edit manually.'",
+      "Verify header includes generation timestamp",
+      "Verify header includes schema file reference",
+      "Verify header explains how to regenerate"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python generator handles List fields (array type)",
+    "steps": [
+      "Create model with tags field of type array<string>",
+      "Call PythonModelGenerator.generate()",
+      "Verify field has type List[str]",
+      "Verify List is imported from typing",
+      "Verify array serialization works",
+      "Verify pyright validation passes"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Dart generator handles List fields (array type)",
+    "steps": [
+      "Create model with tags field of type array<string>",
+      "Call DartModelGenerator.generate()",
+      "Verify field has type List<String>",
+      "Verify JSON serialization handles lists",
+      "Verify fromJson parses JSON arrays",
+      "Verify dart analyze passes"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator validates array element types",
+    "steps": [
+      "Create model with scores field of type array<int>",
+      "Call SchemaValidator.validate()",
+      "Verify validation passes",
+      "Verify element type (int) is validated",
+      "Verify nested array types are supported",
+      "Verify validation fails for unsupported element types"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Integration test: generated code handles relationships correctly end-to-end",
+    "steps": [
+      "Create schema with User hasMany Posts, Post belongsTo User",
+      "Generate Python and Dart models",
+      "In Python: create User instance, create Post instance with user_id",
+      "Verify relationship fields are present and typed correctly",
+      "In Dart: create User instance, create Post instance with userId",
+      "Verify relationship fields serialize correctly in both languages",
+      "Verify type safety is maintained",
+      "Verify no runtime errors when accessing relationships"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Integration test: watch mode regenerates on schema changes",
+    "steps": [
+      "Create project with initial schema",
+      "Run: schnitzel generate --watch in background",
+      "Modify schema: add new field to User model",
+      "Wait for regeneration to complete",
+      "Verify models.py includes new field",
+      "Verify models.dart includes new field",
+      "Modify schema: add new model (Post)",
+      "Wait for regeneration to complete",
+      "Verify Post model is generated in both languages",
+      "Stop watch process"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "CLI handles keyboard interrupt (Ctrl+C) gracefully",
+    "steps": [
+      "Run: schnitzel generate --watch",
+      "Send SIGINT (Ctrl+C) to process",
+      "Verify process stops cleanly",
+      "Verify cleanup happens (temp files removed)",
+      "Verify 'Stopping...' message is shown",
+      "Verify exit code indicates interrupt"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator validates index definitions on fields",
+    "steps": [
+      "Create User model with email field marked as index: true",
+      "Call SchemaValidator.validate()",
+      "Verify validation passes",
+      "Verify index constraint is recognized",
+      "Verify validator tracks indexed fields",
+      "Verify index info is passed to generators for future migration generation"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Python generator adds type: ignore comments only where necessary",
+    "steps": [
+      "Create schema with forward references",
+      "Call PythonModelGenerator.generate()",
+      "Verify generated code minimizes type: ignore usage",
+      "Run pyright on generated code",
+      "Verify code passes without suppressing valid type errors",
+      "Verify only unavoidable cases use type: ignore"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Dart generator handles part directive for Freezed",
+    "steps": [
+      "Call DartModelGenerator.generate() with output file models.dart",
+      "Verify generated file includes: part 'models.freezed.dart';",
+      "Verify generated file includes: part 'models.g.dart';",
+      "Run build_runner and verify part files are generated",
+      "Verify code compiles after build_runner",
+      "Verify imports work correctly"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Init command creates .gitignore with appropriate entries",
+    "steps": [
+      "Run: schnitzel init myapp",
+      "Verify .gitignore file is created",
+      "Read .gitignore and verify it includes: .venv/, node_modules/, build/, .dart_tool/, *.pyc, .env",
+      "Verify gitignore prevents committing generated files if configured",
+      "Verify gitignore is appropriate for Schnitzel projects"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Init command creates README.md with getting started instructions",
+    "steps": [
+      "Run: schnitzel init myapp",
+      "Verify README.md file is created",
+      "Read README.md and verify it includes project name",
+      "Verify README includes getting started steps",
+      "Verify README explains how to run schnitzel generate",
+      "Verify README explains how to start Docker services",
+      "Verify README includes links to documentation"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generate command shows diff before overwriting existing files",
+    "steps": [
+      "Generate models once",
+      "Modify schema slightly",
+      "Run: schnitzel generate",
+      "Verify command detects existing files",
+      "Verify diff is shown (what will change)",
+      "Verify user can review changes before proceeding",
+      "Verify option to skip or overwrite"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema parser validates schema version compatibility",
+    "steps": [
+      "Create schema with version: 1.0.0",
+      "Call SchemaParser.parse()",
+      "Verify parser checks schema version",
+      "Verify parser warns if schema version is too old or too new",
+      "Verify parser suggests upgrade path if needed",
+      "Verify parsing proceeds if version is compatible"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "CLI help text is well-formatted with Rich styling",
+    "steps": [
+      "Run: schnitzel --help",
+      "Take screenshot of terminal output",
+      "Verify help text uses colors and styling",
+      "Verify command names are highlighted",
+      "Verify descriptions are readable",
+      "Verify layout is organized and easy to scan",
+      "Verify Rich panels or tables are used appropriately"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Generate command progress output is visually appealing",
+    "steps": [
+      "Run: schnitzel generate",
+      "Take screenshot of terminal during generation",
+      "Verify progress bar or spinner is displayed",
+      "Verify steps are clearly indicated",
+      "Verify colors are used for success/error states",
+      "Verify output is organized and not cluttered",
+      "Verify Rich formatting enhances readability"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Error messages are formatted with Rich for clarity",
+    "steps": [
+      "Create schema with validation error",
+      "Run: schnitzel generate",
+      "Take screenshot of error output",
+      "Verify error message is highlighted (red/bold)",
+      "Verify error includes context (file, line number)",
+      "Verify error suggests solution",
+      "Verify error message is easy to read and understand"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Generated Python code follows PEP 8 style guidelines",
+    "steps": [
+      "Generate models.py from test schema",
+      "Run ruff check on generated file",
+      "Verify no style violations",
+      "Verify line length is <= 88 (Black default)",
+      "Verify imports are organized correctly",
+      "Verify spacing follows PEP 8",
+      "Verify code is readable and idiomatic"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Generated Dart code follows Dart style guidelines",
+    "steps": [
+      "Generate models.dart from test schema",
+      "Run dart format on generated file",
+      "Verify formatting is correct",
+      "Run dart analyze for lint warnings",
+      "Verify no style warnings",
+      "Verify code follows Effective Dart guidelines",
+      "Verify code is readable and idiomatic"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Generated docker-compose.yaml follows YAML best practices",
+    "steps": [
+      "Generate docker-compose.yaml",
+      "Verify YAML is properly indented (2 spaces)",
+      "Verify keys are in logical order",
+      "Verify comments explain complex sections",
+      "Run yamllint on file",
+      "Verify no YAML style warnings",
+      "Verify file is readable and maintainable"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Init command output is informative and encouraging",
+    "steps": [
+      "Run: schnitzel init myapp",
+      "Take screenshot of terminal output",
+      "Verify each step is clearly logged",
+      "Verify success messages are positive and encouraging",
+      "Verify final message includes next steps",
+      "Verify output uses colors and formatting",
+      "Verify user feels guided through the process"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Generated Python models have consistent formatting",
+    "steps": [
+      "Generate models.py with multiple models",
+      "Verify all models follow same formatting pattern",
+      "Verify consistent spacing between models",
+      "Verify consistent import ordering",
+      "Verify consistent field ordering (id first, timestamps last)",
+      "Verify code looks professionally generated"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Generated Dart models have consistent formatting",
+    "steps": [
+      "Generate models.dart with multiple models",
+      "Verify all models follow same formatting pattern",
+      "Verify consistent spacing between models",
+      "Verify consistent import ordering",
+      "Verify consistent field ordering",
+      "Verify code looks professionally generated"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "CLI version flag shows version in attractive format",
+    "steps": [
+      "Run: schnitzel --version",
+      "Verify version number is displayed",
+      "Verify format is clear: 'Schnitzel CLI v1.0.0'",
+      "Verify additional info like Python version or platform is shown",
+      "Verify output is styled with Rich",
+      "Verify version matches pyproject.toml"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Generated files have consistent header comments",
+    "steps": [
+      "Generate models.py and models.dart",
+      "Verify both files have similar header format",
+      "Verify headers include: generation warning, timestamp, schema reference",
+      "Verify header comments use consistent style",
+      "Verify headers are professional and informative"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Jinja2 templates are loaded correctly from package resources",
+    "steps": [
+      "Verify templates are in schnitzel/templates/ directory",
+      "Call PythonModelGenerator with test schema",
+      "Verify Jinja2 environment loads templates correctly",
+      "Verify template rendering works",
+      "Verify templates can be customized by users in future",
+      "Verify template loading works in installed package (not just dev)"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Jinja2 templates have proper filters and functions",
+    "steps": [
+      "Create template using custom filters: snake_to_pascal, pascal_to_snake",
+      "Render template with test data",
+      "Verify filters work correctly",
+      "Verify template has access to schema models",
+      "Verify template logic is clean and maintainable"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "pyproject.toml includes all required dependencies",
+    "steps": [
+      "Read schnitzel-cli/pyproject.toml",
+      "Verify dependencies include: typer, rich, pyyaml, pydantic>=2.0, jinja2",
+      "Verify version constraints are appropriate",
+      "Verify optional dependencies are in correct groups",
+      "Run: uv pip compile pyproject.toml",
+      "Verify dependency resolution succeeds"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "CLI entry point is registered in pyproject.toml",
+    "steps": [
+      "Read pyproject.toml [project.scripts] section",
+      "Verify entry point: schnitzel = schnitzel.cli:app",
+      "Install package with pip install -e .",
+      "Run: which schnitzel",
+      "Verify schnitzel command is available",
+      "Verify command executes Typer app"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Package structure follows Python best practices",
+    "steps": [
+      "Verify directory structure: src/schnitzel/ layout",
+      "Verify __init__.py files exist in all packages",
+      "Verify pyproject.toml uses src-layout",
+      "Verify package is installable with pip",
+      "Verify imports work: from schnitzel.schema import parser",
+      "Verify package can be published to PyPI"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Integration test fixtures are organized and reusable",
+    "steps": [
+      "Check tests/integration/fixtures/ directory",
+      "Verify fixtures include: minimal_schema.yaml, full_schema.yaml, invalid_schema.yaml",
+      "Verify fixtures cover common test cases",
+      "Verify fixtures are documented",
+      "Verify tests can load fixtures easily",
+      "Verify fixtures can be extended for new tests"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "test_full_generation.py validates complete pipeline",
+    "steps": [
+      "Run: pytest tests/integration/test_full_generation.py",
+      "Verify test creates temp directory for output",
+      "Verify test runs full pipeline: parse -> validate -> generate",
+      "Verify test checks generated Python code compiles",
+      "Verify test checks generated Dart code compiles",
+      "Verify test cleans up temp files",
+      "Verify test passes"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "test_foodieai_example.py validates against real-world schema",
+    "steps": [
+      "Run: pytest tests/integration/test_foodieai_example.py",
+      "Verify test loads examples/foodie-ai/schema.yaml",
+      "Verify test validates FoodieAI schema",
+      "Verify test generates code for all FoodieAI models",
+      "Verify generated code compiles without errors",
+      "Verify test demonstrates real-world usage",
+      "Verify test passes"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "End-to-end test: Init project, generate code, verify compilation for minimal template",
+    "steps": [
+      "Run: schnitzel init test-minimal --template minimal",
+      "Verify project directory structure is created",
+      "cd into test-minimal/",
+      "Verify schema.schnitzel.yaml exists and is valid",
+      "Run: schnitzel generate --target all",
+      "Verify backend/app/generated/models.py is created",
+      "Verify packages/shared/lib/generated/models.dart is created",
+      "Run pyright on Python models",
+      "Run dart analyze on Dart models",
+      "Verify docker-compose.yaml is valid",
+      "Run: docker-compose config to validate",
+      "Clean up test project",
+      "Verify end-to-end workflow succeeds"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "End-to-end test: Multi-file schema with imports generates correctly",
+    "steps": [
+      "Create base.yaml with User model (id, email, name)",
+      "Create posts.yaml importing base.yaml with Post model (id, title, content, author: belongsTo User)",
+      "Create comments.yaml importing posts.yaml with Comment model (id, text, post: belongsTo Post)",
+      "Create main.yaml importing all three files",
+      "Run: schnitzel generate --schema main.yaml",
+      "Verify all three models appear in generated Python code",
+      "Verify all three models appear in generated Dart code",
+      "Verify relationships are correctly typed",
+      "Verify import chain is resolved correctly",
+      "Run type checkers on generated code",
+      "Verify no import or reference errors",
+      "Clean up test files"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Complex validation test: Schema with multiple validation rules per field",
+    "steps": [
+      "Create Product model with price field (float): min: 0, max: 1000000, required: true",
+      "Add name field (string): min_length: 3, max_length: 200, required: true",
+      "Add sku field (string): format: alphanumeric, unique: true",
+      "Add stock field (int): min: 0, default: 0",
+      "Call SchemaValidator.validate()",
+      "Verify all validation rules are recognized",
+      "Call PythonModelGenerator.generate()",
+      "Verify all validations appear in Pydantic Field() definitions",
+      "Instantiate Product with invalid data and verify Pydantic validation catches it",
+      "Verify error messages reference correct validation rules",
+      "Verify generated code passes type checking"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Relationship integrity test: Bidirectional relationships with validation",
+    "steps": [
+      "Create Author model with hasMany: books",
+      "Create Book model with belongsTo: author and hasMany: reviews",
+      "Create Review model with belongsTo: book and belongsTo: reviewer (User)",
+      "Create User model with hasMany: reviews",
+      "Call SchemaValidator.validate()",
+      "Verify all relationships validate correctly",
+      "Verify no circular dependency errors for valid structure",
+      "Generate Python and Dart models",
+      "Verify all relationship fields are present",
+      "Verify type hints are correct (List, Optional, forward refs)",
+      "Test instantiation of related models",
+      "Verify relationship navigation works"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Error handling test: Generate with missing template file",
+    "steps": [
+      "Delete or rename templates/python/models.py.j2",
+      "Run: schnitzel generate --target python",
+      "Verify error is caught gracefully",
+      "Verify error message indicates missing template",
+      "Verify error includes template path",
+      "Verify helpful suggestion to reinstall or check installation",
+      "Verify no partial files are written",
+      "Verify exit code is non-zero",
+      "Restore template file"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Watch mode test: Multiple rapid schema changes",
+    "steps": [
+      "Create initial schema with User model",
+      "Run: schnitzel generate --watch in background",
+      "Wait for initial generation to complete",
+      "Add email field to User model",
+      "Wait for regeneration (2-3 seconds)",
+      "Verify email field appears in generated code",
+      "Add Post model with relationship to User",
+      "Wait for regeneration",
+      "Verify Post model is generated",
+      "Modify Post model: add published_at field",
+      "Wait for regeneration",
+      "Verify published_at field appears",
+      "Stop watch process",
+      "Verify all changes were correctly generated"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Type mapping edge cases: All supported types in single model",
+    "steps": [
+      "Create TestModel with one field of each type: string, uuid, int, float, bool, datetime, json, array<string>, array<int>",
+      "Add optional variants of each type",
+      "Add fields with default values for each type",
+      "Generate Python models",
+      "Verify each type maps correctly in Python",
+      "Generate Dart models",
+      "Verify each type maps correctly in Dart",
+      "Test serialization round-trip for each field type",
+      "Verify optional fields handle None/null correctly",
+      "Verify defaults are applied correctly",
+      "Run type checkers on generated code"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Docker Compose test: Custom configuration with environment variables",
+    "steps": [
+      "Create schema with services config: postgres port 5433, redis port 6380",
+      "Add environment variables: DB_NAME, DB_USER, DB_PASSWORD",
+      "Generate docker-compose.yaml",
+      "Verify custom ports are used",
+      "Verify env vars are referenced with ${VAR} syntax",
+      "Create .env file with test values",
+      "Run: docker-compose config to expand variables",
+      "Verify expanded config is valid",
+      "Run: docker-compose up -d",
+      "Verify services start on custom ports",
+      "Test connection to postgres on port 5433",
+      "Test connection to redis on port 6380",
+      "Run: docker-compose down"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "CLI robustness test: Handle invalid command arguments",
+    "steps": [
+      "Run: schnitzel init (missing project name)",
+      "Verify error message indicates missing argument",
+      "Run: schnitzel init myapp --template invalid",
+      "Verify error lists valid template options",
+      "Run: schnitzel generate --target invalid",
+      "Verify error lists valid targets",
+      "Run: schnitzel nonexistent-command",
+      "Verify error suggests valid commands",
+      "Run: schnitzel --invalid-flag",
+      "Verify error explains invalid flag",
+      "Verify all errors are user-friendly",
+      "Verify exit codes are non-zero for errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Template rendering test: Complex model with all features",
+    "steps": [
+      "Create User model with: 10 fields of various types, 3 relationships, 5 validation rules, 2 indexes, 3 optional fields, 2 default values",
+      "Call PythonModelGenerator.generate()",
+      "Verify Jinja2 template renders without errors",
+      "Verify all fields are present in output",
+      "Verify all validations are in Field() definitions",
+      "Verify all relationships have correct type hints",
+      "Verify imports are complete",
+      "Verify code is properly formatted",
+      "Run ruff on generated code",
+      "Verify no style violations",
+      "Run pyright on generated code",
+      "Verify no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Naming convention test: snake_case to camelCase conversion in Dart",
+    "steps": [
+      "Create model with fields: user_id, first_name, last_name, created_at, updated_at, is_active",
+      "Generate Dart models",
+      "Verify Dart fields use camelCase: userId, firstName, lastName, createdAt, updatedAt, isActive",
+      "Verify @JsonKey annotations map to snake_case: @JsonKey(name: 'user_id')",
+      "Test JSON deserialization with snake_case keys",
+      "Verify Dart model correctly maps snake_case to camelCase",
+      "Test JSON serialization produces snake_case keys",
+      "Verify round-trip works correctly",
+      "Run dart analyze and verify no warnings"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Parser robustness test: Malformed YAML edge cases",
+    "steps": [
+      "Test with YAML using tabs instead of spaces",
+      "Verify error message explains YAML doesn't support tabs",
+      "Test with missing colon after key",
+      "Verify error shows line number",
+      "Test with invalid indentation",
+      "Verify error indicates indentation problem",
+      "Test with duplicate keys",
+      "Verify parser detects duplicate",
+      "Test with invalid characters in model names",
+      "Verify validation catches naming issues",
+      "Verify all errors are clear and actionable"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generator output test: Verify file permissions and structure",
+    "steps": [
+      "Generate models.py",
+      "Check file permissions are readable (644)",
+      "Verify directory structure backend/app/generated/ exists",
+      "Verify __init__.py exists in generated directory",
+      "Generate models.dart",
+      "Verify packages/shared/lib/generated/ structure",
+      "Verify part directives are correct",
+      "Verify generated files don't include executable bit",
+      "Verify file ownership is correct",
+      "Verify no temporary files are left behind"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Pydantic v2 specific features test",
+    "steps": [
+      "Create User model with ConfigDict settings",
+      "Generate Python models",
+      "Verify model uses Pydantic v2 syntax (not v1)",
+      "Verify Field() instead of deprecated validators",
+      "Verify model_dump() is used (not dict())",
+      "Verify model_validate() is available",
+      "Verify ConfigDict is imported and used",
+      "Test v2-specific features: arbitrary_types_allowed, populate_by_name",
+      "Instantiate model and verify v2 behavior",
+      "Run pyright strict mode",
+      "Verify code is Pydantic v2 compatible"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Freezed code generation test: Verify build_runner compatibility",
+    "steps": [
+      "Generate models.dart with User and Post models",
+      "Verify part directive: part 'models.freezed.dart';",
+      "Verify part directive: part 'models.g.dart';",
+      "Create test pubspec.yaml with freezed dependencies",
+      "Run: dart run build_runner build",
+      "Verify models.freezed.dart is generated",
+      "Verify models.g.dart is generated",
+      "Verify no build errors",
+      "Import models in test file",
+      "Instantiate User and test copyWith",
+      "Test JSON serialization via generated code",
+      "Run dart analyze on all generated files"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Large schema performance test: 100+ models generation",
+    "steps": [
+      "Generate test schema with 100 models (User01 through User100)",
+      "Each model has 10 fields and 2 relationships",
+      "Measure parse time",
+      "Measure validation time",
+      "Measure Python generation time",
+      "Measure Dart generation time",
+      "Verify total time is under 30 seconds",
+      "Verify generated Python file is valid",
+      "Verify generated Dart file is valid",
+      "Verify memory usage is reasonable (<500MB)",
+      "Run type checkers on large generated files",
+      "Verify no performance degradation"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Incremental generation test: Only regenerate changed files",
+    "steps": [
+      "Generate initial code for User model",
+      "Record modification time of generated files",
+      "Modify schema: add field to User",
+      "Run: schnitzel generate",
+      "Verify only Python and Dart model files are regenerated",
+      "Verify Docker compose is NOT regenerated (unchanged)",
+      "Add new Post model",
+      "Run: schnitzel generate",
+      "Verify both model files are regenerated",
+      "Verify incremental generation saves time",
+      "Verify output indicates which files were skipped/updated"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Validation rule completeness test: All Pydantic validators",
+    "steps": [
+      "Create fields with: ge (>=), le (<=), gt (>), lt (<), min_length, max_length, regex",
+      "Generate Python models",
+      "Verify each validator appears in Field() definition",
+      "Test validation with valid values",
+      "Test validation with invalid values (too small, too large, wrong format)",
+      "Verify Pydantic raises appropriate ValidationError",
+      "Verify error messages are descriptive",
+      "Verify all validators work as expected",
+      "Verify generated validators match schema definitions"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Schema versioning test: Handle schema version upgrades",
+    "steps": [
+      "Create schema with version: 0.9.0",
+      "Run schnitzel generate",
+      "Verify warning about old schema version",
+      "Update schema to version: 1.0.0",
+      "Run schnitzel generate",
+      "Verify no version warnings",
+      "Create schema with version: 2.0.0 (future)",
+      "Run schnitzel generate",
+      "Verify warning about newer schema version",
+      "Verify generation proceeds or fails appropriately",
+      "Verify version check logic is correct"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Generated code readability: Python models have clear structure",
+    "steps": [
+      "Generate models.py with User, Post, Comment models",
+      "Read generated file manually",
+      "Verify models are separated by blank lines",
+      "Verify imports are at the top and organized",
+      "Verify each model has a docstring",
+      "Verify fields are aligned and readable",
+      "Verify relationships are clearly commented",
+      "Verify code follows PEP 8 style",
+      "Verify variable names are descriptive",
+      "Verify overall structure is professional"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Generated code readability: Dart models have clear structure",
+    "steps": [
+      "Generate models.dart with User, Post, Comment models",
+      "Read generated file manually",
+      "Verify models are separated appropriately",
+      "Verify imports are organized",
+      "Verify each model has doc comments (///)",
+      "Verify Freezed annotations are clear",
+      "Verify factory constructors are well-formatted",
+      "Verify code follows Dart style guide",
+      "Verify field names use proper camelCase",
+      "Verify overall structure is clean and professional"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "CLI help text organization and clarity",
+    "steps": [
+      "Run: schnitzel init --help",
+      "Verify help text is organized: usage, options, arguments",
+      "Verify each option has clear description",
+      "Verify examples are provided",
+      "Run: schnitzel generate --help",
+      "Verify help text explains all flags: --target, --watch, --dry-run",
+      "Verify help uses colors and formatting",
+      "Verify help is easy to scan and understand",
+      "Verify help guides users effectively"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Error message quality: Clear, actionable, user-friendly",
+    "steps": [
+      "Trigger various errors: missing schema, invalid YAML, validation failure",
+      "For each error, verify message includes: what went wrong, where (file/line), how to fix",
+      "Verify errors use color coding (red for errors)",
+      "Verify errors include context (surrounding code if applicable)",
+      "Verify errors suggest next steps",
+      "Verify errors are concise but complete",
+      "Verify errors don't include stack traces for user errors",
+      "Verify technical errors include debug info when --verbose is used"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Progress output polish: Professional and informative",
+    "steps": [
+      "Run: schnitzel generate with multiple models",
+      "Observe progress output",
+      "Verify spinners or progress bars are smooth",
+      "Verify each step is clearly labeled",
+      "Verify timing information is shown",
+      "Verify success indicators (checkmarks, green text)",
+      "Verify final summary is informative",
+      "Verify output feels polished and professional",
+      "Compare with popular CLIs (npm, cargo) for quality"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Documentation comments in generated code are helpful",
+    "steps": [
+      "Generate code with various field types and relationships",
+      "Verify field-level comments explain purpose",
+      "Verify relationship comments explain references",
+      "Verify validation comments explain constraints",
+      "Verify model-level comments describe entity",
+      "Verify comments are generated from schema descriptions if present",
+      "Verify comments don't clutter code (balanced)",
+      "Verify comments follow language conventions (# for Python, /// for Dart)"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Integration test: FoodieAI schema with all features",
+    "steps": [
+      "Load FoodieAI schema (User, Recipe, Ingredient, Review, Category models)",
+      "Verify schema includes: relationships, validations, optional fields, defaults",
+      "Parse and validate schema",
+      "Generate Python models for all FoodieAI entities",
+      "Generate Dart models for all FoodieAI entities",
+      "Verify Recipe hasMany Ingredients relationship",
+      "Verify Review belongsTo User and Recipe relationships",
+      "Run pyright on all generated Python code",
+      "Run dart analyze on all generated Dart code",
+      "Run build_runner for Freezed code generation",
+      "Verify all models compile without errors",
+      "Test instantiation of each model with sample data",
+      "Verify JSON serialization round-trip for all models",
+      "Verify this represents a real-world schema successfully generated"
+    ],
+    "passes": false
+  }
+]
