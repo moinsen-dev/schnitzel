@@ -1,0 +1,189 @@
+<module_specification>
+  <module_name>Real-time & Events</module_name>
+  <module_id>module_02_realtime_events</module_id>
+  <depends_on>module_01_api_layer</depends_on>
+  <inherit_from>app_spec_master.txt</inherit_from>
+
+  <overview>
+    Add real-time communication capabilities: event publishing via WebSocket and
+    Redis Pub/Sub, SSE streaming, Temporal job scheduling, and BLoC state management
+    generation for Flutter.
+  </overview>
+
+  <core_features>
+    <event_publisher_generator>
+      - Generate event publishing infrastructure from events section
+      - Redis Pub/Sub integration for backend-to-backend
+      - WebSocket broadcast for client updates
+      - Event type definitions with Pydantic
+      - Payload serialization
+      - Channel routing based on event config
+      - Generate events.py in backend/app/generated/
+    </event_publisher_generator>
+
+    <sse_stream_generator>
+      - Generate SSE endpoints from streams section (type: sse)
+      - FastAPI StreamingResponse with async generators
+      - Chunk type definitions
+      - Reconnection support headers
+      - Generate streams.py in backend/app/generated/
+    </sse_stream_generator>
+
+    <websocket_handler_generator>
+      - Generate WebSocket endpoints from streams section (type: websocket)
+      - Connection manager for multiple clients
+      - Message routing by type
+      - Heartbeat/keepalive
+      - Authentication via query params or first message
+      - Generate websocket.py in backend/app/generated/
+    </websocket_handler_generator>
+
+    <dart_event_client_generator>
+      - Generate event subscription manager for Flutter
+      - SSE client with reconnection logic
+      - WebSocket client with auto-reconnect
+      - Type-safe event deserialization
+      - Stream controllers for Bloc integration
+      - Generate events.dart in packages/shared/lib/generated/
+    </dart_event_client_generator>
+
+    <temporal_job_generator>
+      - Generate Temporal workflow definitions from jobs section
+      - Activity implementations (stub)
+      - Schedule configuration from cron expressions
+      - Retry policies from job config
+      - Timeout handling
+      - Generate jobs.py in backend/app/generated/
+    </temporal_job_generator>
+
+    <bloc_state_generator>
+      - Generate feature-specific BLoCs from models
+      - Event classes (Load, Create, Update, Delete)
+      - State classes (Initial, Loading, Loaded, Error)
+      - Repository integration pattern
+      - Error handling with typed failures
+      - Generate bloc/ directory per feature package
+    </bloc_state_generator>
+  </core_features>
+
+  <files_to_create>
+    <generators>
+      - schnitzel-cli/src/schnitzel/generators/python/events.py
+      - schnitzel-cli/src/schnitzel/generators/python/streams.py
+      - schnitzel-cli/src/schnitzel/generators/python/websocket.py
+      - schnitzel-cli/src/schnitzel/generators/python/jobs.py
+      - schnitzel-cli/src/schnitzel/generators/dart/events.py
+      - schnitzel-cli/src/schnitzel/generators/dart/bloc.py
+    </generators>
+
+    <templates>
+      - schnitzel-cli/src/schnitzel/templates/python/events.py.j2
+      - schnitzel-cli/src/schnitzel/templates/python/streams.py.j2
+      - schnitzel-cli/src/schnitzel/templates/python/websocket.py.j2
+      - schnitzel-cli/src/schnitzel/templates/python/jobs.py.j2
+      - schnitzel-cli/src/schnitzel/templates/dart/events.dart.j2
+      - schnitzel-cli/src/schnitzel/templates/dart/bloc.dart.j2
+      - schnitzel-cli/src/schnitzel/templates/dart/bloc_event.dart.j2
+      - schnitzel-cli/src/schnitzel/templates/dart/bloc_state.dart.j2
+    </templates>
+
+    <tests>
+      - schnitzel-cli/tests/integration/test_events_generation.py
+      - schnitzel-cli/tests/integration/test_bloc_generation.py
+    </tests>
+  </files_to_create>
+
+  <implementation_steps>
+    <step number="1">
+      <title>Event Publisher Generator</title>
+      <tasks>
+        - Create template for event infrastructure
+        - Redis Pub/Sub publisher
+        - WebSocket broadcast manager
+        - Event type registry
+        - Generate events.py
+      </tasks>
+    </step>
+
+    <step number="2">
+      <title>SSE Stream Generator</title>
+      <tasks>
+        - Create template for SSE endpoints
+        - Async generator pattern
+        - Chunk serialization
+        - Headers for reconnection
+        - Generate streams.py
+      </tasks>
+    </step>
+
+    <step number="3">
+      <title>WebSocket Handler Generator</title>
+      <tasks>
+        - Create template for WebSocket handlers
+        - Connection manager
+        - Message routing
+        - Auth handling
+        - Generate websocket.py
+      </tasks>
+    </step>
+
+    <step number="4">
+      <title>Dart Event Client Generator</title>
+      <tasks>
+        - Create template for event client
+        - SSE parsing with reconnection
+        - WebSocket with auto-reconnect
+        - Type-safe deserialization
+        - Generate events.dart
+      </tasks>
+    </step>
+
+    <step number="5">
+      <title>Temporal Job Generator</title>
+      <tasks>
+        - Create template for Temporal workflows
+        - Cron schedule parsing
+        - Retry policy configuration
+        - Activity stubs
+        - Generate jobs.py
+      </tasks>
+    </step>
+
+    <step number="6">
+      <title>BLoC State Generator</title>
+      <tasks>
+        - Create templates for BLoC pattern
+        - Event/State class generation
+        - CRUD operation events
+        - Repository pattern integration
+        - Generate bloc/ per feature
+      </tasks>
+    </step>
+
+    <step number="7">
+      <title>Integration Tests</title>
+      <tasks>
+        - Test event publishing works
+        - Test SSE streaming
+        - Test BLoC generation compiles
+        - Test job definitions
+      </tasks>
+    </step>
+  </implementation_steps>
+
+  <success_criteria>
+    <functionality>
+      - Events publish via WebSocket and Redis
+      - SSE streams deliver real-time data
+      - WebSocket bidirectional communication works
+      - Scheduled jobs have correct configuration
+      - BLoCs manage feature state correctly
+    </functionality>
+
+    <code_quality>
+      - All generated Dart code passes dart analyze
+      - All generated Python code passes pyright
+      - Event types match between Python and Dart
+    </code_quality>
+  </success_criteria>
+</module_specification>

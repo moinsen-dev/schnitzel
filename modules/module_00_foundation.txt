@@ -1,0 +1,257 @@
+<module_specification>
+  <module_name>Foundation (MVP)</module_name>
+  <module_id>module_00_foundation</module_id>
+  <depends_on></depends_on>
+  <inherit_from>app_spec_master.txt</inherit_from>
+
+  <overview>
+    Build the core foundation of the Schnitzel CLI: schema parsing, validation,
+    and basic code generation for both Python (Pydantic) and Dart (Freezed) models.
+    This phase establishes the generation pipeline from YAML to working code.
+  </overview>
+
+  <core_features>
+    <schema_parser>
+      - Parse YAML schema files with PyYAML
+      - Pydantic models for schema validation (SchnitzelSchema, Model, Field, Endpoint, etc.)
+      - Multi-file import resolution (imports: section)
+      - Feature schema merging
+      - Reference validation between models
+    </schema_parser>
+
+    <schema_validator>
+      - Type consistency checking
+      - Relationship validation (belongsTo, hasMany references exist)
+      - Naming convention validation (PascalCase models, snake_case fields)
+      - Circular dependency detection
+      - Required field validation
+    </schema_validator>
+
+    <python_model_generator>
+      - Generate Pydantic v2 models from schema
+      - Field type mapping: string→str, uuid→UUID, int→int, float→float, bool→bool, datetime→datetime, json→dict
+      - Validation rules: min, max, format, unique, optional, default
+      - Relationships: generate type hints for belongsTo/hasMany
+      - JSON serialization with model_dump()
+      - Generate models.py in backend/app/generated/
+    </python_model_generator>
+
+    <dart_model_generator>
+      - Generate Freezed immutable classes from schema
+      - Field type mapping: string→String, uuid→String, int→int, float→double, bool→bool, datetime→DateTime, json→Map<String, dynamic>
+      - Optional fields with nullable types (String?)
+      - Default values in factory constructors
+      - JSON serialization with @JsonSerializable
+      - copyWith support via Freezed
+      - Generate models.dart in packages/shared/lib/generated/
+    </dart_model_generator>
+
+    <init_command>
+      - schnitzel init <name> [--template minimal|full|ai-chat]
+      - Create project directory structure
+      - Generate initial schema.schnitzel.yaml from template
+      - Run flutter create for packages/app
+      - Run uv init for backend/
+      - Generate docker-compose.yaml
+      - Generate pubspec.yaml (workspace root)
+      - Generate pyproject.toml
+    </init_command>
+
+    <generate_command>
+      - schnitzel generate [--target all|flutter|python|docker]
+      - Parse and validate schema
+      - Run appropriate generators based on target
+      - --watch mode for development (file watcher)
+      - --dry-run preview without writing files
+      - Output progress with Rich
+    </generate_command>
+
+    <docker_compose_generator>
+      - Generate docker-compose.yaml from services config
+      - PostgreSQL 16 with pgvector extension
+      - Redis 7 with pub/sub features
+      - Health checks for all services
+      - Volume mounts for persistence
+      - Port collision prevention (check available ports)
+      - Environment variable substitution
+    </docker_compose_generator>
+  </core_features>
+
+  <database_schema>
+    <note>This module creates the CLI tool itself, not application databases.
+    The CLI will later generate database schemas for user projects.</note>
+  </database_schema>
+
+  <files_to_create>
+    <cli_package>
+      - schnitzel-cli/pyproject.toml
+      - schnitzel-cli/src/schnitzel/__init__.py
+      - schnitzel-cli/src/schnitzel/cli.py (Typer entry point)
+      - schnitzel-cli/src/schnitzel/schema/__init__.py
+      - schnitzel-cli/src/schnitzel/schema/parser.py
+      - schnitzel-cli/src/schnitzel/schema/validator.py
+      - schnitzel-cli/src/schnitzel/schema/models.py (Pydantic schema models)
+      - schnitzel-cli/src/schnitzel/generators/__init__.py
+      - schnitzel-cli/src/schnitzel/generators/python/__init__.py
+      - schnitzel-cli/src/schnitzel/generators/python/models.py
+      - schnitzel-cli/src/schnitzel/generators/dart/__init__.py
+      - schnitzel-cli/src/schnitzel/generators/dart/models.py
+      - schnitzel-cli/src/schnitzel/generators/infra/__init__.py
+      - schnitzel-cli/src/schnitzel/generators/infra/docker.py
+      - schnitzel-cli/src/schnitzel/commands/__init__.py
+      - schnitzel-cli/src/schnitzel/commands/init.py
+      - schnitzel-cli/src/schnitzel/commands/generate.py
+    </cli_package>
+
+    <templates>
+      - schnitzel-cli/src/schnitzel/templates/python/models.py.j2
+      - schnitzel-cli/src/schnitzel/templates/dart/models.dart.j2
+      - schnitzel-cli/src/schnitzel/templates/infra/docker-compose.yaml.j2
+      - schnitzel-cli/src/schnitzel/templates/schema/minimal.yaml.j2
+      - schnitzel-cli/src/schnitzel/templates/schema/full.yaml.j2
+    </templates>
+
+    <tests>
+      - schnitzel-cli/tests/__init__.py
+      - schnitzel-cli/tests/integration/__init__.py
+      - schnitzel-cli/tests/integration/test_full_generation.py
+      - schnitzel-cli/tests/integration/test_foodieai_example.py
+      - schnitzel-cli/tests/integration/fixtures/minimal_schema.yaml
+    </tests>
+  </files_to_create>
+
+  <implementation_steps>
+    <step number="1">
+      <title>Project Setup</title>
+      <tasks>
+        - Create schnitzel-cli/ directory structure
+        - Create pyproject.toml with dependencies (typer, rich, pyyaml, pydantic, jinja2)
+        - Set up UV for package management
+        - Create basic CLI entry point with Typer
+      </tasks>
+    </step>
+
+    <step number="2">
+      <title>Schema Models (Pydantic)</title>
+      <tasks>
+        - Define SchnitzelSchema as root model
+        - Define Model, Field, Relation models
+        - Define Endpoint, Event, Stream, Job models
+        - Define Services, Auth, Roles models
+        - Add validation for all schema components
+      </tasks>
+    </step>
+
+    <step number="3">
+      <title>Schema Parser</title>
+      <tasks>
+        - Implement YAML file loading
+        - Implement multi-file import resolution
+        - Implement feature schema merging
+        - Parse into Pydantic models
+        - Handle parse errors with clear messages
+      </tasks>
+    </step>
+
+    <step number="4">
+      <title>Schema Validator</title>
+      <tasks>
+        - Validate model references exist
+        - Validate relationship targets
+        - Check naming conventions
+        - Detect circular dependencies
+        - Return structured error list
+      </tasks>
+    </step>
+
+    <step number="5">
+      <title>Python Model Generator</title>
+      <tasks>
+        - Create Jinja2 template for Pydantic models
+        - Implement type mapping function
+        - Handle relationships with forward references
+        - Generate models.py output
+        - Ensure generated code passes pyright
+      </tasks>
+    </step>
+
+    <step number="6">
+      <title>Dart Model Generator</title>
+      <tasks>
+        - Create Jinja2 template for Freezed classes
+        - Implement Dart type mapping
+        - Handle nullable/optional fields
+        - Generate models.dart output
+        - Ensure generated code passes dart analyze
+      </tasks>
+    </step>
+
+    <step number="7">
+      <title>Docker Compose Generator</title>
+      <tasks>
+        - Create Jinja2 template for docker-compose.yaml
+        - Generate PostgreSQL service with pgvector
+        - Generate Redis service
+        - Add health checks
+        - Handle environment variables
+      </tasks>
+    </step>
+
+    <step number="8">
+      <title>Init Command</title>
+      <tasks>
+        - Implement schnitzel init command
+        - Create project directory structure
+        - Generate schema from template
+        - Delegate to flutter create
+        - Delegate to uv init
+        - Copy docker-compose.yaml
+      </tasks>
+    </step>
+
+    <step number="9">
+      <title>Generate Command</title>
+      <tasks>
+        - Implement schnitzel generate command
+        - Add --target flag (all, flutter, python, docker)
+        - Add --watch flag for file watching
+        - Add --dry-run flag
+        - Display progress with Rich
+      </tasks>
+    </step>
+
+    <step number="10">
+      <title>Integration Tests</title>
+      <tasks>
+        - Create minimal test schema fixture
+        - Test full generation pipeline
+        - Verify Python code compiles
+        - Verify Dart code compiles
+        - Test against FoodieAI example
+      </tasks>
+    </step>
+  </implementation_steps>
+
+  <success_criteria>
+    <functionality>
+      - schnitzel init myapp creates working project structure
+      - schnitzel generate produces valid Python + Dart code
+      - Generated Pydantic models pass pyright validation
+      - Generated Freezed models compile with dart analyze
+      - Docker Compose starts PostgreSQL and Redis
+    </functionality>
+
+    <integration_tests>
+      - test_full_generation.py passes
+      - test_foodieai_example.py passes
+      - All generated code compiles without errors
+    </integration_tests>
+
+    <code_quality>
+      - All CLI code passes ruff linting
+      - Type hints throughout (pyright strict)
+      - Docstrings on public functions
+      - No hardcoded paths
+    </code_quality>
+  </success_criteria>
+</module_specification>

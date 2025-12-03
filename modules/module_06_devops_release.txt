@@ -1,0 +1,230 @@
+<module_specification>
+  <module_name>DevOps & Release</module_name>
+  <module_id>module_06_devops_release</module_id>
+  <depends_on>module_05_documentation_ai</depends_on>
+  <inherit_from>app_spec_master.txt</inherit_from>
+
+  <overview>
+    Complete the Schnitzel CLI with production-ready DevOps tooling: CI/CD pipeline
+    generation, release management with semantic versioning, deployment commands,
+    app store metadata generation, and internationalization support.
+  </overview>
+
+  <core_features>
+    <cicd_pipeline_generator>
+      - Generate GitHub Actions workflows from cicd section
+      - PR pipeline (lint, validate, test, build)
+      - Main branch pipeline (test, build, deploy staging)
+      - Release pipeline (test, build, deploy production)
+      - Cache configuration (Flutter, Python, Docker)
+      - Export to .github/workflows/
+    </cicd_pipeline_generator>
+
+    <release_command>
+      - schnitzel release --bump patch|minor|major
+      - schnitzel release --feature <name> --bump patch|minor|major
+      - schnitzel release --dry-run
+      - Semantic version bumping
+      - Changelog generation (Conventional Commits)
+      - Git tagging
+      - Update schema version
+      - Update pubspec.yaml version
+    </release_command>
+
+    <deploy_command>
+      - schnitzel deploy --env staging|production
+      - schnitzel deploy --store ios|android --track testflight|internal|production
+      - Environment-specific deployment
+      - Fastlane integration for app stores
+      - Backend deployment hooks
+      - Rollback support
+    </deploy_command>
+
+    <app_store_metadata_generator>
+      - Generate iOS App Store Connect metadata
+      - Generate Android Play Store metadata
+      - Screenshot configuration
+      - Release notes from changelog
+      - Export to ios/fastlane/metadata and android/fastlane/metadata
+    </app_store_metadata_generator>
+
+    <i18n_generator>
+      - Generate translation structure for shard_i18n
+      - Feature-sharded JSON files
+      - assets/i18n/<locale>/<feature>.json
+      - Default locale from schema
+      - Supported locales configuration
+    </i18n_generator>
+
+    <i18n_command>
+      - schnitzel i18n extract - Extract translatable strings
+      - schnitzel i18n fill --provider deepl|openai - Auto-translate missing
+      - schnitzel i18n validate - Check translation coverage
+      - Integration with DeepL/OpenAI for auto-translation
+    </i18n_command>
+
+    <environment_config_generator>
+      - Generate Flutter flavor configuration
+      - Generate Gradle build variants
+      - Generate XCode schemes
+      - Environment-specific bundle IDs
+      - Environment-specific API URLs
+    </environment_config_generator>
+
+    <add_command>
+      - schnitzel add model <name>
+      - schnitzel add endpoint <path>
+      - schnitzel add feature <name>
+      - Interactive schema modification
+      - Regenerate affected files
+    </add_command>
+  </core_features>
+
+  <files_to_create>
+    <generators>
+      - schnitzel-cli/src/schnitzel/generators/infra/cicd.py
+      - schnitzel-cli/src/schnitzel/generators/infra/app_store.py
+      - schnitzel-cli/src/schnitzel/generators/infra/environments.py
+      - schnitzel-cli/src/schnitzel/generators/i18n/structure.py
+      - schnitzel-cli/src/schnitzel/generators/i18n/extract.py
+    </generators>
+
+    <templates>
+      - schnitzel-cli/src/schnitzel/templates/infra/github-actions/pr.yml.j2
+      - schnitzel-cli/src/schnitzel/templates/infra/github-actions/main.yml.j2
+      - schnitzel-cli/src/schnitzel/templates/infra/github-actions/release.yml.j2
+      - schnitzel-cli/src/schnitzel/templates/infra/fastlane/ios_metadata.j2
+      - schnitzel-cli/src/schnitzel/templates/infra/fastlane/android_metadata.j2
+      - schnitzel-cli/src/schnitzel/templates/infra/flutter_flavors.j2
+      - schnitzel-cli/src/schnitzel/templates/i18n/feature.json.j2
+    </templates>
+
+    <commands>
+      - schnitzel-cli/src/schnitzel/commands/release.py
+      - schnitzel-cli/src/schnitzel/commands/deploy.py
+      - schnitzel-cli/src/schnitzel/commands/i18n.py
+      - schnitzel-cli/src/schnitzel/commands/add.py
+    </commands>
+
+    <release>
+      - schnitzel-cli/src/schnitzel/release/__init__.py
+      - schnitzel-cli/src/schnitzel/release/versioning.py
+      - schnitzel-cli/src/schnitzel/release/changelog.py
+    </release>
+
+    <tests>
+      - schnitzel-cli/tests/integration/test_cicd_generation.py
+      - schnitzel-cli/tests/integration/test_release.py
+      - schnitzel-cli/tests/integration/test_i18n.py
+    </tests>
+  </files_to_create>
+
+  <implementation_steps>
+    <step number="1">
+      <title>CI/CD Pipeline Generator</title>
+      <tasks>
+        - Create templates for GitHub Actions
+        - PR workflow
+        - Main branch workflow
+        - Release workflow
+        - Cache configuration
+        - Generate workflows
+      </tasks>
+    </step>
+
+    <step number="2">
+      <title>Release Command</title>
+      <tasks>
+        - Implement version bumping
+        - Conventional Commits parsing
+        - Changelog generation
+        - Git tagging
+        - File updates
+      </tasks>
+    </step>
+
+    <step number="3">
+      <title>Deploy Command</title>
+      <tasks>
+        - Environment deployment logic
+        - Fastlane integration
+        - Store upload handling
+        - Rollback support
+      </tasks>
+    </step>
+
+    <step number="4">
+      <title>App Store Metadata Generator</title>
+      <tasks>
+        - Create templates for metadata
+        - iOS metadata structure
+        - Android metadata structure
+        - Release notes from changelog
+      </tasks>
+    </step>
+
+    <step number="5">
+      <title>Environment Config Generator</title>
+      <tasks>
+        - Flutter flavor generation
+        - Gradle build variants
+        - XCode schemes
+        - Environment variables
+      </tasks>
+    </step>
+
+    <step number="6">
+      <title>i18n Generator</title>
+      <tasks>
+        - Create translation structure
+        - Feature-sharded files
+        - shard_i18n configuration
+      </tasks>
+    </step>
+
+    <step number="7">
+      <title>i18n Command</title>
+      <tasks>
+        - String extraction
+        - Auto-translation integration
+        - Coverage validation
+      </tasks>
+    </step>
+
+    <step number="8">
+      <title>Add Command</title>
+      <tasks>
+        - Interactive prompts
+        - Schema modification
+        - Regeneration trigger
+      </tasks>
+    </step>
+
+    <step number="9">
+      <title>Integration Tests</title>
+      <tasks>
+        - Test CI/CD generation
+        - Test release workflow
+        - Test i18n commands
+      </tasks>
+    </step>
+  </implementation_steps>
+
+  <success_criteria>
+    <functionality>
+      - CI/CD pipelines run on GitHub Actions
+      - Releases bump versions correctly
+      - Changelog generates from commits
+      - Deployments reach target environments
+      - i18n workflow produces translations
+      - App store metadata is valid
+    </functionality>
+
+    <production_readiness>
+      - All environments configured
+      - Secrets handled securely
+      - Rollback capability verified
+      - Store submission ready
+    </production_readiness>
+  </success_criteria>
+</module_specification>

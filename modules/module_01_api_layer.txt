@@ -1,0 +1,215 @@
+<module_specification>
+  <module_name>API Layer</module_name>
+  <module_id>module_01_api_layer</module_id>
+  <depends_on>module_00_foundation</depends_on>
+  <inherit_from>app_spec_master.txt</inherit_from>
+
+  <overview>
+    Extend the Schnitzel CLI with full API generation capabilities. This includes
+    generating FastAPI routes from endpoint definitions, Dart API clients for
+    type-safe HTTP communication, database migrations with Alembic, and the
+    serve/validate/migrate commands.
+  </overview>
+
+  <core_features>
+    <fastapi_route_generator>
+      - Generate FastAPI route stubs from endpoints section
+      - Path parameter extraction ({id} → id: UUID)
+      - Query parameter handling with defaults
+      - Request body validation using generated Pydantic models
+      - Response serialization with proper status codes
+      - OpenAPI metadata (operation_id from name)
+      - Auth decorator integration (auth: required → Depends(get_current_user))
+      - Role checking (roles: [admin] → Depends(require_roles(["admin"])))
+      - Generate routes.py in backend/app/generated/
+    </fastapi_route_generator>
+
+    <sqlalchemy_orm_generator>
+      - Generate SQLAlchemy 2.0 ORM models from schema models
+      - Table definitions with proper column types
+      - Primary keys, foreign keys, indexes
+      - Relationship definitions (relationship())
+      - Generate orm.py in backend/app/generated/
+    </sqlalchemy_orm_generator>
+
+    <dart_api_client_generator>
+      - Generate Dio-based HTTP client
+      - Type-safe method signatures matching endpoints
+      - Path parameter interpolation
+      - Query parameter encoding
+      - Request body serialization
+      - Response deserialization to Freezed models
+      - Error handling with typed exceptions
+      - Auth token injection via interceptor
+      - Generate api_client.dart in packages/shared/lib/generated/
+    </dart_api_client_generator>
+
+    <database_migration_generator>
+      - Alembic integration for migrations
+      - Schema diff detection (compare current DB to schema)
+      - SQL generation for CREATE TABLE, ALTER TABLE
+      - Index creation
+      - Foreign key constraints
+      - Generate migrations in .schnitzel/migrations/
+    </database_migration_generator>
+
+    <serve_command>
+      - schnitzel serve [--backend-only] [--port 8000]
+      - Start Docker services (docker compose up -d)
+      - Run FastAPI with uvicorn (hot reload)
+      - Optionally start Flutter dev server
+      - Proxy configuration for API calls
+      - Display running services with Rich
+    </serve_command>
+
+    <validate_command>
+      - schnitzel validate [--strict] [--breaking]
+      - Run schema validation
+      - Check for breaking changes vs last snapshot
+      - Naming convention enforcement
+      - Security checks (auth on mutations)
+      - Output validation report
+    </validate_command>
+
+    <migrate_command>
+      - schnitzel migrate diff --name "description"
+      - schnitzel migrate up
+      - schnitzel migrate down
+      - schnitzel migrate status
+      - Integrate with Alembic
+      - Store migration history
+    </migrate_command>
+  </core_features>
+
+  <files_to_create>
+    <generators>
+      - schnitzel-cli/src/schnitzel/generators/python/routes.py
+      - schnitzel-cli/src/schnitzel/generators/python/orm.py
+      - schnitzel-cli/src/schnitzel/generators/dart/api_client.py
+      - schnitzel-cli/src/schnitzel/generators/infra/migrations.py
+    </generators>
+
+    <templates>
+      - schnitzel-cli/src/schnitzel/templates/python/routes.py.j2
+      - schnitzel-cli/src/schnitzel/templates/python/orm.py.j2
+      - schnitzel-cli/src/schnitzel/templates/dart/api_client.dart.j2
+      - schnitzel-cli/src/schnitzel/templates/infra/alembic_migration.py.j2
+    </templates>
+
+    <commands>
+      - schnitzel-cli/src/schnitzel/commands/serve.py
+      - schnitzel-cli/src/schnitzel/commands/validate.py
+      - schnitzel-cli/src/schnitzel/commands/migrate.py
+    </commands>
+
+    <tests>
+      - schnitzel-cli/tests/integration/test_api_generation.py
+      - schnitzel-cli/tests/integration/test_migrations.py
+    </tests>
+  </files_to_create>
+
+  <implementation_steps>
+    <step number="1">
+      <title>SQLAlchemy ORM Generator</title>
+      <tasks>
+        - Create Jinja2 template for ORM models
+        - Map schema types to SQLAlchemy types
+        - Generate primary keys and foreign keys
+        - Handle relationships
+        - Generate orm.py
+      </tasks>
+    </step>
+
+    <step number="2">
+      <title>FastAPI Route Generator</title>
+      <tasks>
+        - Create Jinja2 template for FastAPI routes
+        - Parse endpoint definitions
+        - Generate path operations (GET, POST, PUT, DELETE)
+        - Handle query/path parameters
+        - Add auth dependencies
+        - Generate routes.py
+      </tasks>
+    </step>
+
+    <step number="3">
+      <title>Dart API Client Generator</title>
+      <tasks>
+        - Create Jinja2 template for Dio client
+        - Generate method per endpoint
+        - Type-safe parameters and returns
+        - Error handling
+        - Auth interceptor setup
+        - Generate api_client.dart
+      </tasks>
+    </step>
+
+    <step number="4">
+      <title>Database Migration Generator</title>
+      <tasks>
+        - Set up Alembic configuration
+        - Implement schema diff logic
+        - Generate migration files
+        - Handle index and constraint changes
+      </tasks>
+    </step>
+
+    <step number="5">
+      <title>Serve Command</title>
+      <tasks>
+        - Implement schnitzel serve
+        - Docker Compose integration
+        - Uvicorn process management
+        - Optional Flutter dev server
+        - Rich status display
+      </tasks>
+    </step>
+
+    <step number="6">
+      <title>Validate Command</title>
+      <tasks>
+        - Implement schnitzel validate
+        - Schema snapshot comparison
+        - Breaking change detection
+        - Security rule checking
+        - Formatted output
+      </tasks>
+    </step>
+
+    <step number="7">
+      <title>Migrate Command</title>
+      <tasks>
+        - Implement schnitzel migrate subcommands
+        - Alembic wrapper
+        - Migration status tracking
+        - Rollback support
+      </tasks>
+    </step>
+
+    <step number="8">
+      <title>Integration Tests</title>
+      <tasks>
+        - Test FastAPI route generation
+        - Test Dart API client generation
+        - Test migration generation
+        - Verify API contracts match
+      </tasks>
+    </step>
+  </implementation_steps>
+
+  <success_criteria>
+    <functionality>
+      - Generated FastAPI routes respond to HTTP requests
+      - Generated Dart API client makes successful API calls
+      - Database migrations create correct schema
+      - schnitzel serve starts complete dev environment
+      - schnitzel validate detects breaking changes
+    </functionality>
+
+    <integration>
+      - API contracts match between Python routes and Dart client
+      - Migrations apply cleanly to fresh database
+      - Hot reload works in development
+    </integration>
+  </success_criteria>
+</module_specification>

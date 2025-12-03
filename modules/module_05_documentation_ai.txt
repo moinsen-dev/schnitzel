@@ -1,0 +1,252 @@
+<module_specification>
+  <module_name>Documentation & AI</module_name>
+  <module_id>module_05_documentation_ai</module_id>
+  <depends_on>module_04_testing_quality</depends_on>
+  <inherit_from>app_spec_master.txt</inherit_from>
+
+  <overview>
+    Add comprehensive documentation generation (OpenAPI, Swagger UI, ReDoc) and
+    AI-first tooling (CLAUDE.md generator, MCP server, AI context files, and
+    task-specific prompts).
+  </overview>
+
+  <core_features>
+    <openapi_generator>
+      - Generate OpenAPI 3.1 specification from schema
+      - Complete endpoint documentation
+      - Request/response schema definitions
+      - Authentication documentation
+      - Server configuration from environments
+      - Export to docs/openapi.yaml
+    </openapi_generator>
+
+    <documentation_ui>
+      - Configure Swagger UI at /docs
+      - Configure ReDoc at /redoc
+      - Custom branding from schema meta
+      - Authentication UI integration
+    </documentation_ui>
+
+    <postman_collection_generator>
+      - Generate Postman collection from endpoints
+      - Environment variables for base URL
+      - Auth token handling
+      - Example requests
+      - Export to docs/postman.json
+    </postman_collection_generator>
+
+    <markdown_docs_generator>
+      - Generate static API.md documentation
+      - Model documentation with fields
+      - Endpoint documentation with examples
+      - Event documentation
+      - Export to docs/API.md
+    </markdown_docs_generator>
+
+    <docs_command>
+      - schnitzel docs [--format openapi|postman|markdown|all]
+      - schnitzel docs --serve (local doc server)
+      - Generate specified format(s)
+      - Output to docs/ directory
+    </docs_command>
+
+    <claude_md_generator>
+      - Generate CLAUDE.md project context file
+      - Project overview from meta
+      - Model summaries with key fields
+      - Endpoint list organized by feature
+      - Event and stream documentation
+      - Development commands reference
+      - Architecture overview
+      - Export to project root CLAUDE.md
+    </claude_md_generator>
+
+    <mcp_server_generator>
+      - Generate MCP (Model Context Protocol) server
+      - Schema query tools (list models, get model details)
+      - Code generation tools (generate model, generate endpoint)
+      - Validation tools (validate schema)
+      - Documentation tools (get endpoint docs)
+      - Export to .schnitzel/mcp-server/
+    </mcp_server_generator>
+
+    <ai_context_generator>
+      - Generate structured ai-context.json
+      - Machine-readable schema summary
+      - Feature dependency graph
+      - API endpoint map
+      - Export to .schnitzel/ai-context.json
+    </ai_context_generator>
+
+    <prompt_generator>
+      - Generate task-specific AI prompts
+      - add-feature.md - Adding new features
+      - fix-bug.md - Bug investigation
+      - add-endpoint.md - Adding endpoints
+      - add-model.md - Adding models
+      - Export to .schnitzel/prompts/
+    </prompt_generator>
+
+    <ai_command>
+      - schnitzel ai context - Regenerate CLAUDE.md and ai-context.json
+      - schnitzel ai mcp - Generate/update MCP server
+      - schnitzel ai prompt - Generate task prompts
+    </ai_command>
+  </core_features>
+
+  <files_to_create>
+    <generators>
+      - schnitzel-cli/src/schnitzel/generators/docs/openapi.py
+      - schnitzel-cli/src/schnitzel/generators/docs/postman.py
+      - schnitzel-cli/src/schnitzel/generators/docs/markdown.py
+      - schnitzel-cli/src/schnitzel/generators/ai/claude_md.py
+      - schnitzel-cli/src/schnitzel/generators/ai/mcp_server.py
+      - schnitzel-cli/src/schnitzel/generators/ai/context.py
+      - schnitzel-cli/src/schnitzel/generators/ai/prompts.py
+    </generators>
+
+    <templates>
+      - schnitzel-cli/src/schnitzel/templates/docs/openapi.yaml.j2
+      - schnitzel-cli/src/schnitzel/templates/docs/postman.json.j2
+      - schnitzel-cli/src/schnitzel/templates/docs/API.md.j2
+      - schnitzel-cli/src/schnitzel/templates/ai/CLAUDE.md.j2
+      - schnitzel-cli/src/schnitzel/templates/ai/mcp_server.py.j2
+      - schnitzel-cli/src/schnitzel/templates/ai/mcp_tools.py.j2
+      - schnitzel-cli/src/schnitzel/templates/ai/ai-context.json.j2
+      - schnitzel-cli/src/schnitzel/templates/ai/prompts/add-feature.md.j2
+      - schnitzel-cli/src/schnitzel/templates/ai/prompts/fix-bug.md.j2
+    </templates>
+
+    <commands>
+      - schnitzel-cli/src/schnitzel/commands/docs.py
+      - schnitzel-cli/src/schnitzel/commands/ai.py
+    </commands>
+
+    <tests>
+      - schnitzel-cli/tests/integration/test_docs_generation.py
+      - schnitzel-cli/tests/integration/test_ai_generation.py
+    </tests>
+  </files_to_create>
+
+  <implementation_steps>
+    <step number="1">
+      <title>OpenAPI Generator</title>
+      <tasks>
+        - Create template for OpenAPI 3.1
+        - Endpoint documentation
+        - Schema definitions
+        - Auth configuration
+        - Generate openapi.yaml
+      </tasks>
+    </step>
+
+    <step number="2">
+      <title>Postman Collection Generator</title>
+      <tasks>
+        - Create template for Postman
+        - Request examples
+        - Environment variables
+        - Generate postman.json
+      </tasks>
+    </step>
+
+    <step number="3">
+      <title>Markdown Docs Generator</title>
+      <tasks>
+        - Create template for API.md
+        - Model documentation
+        - Endpoint documentation
+        - Generate API.md
+      </tasks>
+    </step>
+
+    <step number="4">
+      <title>Docs Command</title>
+      <tasks>
+        - Implement schnitzel docs
+        - Format selection
+        - Local serve mode
+        - Output handling
+      </tasks>
+    </step>
+
+    <step number="5">
+      <title>CLAUDE.md Generator</title>
+      <tasks>
+        - Create template for CLAUDE.md
+        - Project overview section
+        - Model summaries
+        - Endpoint reference
+        - Commands reference
+        - Generate CLAUDE.md
+      </tasks>
+    </step>
+
+    <step number="6">
+      <title>MCP Server Generator</title>
+      <tasks>
+        - Create template for MCP server
+        - Schema query tools
+        - Generation tools
+        - Validation tools
+        - Generate mcp-server/
+      </tasks>
+    </step>
+
+    <step number="7">
+      <title>AI Context Generator</title>
+      <tasks>
+        - Create template for ai-context.json
+        - Structured schema data
+        - Dependency graph
+        - Generate ai-context.json
+      </tasks>
+    </step>
+
+    <step number="8">
+      <title>Prompt Generator</title>
+      <tasks>
+        - Create prompt templates
+        - Task-specific context
+        - Schema references
+        - Generate prompts/
+      </tasks>
+    </step>
+
+    <step number="9">
+      <title>AI Command</title>
+      <tasks>
+        - Implement schnitzel ai subcommands
+        - context regeneration
+        - mcp server update
+        - prompt generation
+      </tasks>
+    </step>
+
+    <step number="10">
+      <title>Integration Tests</title>
+      <tasks>
+        - Test OpenAPI validity
+        - Test CLAUDE.md generation
+        - Test MCP server
+      </tasks>
+    </step>
+  </implementation_steps>
+
+  <success_criteria>
+    <functionality>
+      - OpenAPI spec is valid and complete
+      - Swagger UI and ReDoc render correctly
+      - CLAUDE.md provides useful AI context
+      - MCP server responds to tool calls
+      - Prompts contain relevant context
+    </functionality>
+
+    <documentation_quality>
+      - All endpoints documented
+      - All models documented
+      - Examples provided
+      - Authentication documented
+    </documentation_quality>
+  </success_criteria>
+</module_specification>

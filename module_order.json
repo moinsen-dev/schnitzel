@@ -1,0 +1,87 @@
+{
+  "project_name": "Schnitzel Framework",
+  "version": "1.0.0",
+  "total_modules": 7,
+  "execution_strategy": "sequential",
+  "master_spec": "app_spec_master.txt",
+  "modules": [
+    {
+      "id": "module_00_foundation",
+      "name": "Foundation (MVP)",
+      "spec_file": "modules/module_00_foundation.txt",
+      "depends_on": [],
+      "estimated_features": 12,
+      "priority": "P0",
+      "description": "Schema parsing, validation, Pydantic/Freezed model generation, init/generate commands, Docker Compose"
+    },
+    {
+      "id": "module_01_api_layer",
+      "name": "API Layer",
+      "spec_file": "modules/module_01_api_layer.txt",
+      "depends_on": ["module_00_foundation"],
+      "estimated_features": 10,
+      "priority": "P1",
+      "description": "FastAPI routes, Dart API client, SQLAlchemy ORM, migrations, serve/validate/migrate commands"
+    },
+    {
+      "id": "module_02_realtime_events",
+      "name": "Real-time & Events",
+      "spec_file": "modules/module_02_realtime_events.txt",
+      "depends_on": ["module_01_api_layer"],
+      "estimated_features": 8,
+      "priority": "P2",
+      "description": "Event publishing, SSE streams, WebSocket handlers, Temporal jobs, BLoC state generation"
+    },
+    {
+      "id": "module_03_auth_security",
+      "name": "Auth & Security",
+      "spec_file": "modules/module_03_auth_security.txt",
+      "depends_on": ["module_02_realtime_events"],
+      "estimated_features": 8,
+      "priority": "P2",
+      "description": "JWT auth, OAuth providers, RBAC permissions, session management, MFA support"
+    },
+    {
+      "id": "module_04_testing_quality",
+      "name": "Testing & Quality",
+      "spec_file": "modules/module_04_testing_quality.txt",
+      "depends_on": ["module_03_auth_security"],
+      "estimated_features": 10,
+      "priority": "P2",
+      "description": "Factory generators, mock generators, contract tests, test/seed/lint commands"
+    },
+    {
+      "id": "module_05_documentation_ai",
+      "name": "Documentation & AI",
+      "spec_file": "modules/module_05_documentation_ai.txt",
+      "depends_on": ["module_04_testing_quality"],
+      "estimated_features": 12,
+      "priority": "P2",
+      "description": "OpenAPI, Swagger UI, CLAUDE.md, MCP server, AI context, docs/ai commands"
+    },
+    {
+      "id": "module_06_devops_release",
+      "name": "DevOps & Release",
+      "spec_file": "modules/module_06_devops_release.txt",
+      "depends_on": ["module_05_documentation_ai"],
+      "estimated_features": 12,
+      "priority": "P3",
+      "description": "CI/CD pipelines, release management, deployment, app store metadata, i18n"
+    }
+  ],
+  "technology_stack": {
+    "cli": "Python 3.11+ with Typer, Rich, Pydantic, Jinja2",
+    "backend": "FastAPI, SQLAlchemy 2.0, Alembic, Temporal",
+    "frontend": "Flutter with BLoC, Freezed, Dio, Drift",
+    "infrastructure": "PostgreSQL 16, Redis 7, Qdrant, Docker Compose"
+  },
+  "testing_approach": "Integration tests first, unit tests second",
+  "example_project": "examples/foodie-ai",
+  "created_at": "2025-12-03",
+  "notes": [
+    "Each module builds upon the previous - must be completed sequentially",
+    "Module 00 (Foundation) is the MVP - generates working Pydantic and Freezed models",
+    "Integration tests validate against the FoodieAI example schema",
+    "All generated code must pass pyright (Python) and dart analyze (Dart)"
+  ]
+}

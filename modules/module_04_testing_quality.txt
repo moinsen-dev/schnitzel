@@ -1,0 +1,210 @@
+<module_specification>
+  <module_name>Testing & Quality</module_name>
+  <module_id>module_04_testing_quality</module_id>
+  <depends_on>module_03_auth_security</depends_on>
+  <inherit_from>app_spec_master.txt</inherit_from>
+
+  <overview>
+    Add test infrastructure and quality tooling: factory generators for test data,
+    mock generators, contract testing, and CLI commands for testing, seeding, and
+    schema linting.
+  </overview>
+
+  <core_features>
+    <python_factory_generator>
+      - Generate factory-boy factories from models
+      - Faker integration for realistic data
+      - Relationship factories (nested creation)
+      - Batch generation support
+      - Custom field overrides
+      - Generate factories.py in backend/app/generated/
+    </python_factory_generator>
+
+    <dart_factory_generator>
+      - Generate test factory functions for Freezed models
+      - Faker package integration
+      - Builder pattern for customization
+      - Relationship factories
+      - Generate factories.dart in packages/shared/lib/generated/
+    </dart_factory_generator>
+
+    <mock_generator>
+      - Generate repository mocks (Python: unittest.mock)
+      - Generate service mocks
+      - Generate API client mocks (Dart: mockito)
+      - Configurable responses
+      - Generate mocks.py and mocks.dart
+    </mock_generator>
+
+    <contract_test_generator>
+      - Generate API contract tests
+      - Request/response schema validation
+      - Breaking change detection
+      - Pact-style contracts
+      - Generate contract_tests.py
+    </contract_test_generator>
+
+    <test_command>
+      - schnitzel test [--flutter] [--backend] [--contracts] [--coverage]
+      - Run pytest for Python tests
+      - Run flutter test for Dart tests
+      - Run contract tests
+      - Coverage reporting
+      - Watch mode (--watch)
+    </test_command>
+
+    <seed_command>
+      - schnitzel seed [--env dev|test]
+      - Use factories to generate test data
+      - Respect relationships (create dependencies first)
+      - Clear existing data option
+      - Configurable seed scenarios
+    </seed_command>
+
+    <lint_command>
+      - schnitzel lint [--fix] [--format json] [--rules strict]
+      - Naming convention checks
+      - Security rule enforcement
+      - Best practices validation
+      - Auto-fix capability for safe issues
+      - SARIF output for CI integration
+    </lint_command>
+  </core_features>
+
+  <files_to_create>
+    <generators>
+      - schnitzel-cli/src/schnitzel/generators/python/factories.py
+      - schnitzel-cli/src/schnitzel/generators/dart/factories.py
+      - schnitzel-cli/src/schnitzel/generators/python/mocks.py
+      - schnitzel-cli/src/schnitzel/generators/dart/mocks.py
+      - schnitzel-cli/src/schnitzel/generators/python/contracts.py
+    </generators>
+
+    <templates>
+      - schnitzel-cli/src/schnitzel/templates/python/factories.py.j2
+      - schnitzel-cli/src/schnitzel/templates/dart/factories.dart.j2
+      - schnitzel-cli/src/schnitzel/templates/python/mocks.py.j2
+      - schnitzel-cli/src/schnitzel/templates/dart/mocks.dart.j2
+      - schnitzel-cli/src/schnitzel/templates/python/contract_tests.py.j2
+    </templates>
+
+    <commands>
+      - schnitzel-cli/src/schnitzel/commands/test.py
+      - schnitzel-cli/src/schnitzel/commands/seed.py
+      - schnitzel-cli/src/schnitzel/commands/lint.py
+    </commands>
+
+    <linting>
+      - schnitzel-cli/src/schnitzel/linting/__init__.py
+      - schnitzel-cli/src/schnitzel/linting/rules.py
+      - schnitzel-cli/src/schnitzel/linting/naming.py
+      - schnitzel-cli/src/schnitzel/linting/security.py
+    </linting>
+
+    <tests>
+      - schnitzel-cli/tests/integration/test_factories_generation.py
+      - schnitzel-cli/tests/integration/test_linting.py
+    </tests>
+  </files_to_create>
+
+  <implementation_steps>
+    <step number="1">
+      <title>Python Factory Generator</title>
+      <tasks>
+        - Create template for factory-boy factories
+        - Faker field mapping
+        - Relationship handling
+        - Batch generation
+        - Generate factories.py
+      </tasks>
+    </step>
+
+    <step number="2">
+      <title>Dart Factory Generator</title>
+      <tasks>
+        - Create template for Dart factories
+        - Faker integration
+        - Builder pattern
+        - Generate factories.dart
+      </tasks>
+    </step>
+
+    <step number="3">
+      <title>Mock Generator</title>
+      <tasks>
+        - Create templates for mocks
+        - Repository mock patterns
+        - Configurable responses
+        - Generate mocks for both platforms
+      </tasks>
+    </step>
+
+    <step number="4">
+      <title>Contract Test Generator</title>
+      <tasks>
+        - Create template for contract tests
+        - Schema validation per endpoint
+        - Breaking change detection
+        - Generate contract_tests.py
+      </tasks>
+    </step>
+
+    <step number="5">
+      <title>Test Command</title>
+      <tasks>
+        - Implement schnitzel test
+        - Pytest integration
+        - Flutter test integration
+        - Coverage reporting
+        - Watch mode
+      </tasks>
+    </step>
+
+    <step number="6">
+      <title>Seed Command</title>
+      <tasks>
+        - Implement schnitzel seed
+        - Factory orchestration
+        - Relationship resolution
+        - Environment selection
+      </tasks>
+    </step>
+
+    <step number="7">
+      <title>Lint Command</title>
+      <tasks>
+        - Implement schnitzel lint
+        - Create linting rules engine
+        - Naming convention rules
+        - Security rules
+        - Auto-fix logic
+        - Output formats
+      </tasks>
+    </step>
+
+    <step number="8">
+      <title>Integration Tests</title>
+      <tasks>
+        - Test factory generation
+        - Test linting detects issues
+        - Test seed command
+      </tasks>
+    </step>
+  </implementation_steps>
+
+  <success_criteria>
+    <functionality>
+      - Factories generate valid test data
+      - Contract tests validate API compatibility
+      - schnitzel test runs full suite
+      - schnitzel seed populates database
+      - schnitzel lint catches schema issues
+    </functionality>
+
+    <code_quality>
+      - All linting rules have tests
+      - Factory output is deterministic with seeds
+      - Mock generators produce usable mocks
+    </code_quality>
+  </success_criteria>
+</module_specification>

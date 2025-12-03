@@ -1,0 +1,124 @@
+<master_specification>
+  <project_name>Schnitzel Framework</project_name>
+  <version>1.0.0</version>
+  <organization>dev.moinsen.schnitzel</organization>
+
+  <overview>
+    Schnitzel is a schema-driven full-stack code generator that eliminates friction between
+    Flutter frontends and Python (FastAPI) backends. It provides a unified YAML schema language
+    that generates type-safe code for both platforms, ensuring consistency across the entire stack.
+
+    The framework consists of 84+ components including a CLI tool with 14 commands, 18 code
+    generators, runtime libraries for both Python and Dart, and AI-first tooling.
+  </overview>
+
+  <technology_stack>
+    <cli>
+      <language>Python 3.11+</language>
+      <framework>Typer</framework>
+      <terminal_ui>Rich</terminal_ui>
+      <yaml_parsing>PyYAML</yaml_parsing>
+      <validation>Pydantic v2</validation>
+      <templating>Jinja2</templating>
+      <package_manager>UV</package_manager>
+    </cli>
+
+    <backend_runtime>
+      <framework>FastAPI</framework>
+      <server>Uvicorn</server>
+      <orm>SQLAlchemy 2.0</orm>
+      <migrations>Alembic</migrations>
+      <validation>Pydantic v2</validation>
+      <cache>Redis (redis-py)</cache>
+      <jobs>Temporal</jobs>
+      <vectors>Qdrant (qdrant-client)</vectors>
+      <auth>python-jose, passlib</auth>
+    </backend_runtime>
+
+    <frontend_runtime>
+      <framework>Flutter</framework>
+      <state_management>flutter_bloc</state_management>
+      <models>freezed + json_serializable</models>
+      <http>Dio</http>
+      <local_db>Drift</local_db>
+      <routing>go_router</routing>
+      <i18n>shard_i18n</i18n>
+    </frontend_runtime>
+
+    <infrastructure>
+      <database>PostgreSQL 16 with pgvector</database>
+      <cache>Redis 7</cache>
+      <vector_db>Qdrant</vector_db>
+      <job_scheduler>Temporal</job_scheduler>
+      <containers>Docker Compose</containers>
+    </infrastructure>
+  </technology_stack>
+
+  <prerequisites>
+    <environment_setup>
+      - Python 3.11+ with UV package manager
+      - Flutter SDK 3.x
+      - Docker and Docker Compose
+      - Node.js 18+ (for tooling)
+    </environment_setup>
+    <development_tools>
+      - pyright or mypy for Python type checking
+      - dart analyze for Dart static analysis
+      - pytest for Python tests
+      - flutter test for Dart tests
+    </development_tools>
+  </prerequisites>
+
+  <project_structure>
+    <cli_tool>
+      schnitzel-cli/
+      ├── pyproject.toml
+      ├── src/schnitzel/
+      │   ├── __init__.py
+      │   ├── cli.py
+      │   ├── schema/
+      │   │   ├── parser.py
+      │   │   ├── validator.py
+      │   │   └── models.py
+      │   ├── generators/
+      │   │   ├── python/
+      │   │   ├── dart/
+      │   │   └── infra/
+      │   ├── templates/
+      │   │   ├── python/
+      │   │   ├── dart/
+      │   │   └── infra/
+      │   └── commands/
+      └── tests/
+    </cli_tool>
+  </project_structure>
+
+  <naming_conventions>
+    <models>PascalCase (User, OrderItem)</models>
+    <fields>snake_case (created_at, user_id)</fields>
+    <endpoints>kebab-case (/user-profiles)</endpoints>
+    <events>dot.notation (order.placed)</events>
+    <blocs>PascalCase + Bloc (AuthBloc, OrdersBloc)</blocs>
+  </naming_conventions>
+
+  <zero_tolerance_policy>
+    - No errors: All generated code must compile
+    - No warnings: Strict linting compliance
+    - No TODOs: Complete implementations only
+    - No mock data: Real structures and types
+  </zero_tolerance_policy>
+
+  <testing_approach>
+    - Integration tests first (Priority 1)
+    - Unit tests second (Priority 2)
+    - Integration tests validate end-to-end generation pipeline
+    - Test against FoodieAI example schema
+  </testing_approach>
+
+  <implementation_decisions>
+    <cli_language>Python (same as backend for code sharing)</cli_language>
+    <template_engine>Jinja2 for ALL code generation</template_engine>
+    <phase_1_scope>Python + Dart together from the start</phase_1_scope>
+    <testing_approach>Integration tests first, then unit tests</testing_approach>
+  </implementation_decisions>
+</master_specification>

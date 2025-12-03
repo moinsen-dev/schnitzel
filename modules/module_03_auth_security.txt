@@ -1,0 +1,198 @@
+<module_specification>
+  <module_name>Auth & Security</module_name>
+  <module_id>module_03_auth_security</module_id>
+  <depends_on>module_02_realtime_events</depends_on>
+  <inherit_from>app_spec_master.txt</inherit_from>
+
+  <overview>
+    Implement complete authentication and authorization code generation including
+    JWT token management, OAuth provider integration (Google, Apple), role-based
+    access control (RBAC), and session management with Redis.
+  </overview>
+
+  <core_features>
+    <jwt_auth_generator>
+      - Generate JWT token utilities from auth section
+      - Access token generation with configurable expiry
+      - Refresh token generation and rotation
+      - Token validation middleware
+      - Claims management (user_id, roles, custom claims)
+      - Configurable algorithms (HS256, RS256)
+      - Generate auth/jwt.py in backend/app/generated/
+    </jwt_auth_generator>
+
+    <oauth_integration_generator>
+      - Generate OAuth flows from auth.providers
+      - Google OAuth 2.0 flow (email_password, google)
+      - Apple Sign In flow (apple)
+      - Magic link email authentication (magic_link)
+      - Callback handlers
+      - Token exchange logic
+      - User creation/linking
+      - Generate auth/oauth.py in backend/app/generated/
+    </oauth_integration_generator>
+
+    <rbac_permission_generator>
+      - Generate role definitions from roles section
+      - Permission checking utilities
+      - Wildcard permission support (*)
+      - Scoped permissions (read:own, update:assigned)
+      - FastAPI dependency for role checking
+      - Field-level access control
+      - Generate auth/rbac.py in backend/app/generated/
+    </rbac_permission_generator>
+
+    <session_management_generator>
+      - Redis-based session storage
+      - Session creation and validation
+      - Multi-device support (session per device)
+      - Session invalidation (logout, logout all)
+      - Remember me functionality
+      - Session expiry based on auth.session config
+      - Generate auth/sessions.py in backend/app/generated/
+    </session_management_generator>
+
+    <mfa_generator>
+      - MFA support based on auth.mfa config
+      - TOTP (Time-based One-Time Password) generation
+      - Backup codes
+      - MFA enrollment flow
+      - MFA verification middleware
+      - Generate auth/mfa.py in backend/app/generated/
+    </mfa_generator>
+
+    <dart_auth_client_generator>
+      - Token storage (secure storage)
+      - Auto token refresh
+      - Auth state management (AuthBloc)
+      - OAuth flow handlers (url_launcher)
+      - Logout and session management
+      - Generate auth.dart in packages/shared/lib/generated/
+    </dart_auth_client_generator>
+  </core_features>
+
+  <files_to_create>
+    <generators>
+      - schnitzel-cli/src/schnitzel/generators/python/auth/jwt.py
+      - schnitzel-cli/src/schnitzel/generators/python/auth/oauth.py
+      - schnitzel-cli/src/schnitzel/generators/python/auth/rbac.py
+      - schnitzel-cli/src/schnitzel/generators/python/auth/sessions.py
+      - schnitzel-cli/src/schnitzel/generators/python/auth/mfa.py
+      - schnitzel-cli/src/schnitzel/generators/dart/auth.py
+    </generators>
+
+    <templates>
+      - schnitzel-cli/src/schnitzel/templates/python/auth/jwt.py.j2
+      - schnitzel-cli/src/schnitzel/templates/python/auth/oauth.py.j2
+      - schnitzel-cli/src/schnitzel/templates/python/auth/rbac.py.j2
+      - schnitzel-cli/src/schnitzel/templates/python/auth/sessions.py.j2
+      - schnitzel-cli/src/schnitzel/templates/python/auth/mfa.py.j2
+      - schnitzel-cli/src/schnitzel/templates/dart/auth.dart.j2
+      - schnitzel-cli/src/schnitzel/templates/dart/auth_bloc.dart.j2
+    </templates>
+
+    <tests>
+      - schnitzel-cli/tests/integration/test_auth_generation.py
+    </tests>
+  </files_to_create>
+
+  <implementation_steps>
+    <step number="1">
+      <title>JWT Auth Generator</title>
+      <tasks>
+        - Create template for JWT utilities
+        - Token generation with python-jose
+        - Token validation
+        - Claims management
+        - FastAPI dependency
+        - Generate jwt.py
+      </tasks>
+    </step>
+
+    <step number="2">
+      <title>OAuth Integration Generator</title>
+      <tasks>
+        - Create templates for OAuth flows
+        - Google OAuth implementation
+        - Apple Sign In implementation
+        - Magic link email flow
+        - Callback handlers
+        - Generate oauth.py
+      </tasks>
+    </step>
+
+    <step number="3">
+      <title>RBAC Permission Generator</title>
+      <tasks>
+        - Create template for RBAC
+        - Role definitions from schema
+        - Permission checking logic
+        - Wildcard and scope support
+        - FastAPI dependency
+        - Generate rbac.py
+      </tasks>
+    </step>
+
+    <step number="4">
+      <title>Session Management Generator</title>
+      <tasks>
+        - Create template for sessions
+        - Redis session store
+        - Session CRUD operations
+        - Expiry handling
+        - Multi-device support
+        - Generate sessions.py
+      </tasks>
+    </step>
+
+    <step number="5">
+      <title>MFA Generator</title>
+      <tasks>
+        - Create template for MFA
+        - TOTP generation/validation
+        - Backup codes
+        - Enrollment flow
+        - Generate mfa.py
+      </tasks>
+    </step>
+
+    <step number="6">
+      <title>Dart Auth Client Generator</title>
+      <tasks>
+        - Create template for Dart auth
+        - Secure token storage
+        - Auth interceptor for Dio
+        - AuthBloc for state
+        - OAuth flow handlers
+        - Generate auth.dart
+      </tasks>
+    </step>
+
+    <step number="7">
+      <title>Integration Tests</title>
+      <tasks>
+        - Test JWT generation/validation
+        - Test RBAC permission checking
+        - Test session management
+        - Test Dart auth client compiles
+      </tasks>
+    </step>
+  </implementation_steps>
+
+  <success_criteria>
+    <functionality>
+      - JWT auth flow works end-to-end
+      - OAuth providers authenticate users
+      - RBAC restricts access correctly
+      - Sessions persist across requests
+      - MFA adds second factor security
+    </functionality>
+
+    <security>
+      - Tokens use secure algorithms
+      - Passwords never in responses
+      - Session IDs are random and secure
+      - MFA uses time-limited codes
+    </security>
+  </success_criteria>
+</module_specification>
