@@ -1,0 +1,80 @@
+# =============================================================================
+# FoodieAI - Chat Feature
+# =============================================================================
+# AI-powered ordering assistant with natural language conversations.
+# =============================================================================
+
+feature:
+  name: "AI Chat"
+  version: "1.0.0"
+  description: "AI-powered ordering assistant with natural language conversations"
+  docs: docs/features/chat.md
+
+models:
+  Conversation:
+    description: "AI chat conversation for ordering assistance"
+    fields:
+      id: { type: uuid, primary: true }
+      title: { type: string, max: 100, optional: true }
+      context: { type: json }
+      created_at: { type: datetime, auto: create }
+      updated_at: { type: datetime, auto: update }
+    relations:
+      user: { type: belongsTo, model: User }
+      messages: { type: hasMany, model: ChatMessage }
+
+  ChatMessage:
+    description: "A message in an AI conversation"
+    fields:
+      id: { type: uuid, primary: true }
+      role: { type: enum, values: [user, assistant, system] }
+      content: { type: string }
+      tool_calls: { type: json, optional: true }
+      created_at: { type: datetime, auto: create }
+    relations:
+      conversation: { type: belongsTo, model: Conversation }
+
+# =============================================================================
+# ENDPOINTS
+# =============================================================================
+
+endpoints:
+  /chat/conversations:
+    POST:
+      name: startConversation
+      description: "Start a new AI ordering conversation"
+      auth: required
+      body:
+        restaurant_id: { type: uuid, optional: true }
+      response:
+        201: { type: Conversation }
+
+  /chat/conversations/{id}/messages:
+    params:
+      id: { type: uuid }
+    POST:
+      name: sendMessage
+      description: "Send a message (response via SSE stream)"
+      auth: required
+      body:
+        content: { type: string }
+      response:
+        202: { type: MessageAccepted }
+
+# =============================================================================
+# STREAMS
+# =============================================================================
+
+streams:
+  /chat/{conversation_id}/stream:
+    name: chatStream
+    description: "Stream AI assistant responses"
+    type: sse
+    auth: required
+    params:
+      conversation_id: { type: uuid }
+    chunks:
+      delta: { type: string }
+      tool_call: { type: json, optional: true }
+      done: { type: bool }
+      message_id: { type: uuid, optional: true }

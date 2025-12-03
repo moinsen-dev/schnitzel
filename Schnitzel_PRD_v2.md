@@ -16,6 +16,8 @@ Schnitzel is a meta-framework that eliminates the friction between Flutter front
 
 **The Name:** "Schnitzel" is a playful German wordplay on "Schnittstelle" (interface) — because at its core, this framework is all about interfaces: between frontend and backend, between developers and AI, between schema and code.
 
+**A Moinsen Development Project** — Led by Ulrich Diedrichsen.
+
 ---
 
 ## 2. Problem Statement
@@ -42,7 +44,13 @@ Schnitzel is a meta-framework that eliminates the friction between Flutter front
 
 **Schema as Single Source of Truth:** One YAML file defines models, endpoints, events, and streams. Everything else is generated.
 
-**Always Fresh:** No pre-baked templates. Init scripts run `flutter create`, `poetry init`, etc. at runtime, ensuring latest versions.
+**Always Fresh:** No pre-baked templates. Init scripts run `flutter create`, `uv init`, etc. at runtime, ensuring latest versions. Schnitzel never ships hardcoded boilerplate — it delegates to the actual tools.
+
+**Zero-Tolerance Quality Policy:** Generated code must be production-ready:
+- **No errors** — all generated code compiles and runs cleanly
+- **No warnings** — strict linting compliance out of the box
+- **No TODOs** — complete implementations, never placeholders
+- **No mock data** — real structures, real types, real contracts
 
 **AI-Native:** Every component is designed for AI comprehension. Auto-generated CLAUDE.md, MCP servers, and context files.
 
@@ -324,6 +332,26 @@ endpoints:
 
 For large projects, Schnitzel supports splitting the schema across multiple files. This enables teams to work independently on different features while maintaining a single source of truth.
 
+#### Directory Structure
+
+```
+myapp/
+├── schema.schnitzel.yaml           # Root schema (global config + imports)
+└── features/
+    ├── auth/
+    │   └── schema.yaml             # Auth models, endpoints, events
+    ├── orders/
+    │   └── schema.yaml             # Order models, endpoints, streams
+    ├── chat/
+    │   └── schema.yaml             # AI chat models, streams
+    └── reviews/
+        └── schema.yaml             # Review models, endpoints
+```
+
+#### Root Schema (Global Configuration)
+
+The root `schema.schnitzel.yaml` contains global configuration that applies to the entire project:
+
 ```yaml
 # schema.schnitzel.yaml (root)
 schnitzel: "1.0"
@@ -331,47 +359,324 @@ schnitzel: "1.0"
 meta:
   name: "MyApp"
   org: "com.example"
+  description: "My application"
 
+# Import feature schemas
 imports:
   - features/auth/schema.yaml
-  - features/billing/schema.yaml
-  - features/content/schema.yaml
-  - features/notifications/schema.yaml
+  - features/orders/schema.yaml
+  - features/chat/schema.yaml
+  - features/reviews/schema.yaml
+
+# Global configuration (stays in root)
+auth:
+  providers: [email_password, google, apple]
+  session:
+    type: jwt
+    access_expiry: 900
+
+roles:
+  admin:
+    permissions: ["*"]
+  customer:
+    permissions: [orders:*, reviews:create]
+
+services:
+  database: { type: postgres, version: "16" }
+  cache: { type: redis, version: "7" }
+  vectors: { type: qdrant }
+  jobs: { type: temporal }
+
+environments:
+  dev:
+    api_url: "http://localhost:${PORT_API}"
+    debug: true
+  production:
+    api_url: "https://api.example.com"
+    debug: false
+
+# Compose features into app
+features:
+  auth:
+    flutter_package: true
+    exports: [User]
+  orders:
+    flutter_package: true
+    depends_on: [auth]
+  chat:
+    flutter_package: true
+    depends_on: [auth]
+  reviews:
+    flutter_package: true
+    depends_on: [auth, orders]
+
+app:
+  shell: material
+  features: [auth, orders, chat, reviews]
 ```
 
-Each imported file follows the same schema structure but defines only its own domain slice.
+#### Feature Schema (Domain Slice)
+
+Each feature schema defines only its own models, endpoints, streams, events, and jobs:
+
+```yaml
+# features/orders/schema.yaml
+models:
+  Order:
+    fields:
+      id: { type: uuid, primary: true }
+      status: { type: enum, values: [pending, confirmed, delivered] }
+      total: { type: float }
+      created_at: { type: datetime, auto: create }
+    relations:
+      user: { type: belongsTo, model: User }  # References auth.User
+      items: { type: hasMany, model: OrderItem }
+
+  OrderItem:
+    fields:
+      id: { type: uuid, primary: true }
+      quantity: { type: int }
+      price: { type: float }
+    relations:
+      order: { type: belongsTo, model: Order }
+
+endpoints:
+  /orders:
+    GET:
+      name: listOrders
+      auth: required
+      response: { 200: PaginatedResponse<Order> }
+    POST:
+      name: createOrder
+      auth: required
+      body: CreateOrderRequest
+      response: { 201: Order }
+
+streams:
+  /orders/{id}/track:
+    name: trackOrder
+    type: sse
+    auth: required
+    chunks:
+      status: { type: string }
+      eta_minutes: { type: int }
+
+events:
+  order.placed:
+    payload: { order_id: uuid, total: float }
+    channels: [websocket, push]
+
+  order.status_changed:
+    payload: { order_id: uuid, old_status: string, new_status: string }
+    channels: [websocket, push]
+
+jobs:
+  cleanup_abandoned_orders:
+    schedule: "0 */6 * * *"
+    timeout: 300
+```
+
+#### Cross-Feature References
+
+Models can reference exports from other features using the model name directly. Schnitzel resolves these at compile time:
+
+```yaml
+# features/reviews/schema.yaml
+models:
+  Review:
+    fields:
+      id: { type: uuid, primary: true }
+      rating: { type: int }
+      comment: { type: string }
+    relations:
+      user: { type: belongsTo, model: User }    # From auth feature
+      order: { type: belongsTo, model: Order }  # From orders feature
+```
+
+#### Merge Behavior
+
+When Schnitzel processes imports, it merges all feature schemas into a single logical schema:
+- **Models**: Merged into unified model registry
+- **Endpoints**: Merged by path (conflicts are errors)
+- **Events/Streams/Jobs**: Merged by name (conflicts are errors)
+- **Validation**: Cross-feature references validated after merge
 
 ### 4.10 Feature Packages
 
-Features represent logical boundaries within the application. Each feature can generate its own Flutter package, enabling modular development where teams own specific domains.
+Features represent logical boundaries within the application. Schnitzel uses **Flutter pub workspaces** to organize the project as a monorepo, where each feature is a separate package with clean naming (e.g., `auth`, `billing` — not `feature_auth`).
+
+#### Feature Metadata
+
+Each feature has required metadata for versioning, documentation, and dependency management:
 
 ```yaml
 features:
   auth:
+    name: "Authentication"           # Human-readable name
+    version: "1.2.0"                 # Semantic version
     description: "User authentication and sessions"
-    flutter_package: true  # → packages/feature_auth/
+    docs: docs/features/auth.md      # Link to feature documentation
+    flutter_package: true            # → packages/auth/
     models: [User, Session, AuthToken]
-    exports: [User]  # Models other features can reference
+    exports: [User]                  # Models other features can reference
 
   billing:
-    flutter_package: true
+    name: "Billing & Subscriptions"
+    version: "1.0.0"
+    description: "Subscription management and payments"
+    docs: docs/features/billing.md
+    flutter_package: true            # → packages/billing/
     models: [Subscription, Invoice, PaymentMethod]
-    depends_on: [auth]  # Can reference auth.User
+    depends_on: [auth]               # Can reference auth.User
 
   content:
-    flutter_package: true
+    name: "Content Management"
+    version: "2.1.0"
+    description: "Posts, comments, and categories"
+    docs: docs/features/content.md
+    flutter_package: true            # → packages/content/
     models: [Post, Comment, Category]
     depends_on: [auth]
 
-# App shell imports and composes features
+# App metadata and composition
 app:
-  shell: material  # or: cupertino, adaptive
+  name: "MyApp"
+  version: "1.5.0"                   # App version (can differ from features)
+  docs: docs/app.md                  # App-level documentation
+  shell: material                    # or: cupertino, adaptive
   features: [auth, billing, content]
+```
+
+#### Feature Schema Files
+
+When using multi-file organization, each feature's `schema.yaml` includes its own metadata header:
+
+```yaml
+# features/auth/schema.yaml
+feature:
+  name: "Authentication"
+  version: "1.2.0"
+  description: "User authentication and sessions"
+  docs: docs/features/auth.md
+
+models:
+  User:
+    # ... model definition
+```
+
+#### Version Management
+
+Features are versioned independently, enabling:
+- **Granular releases:** Update billing without touching auth
+- **Dependency tracking:** `billing@1.0.0` requires `auth@^1.0.0`
+- **Changelog per feature:** Each feature can have its own CHANGELOG.md
+
+```bash
+# Bump feature version
+schnitzel release --feature auth --bump minor
+
+# Bump app version (all features)
+schnitzel release --bump patch
+
+# Check feature compatibility
+schnitzel validate --dependencies
+```
+
+#### Generated Documentation Structure
+
+```
+docs/
+├── app.md                    # App overview and architecture
+├── API.md                    # Generated API reference
+├── CHANGELOG.md              # Combined changelog
+└── features/
+    ├── auth.md               # Auth feature documentation
+    ├── billing.md            # Billing feature documentation
+    └── content.md            # Content feature documentation
+```
+
+The workspace is defined in the root `pubspec.yaml`:
+
+```yaml
+# pubspec.yaml (workspace root)
+name: myapp_workspace
+publish_to: none
+
+workspace:
+  - packages/app
+  - packages/ui_kit
+  - packages/auth
+  - packages/billing
+  - packages/content
 ```
 
 Feature boundaries are soft — features share an app shell and can reference exported models from dependencies. This enables incremental adoption where teams start with a monolith and extract features as needed.
 
-### 4.11 Authentication (Built-in)
+### 4.11 Flutter Architecture
+
+Schnitzel enforces consistent Flutter architecture patterns across all generated projects.
+
+#### State Management: BLoC (Mandatory)
+
+All state management uses the **BLoC pattern** (Business Logic Component). BLoCs live inside their respective feature packages:
+
+```
+packages/auth/
+├── lib/
+│   ├── bloc/
+│   │   ├── auth_bloc.dart
+│   │   ├── auth_event.dart
+│   │   └── auth_state.dart
+│   ├── models/
+│   ├── pages/
+│   └── widgets/
+└── pubspec.yaml
+```
+
+This ensures predictable, testable state management with clear separation between UI and business logic.
+
+#### UI Components: Atomic Design
+
+Schnitzel generates a shared `ui_kit` package following **Atomic Design** principles:
+
+```
+packages/ui_kit/
+├── lib/
+│   ├── atoms/           # Basic building blocks
+│   │   ├── buttons.dart
+│   │   ├── inputs.dart
+│   │   ├── icons.dart
+│   │   └── typography.dart
+│   ├── molecules/       # Simple combinations
+│   │   ├── form_fields.dart
+│   │   ├── search_bar.dart
+│   │   └── cards.dart
+│   ├── organisms/       # Complex components
+│   │   ├── headers.dart
+│   │   ├── forms.dart
+│   │   └── lists.dart
+│   ├── templates/       # Page layouts
+│   │   ├── scaffold_template.dart
+│   │   └── auth_template.dart
+│   └── ui_kit.dart      # Barrel export
+└── pubspec.yaml
+```
+
+Pages (full screens) live in their respective feature packages, not in `ui_kit`.
+
+#### Linting
+
+All Flutter packages use `flutter_lints` with standard rules. The generated `analysis_options.yaml`:
+
+```yaml
+include: package:flutter_lints/flutter.yaml
+
+# Project-specific overrides (if needed)
+linter:
+  rules: []
+```
+
+### 4.12 Authentication (Built-in)
 
 Authentication is a first-class citizen in Schnitzel. The framework generates complete auth flows for both Flutter and FastAPI, eliminating one of the most common friction points in app development.
 
@@ -416,30 +721,58 @@ roles:
       - posts:read
 ```
 
-### 4.12 Environments
+### 4.13 Environments
 
-Schnitzel supports environment-specific configurations for development, staging, and production. Environment variables and feature flags are managed declaratively.
+Schnitzel supports environment-specific configurations for development, staging, and production. Each environment can have its own API URL, bundle identifiers, feature flags, and secrets.
+
+#### Bundle Identifiers
+
+Flutter apps require unique bundle identifiers (iOS) and application IDs (Android) per environment. This enables installing dev, staging, and production builds side-by-side on the same device.
 
 ```yaml
 environments:
   dev:
     api_url: "http://localhost:${PORT_API}"
+    bundle_id: "dev.moinsen.myapp.dev"        # iOS Bundle ID
+    application_id: "dev.moinsen.myapp.dev"   # Android Application ID
+    app_name: "MyApp Dev"                      # Display name with environment suffix
     debug: true
     features: [debug_panel, mock_payments, seed_data]
     secrets: .env.dev
 
   staging:
     api_url: "https://staging-api.example.com"
+    bundle_id: "dev.moinsen.myapp.staging"
+    application_id: "dev.moinsen.myapp.staging"
+    app_name: "MyApp Staging"
     debug: false
     features: [analytics, error_tracking]
+    secrets: .env.staging
 
   production:
     api_url: "https://api.example.com"
+    bundle_id: "dev.moinsen.myapp"            # Production uses base identifier
+    application_id: "dev.moinsen.myapp"
+    app_name: "MyApp"                          # Clean name for production
     debug: false
     features: [analytics, error_tracking, rate_limiting]
+    secrets: .env.production
 ```
 
-### 4.13 Deployment Configuration
+Schnitzel generates Flutter flavor configurations and updates `ios/Runner.xcodeproj` and `android/app/build.gradle` accordingly. Build commands:
+
+```bash
+# Build for specific environment
+schnitzel build --env dev
+schnitzel build --env staging
+schnitzel build --env production
+
+# Or use Flutter directly with generated flavors
+flutter build ios --flavor dev
+flutter build apk --flavor production
+```
+
+### 4.14 Deployment Configuration
 
 Schnitzel abstracts deployment complexity. For local development, it generates Docker Compose with automatic port management. For production, it targets modern PaaS platforms.
 
@@ -482,7 +815,7 @@ deployment:
     ssl: auto
 ```
 
-### 4.14 Common Integrations
+### 4.15 Common Integrations
 
 Real-world applications require common capabilities beyond CRUD. Schnitzel provides declarative configuration for frequently needed integrations.
 
@@ -515,12 +848,67 @@ notifications:
 
 #### Internationalization (i18n)
 
+Schnitzel uses **shard_i18n** ([github.com/moinsen-dev/shard_i18n](https://github.com/moinsen-dev/shard_i18n)) for Flutter internationalization. This provides a runtime-based, code-generation-free approach with feature-sharded translations.
+
 ```yaml
 i18n:
+  package: shard_i18n              # Required package
   default_locale: en
   supported: [en, de, fr, es]
   fallback: en
-  # Generates: Flutter ARB files + backend message catalogs
+
+  structure: feature-sharded       # Translations organized by feature
+  # assets/i18n/<locale>/<feature>.json
+
+  plurals: cldr                    # CLDR plural rules (one/few/many/other)
+
+  auto_translate:
+    enabled: true
+    provider: deepl                # or: openai
+    # Fill missing translations automatically
+```
+
+#### Generated Translation Structure
+
+```
+assets/
+└── i18n/
+    ├── en/
+    │   ├── auth.json              # Auth feature translations
+    │   ├── orders.json            # Orders feature translations
+    │   └── common.json            # Shared translations
+    ├── de/
+    │   ├── auth.json
+    │   ├── orders.json
+    │   └── common.json
+    └── ...
+```
+
+#### Usage in Flutter
+
+```dart
+// Simple translation
+Text(context.t('Sign in'))
+
+// With parameters
+Text(context.t('Hello, {name}!', params: {'name': user.name}))
+
+// Plurals (CLDR rules)
+Text(context.tn('item', count: itemCount))
+// → "1 item" / "2 items" / "5 items"
+```
+
+#### CLI Commands for i18n
+
+```bash
+# Extract translatable strings
+schnitzel i18n extract
+
+# Fill missing translations (auto-translate)
+schnitzel i18n fill --provider deepl
+
+# Validate translation coverage
+schnitzel i18n validate
 ```
 
 #### Offline Support & Sync
@@ -568,7 +956,7 @@ observability:
     endpoint: /metrics  # Prometheus format
 ```
 
-### 4.15 Type-Safe Field Access
+### 4.16 Type-Safe Field Access
 
 Schnitzel generates static field name constants for every model. This eliminates magic strings and ensures compile-time errors when fields are renamed or removed — not runtime surprises.
 
@@ -623,7 +1011,7 @@ abstract class Events {
 }
 ```
 
-### 4.16 Testing as Core DNA
+### 4.17 Testing as Core DNA
 
 Testing is not an afterthought in Schnitzel — it's part of the generation pipeline. Every model, endpoint, and service gets corresponding test infrastructure automatically.
 
@@ -761,6 +1149,211 @@ schnitzel seed              # Seed dev database
 schnitzel seed --env test   # Seed test database
 ```
 
+### 4.18 CI/CD & Release Management
+
+Schnitzel generates CI/CD pipelines and release workflows to automate testing, building, and deployment. Configuration lives both in the schema (for portability) and generates separate workflow files (for CI provider compatibility).
+
+#### CI/CD Configuration
+
+```yaml
+cicd:
+  provider: github-actions  # or: gitlab-ci, bitbucket-pipelines
+
+  pipelines:
+    pull_request:
+      - schnitzel lint
+      - schnitzel validate --breaking
+      - schnitzel test --flutter
+      - schnitzel test --backend
+      - schnitzel build --env dev --dry-run
+
+    main:
+      - schnitzel test
+      - schnitzel build --env staging
+      - schnitzel deploy --env staging
+
+    release:
+      - schnitzel test
+      - schnitzel build --env production
+      - schnitzel deploy --env production
+      - notify: [slack]
+
+  cache:
+    flutter: true      # Cache pub dependencies
+    python: true       # Cache uv/pip dependencies
+    docker: true       # Cache Docker layers
+```
+
+#### Generated Workflow Files
+
+Schnitzel generates provider-specific workflow files that can be customized:
+
+```
+.github/
+└── workflows/
+    ├── pr.yml              # Pull request checks
+    ├── main.yml            # Main branch deployment
+    └── release.yml         # Production release
+```
+
+#### Release Management
+
+```yaml
+release:
+  versioning: semver          # Semantic versioning (major.minor.patch)
+  changelog:
+    format: conventional      # Conventional Commits format
+    file: CHANGELOG.md
+    sections:
+      - type: feat
+        title: "Features"
+      - type: fix
+        title: "Bug Fixes"
+      - type: perf
+        title: "Performance"
+
+  stores:
+    ios:
+      app_store_connect: true
+      testflight: true
+      metadata_path: ios/fastlane/metadata
+    android:
+      play_store: true
+      track: internal          # internal, alpha, beta, production
+      metadata_path: android/fastlane/metadata
+```
+
+#### Release CLI Commands
+
+```bash
+# Bump version and generate changelog
+schnitzel release --bump patch    # 1.0.0 → 1.0.1
+schnitzel release --bump minor    # 1.0.0 → 1.1.0
+schnitzel release --bump major    # 1.0.0 → 2.0.0
+
+# Preview changelog without committing
+schnitzel release --bump minor --dry-run
+
+# Deploy to specific environment
+schnitzel deploy --env staging
+schnitzel deploy --env production
+
+# Deploy to app stores
+schnitzel deploy --store ios --track testflight
+schnitzel deploy --store android --track internal
+```
+
+### 4.19 API Documentation
+
+Schnitzel auto-generates comprehensive API documentation from the schema. OpenAPI/Swagger documentation is a core feature, ensuring your API is always documented and up-to-date.
+
+#### Documentation Configuration
+
+```yaml
+documentation:
+  openapi:
+    enabled: true
+    version: "3.1.0"
+    servers:
+      - url: "${API_URL}"
+        description: "Current environment"
+
+  ui:
+    swagger: true             # Swagger UI at /docs
+    redoc: true               # ReDoc at /redoc
+
+  exports:
+    - format: openapi
+      path: docs/openapi.yaml
+    - format: postman
+      path: docs/postman.json
+    - format: markdown
+      path: docs/API.md
+```
+
+#### Generated Documentation
+
+Schnitzel generates:
+- **OpenAPI 3.1 Spec:** Complete API specification from schema
+- **Swagger UI:** Interactive API explorer at `/docs`
+- **ReDoc:** Beautiful API reference at `/redoc`
+- **Markdown:** Static API documentation for Git
+
+#### Documentation CLI Commands
+
+```bash
+# Generate all documentation
+schnitzel docs
+
+# Generate specific format
+schnitzel docs --format openapi
+schnitzel docs --format postman
+schnitzel docs --format markdown
+
+# Serve documentation locally
+schnitzel docs --serve
+```
+
+### 4.20 Schema Linting
+
+Schnitzel includes a schema linter that enforces best practices, naming conventions, and detects common issues before code generation.
+
+#### Linting Configuration
+
+```yaml
+linting:
+  enabled: true
+
+  rules:
+    naming:
+      models: PascalCase        # User, OrderItem
+      fields: snake_case        # created_at, user_id
+      endpoints: kebab-case     # /user-profiles
+      events: dot.notation      # order.placed
+
+    required:
+      model_description: true   # All models need descriptions
+      endpoint_auth: warn       # Warn if auth not specified
+
+    security:
+      no_passwords_in_response: error
+      require_auth_on_mutations: warn
+
+    performance:
+      max_fields_per_model: 30
+      require_indexes_on_relations: warn
+```
+
+#### Lint CLI Commands
+
+```bash
+# Lint schema
+schnitzel lint
+
+# Lint with auto-fix for safe issues
+schnitzel lint --fix
+
+# Lint with specific rule set
+schnitzel lint --rules strict
+
+# Output as JSON (for CI integration)
+schnitzel lint --format json
+```
+
+#### Example Lint Output
+
+```
+$ schnitzel lint
+
+schema.schnitzel.yaml
+  ⚠ line 45: Model 'user' should be PascalCase → 'User'
+  ✗ line 67: Endpoint POST /users missing 'auth' specification
+  ⚠ line 89: Field 'createdAt' should be snake_case → 'created_at'
+  ✓ line 102: Model 'Order' has proper description
+
+3 warnings, 1 error
+```
+
 ---
 
 ## 5. CLI Specification
@@ -770,11 +1363,11 @@ The Schnitzel CLI is the primary interface for project initialization, code gene
 ### 5.1 Installation
 
 ```bash
-# Via pip (recommended)
-pip install schnitzel-cli
+# Via uv (recommended)
+uv tool install schnitzel-cli
 
-# Via pipx (isolated environment)
-pipx install schnitzel-cli
+# Or add to existing project
+uv add schnitzel-cli
 ```
 
 ### 5.2 Command Reference
@@ -795,7 +1388,7 @@ Options:
   --verbose       Show detailed output
 ```
 
-**What it does:** Executes `flutter create --org <org>`, `poetry init`, creates Docker Compose files, generates initial schema, and sets up AI tooling.
+**What it does:** Executes `flutter create --org <org>`, `uv init`, creates Docker Compose files, generates initial schema, and sets up AI tooling.
 
 #### schnitzel generate
 
@@ -910,6 +1503,86 @@ schnitzel ai mcp        # Generate/update MCP server
 schnitzel ai prompt     # Generate task-specific prompts
 ```
 
+#### schnitzel lint
+
+Lint schema for best practices and naming conventions.
+
+```bash
+schnitzel lint [options]
+
+Options:
+  --fix           Auto-fix safe issues
+  --rules         Rule set (default, strict, minimal)
+  --format        Output format (text, json, sarif)
+```
+
+#### schnitzel docs
+
+Generate API documentation from schema.
+
+```bash
+schnitzel docs [options]
+
+Options:
+  --format        Output format (openapi, postman, markdown, all)
+  --output        Output directory (default: docs/)
+  --serve         Start local documentation server
+```
+
+#### schnitzel release
+
+Manage versions and releases.
+
+```bash
+schnitzel release [options]
+
+Options:
+  --bump          Version bump type (patch, minor, major)
+  --feature       Bump specific feature version
+  --dry-run       Preview changes without committing
+  --no-changelog  Skip changelog generation
+
+Examples:
+  schnitzel release --bump minor              # Bump app version
+  schnitzel release --feature auth --bump patch  # Bump feature version
+```
+
+#### schnitzel deploy
+
+Deploy to configured environments.
+
+```bash
+schnitzel deploy [options]
+
+Options:
+  --env           Target environment (staging, production)
+  --store         App store target (ios, android)
+  --track         Store track (internal, alpha, beta, production)
+  --skip-tests    Skip test suite (not recommended)
+
+Examples:
+  schnitzel deploy --env staging
+  schnitzel deploy --env production
+  schnitzel deploy --store ios --track testflight
+```
+
+#### schnitzel i18n
+
+Internationalization management.
+
+```bash
+schnitzel i18n <command> [options]
+
+Commands:
+  extract         Extract translatable strings from code
+  fill            Fill missing translations (auto-translate)
+  validate        Check translation coverage
+
+Options:
+  --provider      Translation provider (deepl, openai)
+  --locale        Target locale for fill command
+```
+
 ---
 
 ## 6. AI-First Architecture
@@ -973,29 +1646,57 @@ Schnitzel auto-generates an MCP (Model Context Protocol) server that exposes the
 
 ### 7.1 Project Structure
 
+Schnitzel projects use a **Flutter pub workspace** monorepo structure with UV-managed Python backend:
+
 ```
 myapp/
 ├── schema.schnitzel.yaml    # Single source of truth
+├── pubspec.yaml             # Flutter workspace root
 ├── CLAUDE.md                # AI instructions
 ├── docker-compose.yaml      # Infrastructure
 │
-├── app/                     # Flutter application
-│   ├── lib/
-│   │   ├── generated/       # Auto-generated code
-│   │   │   ├── models/      # Freezed models
-│   │   │   ├── api/         # API client
-│   │   │   └── events/      # Event handlers
-│   │   └── src/             # Custom code
-│   └── pubspec.yaml
+├── packages/                # Flutter pub workspace
+│   ├── app/                 # Main Flutter app shell
+│   │   ├── lib/
+│   │   │   ├── main.dart
+│   │   │   └── app.dart
+│   │   └── pubspec.yaml
+│   │
+│   ├── ui_kit/              # Atomic Design components
+│   │   ├── lib/
+│   │   │   ├── atoms/
+│   │   │   ├── molecules/
+│   │   │   ├── organisms/
+│   │   │   ├── templates/
+│   │   │   └── ui_kit.dart
+│   │   └── pubspec.yaml
+│   │
+│   ├── auth/                # Feature package
+│   │   ├── lib/
+│   │   │   ├── bloc/        # BLoC state management
+│   │   │   ├── models/      # Generated Freezed models
+│   │   │   ├── pages/       # Feature screens
+│   │   │   └── widgets/     # Feature-specific widgets
+│   │   └── pubspec.yaml
+│   │
+│   ├── billing/             # Feature package
+│   │   └── ...
+│   │
+│   └── shared/              # Shared utilities
+│       ├── lib/
+│       │   ├── generated/   # Generated API client, events
+│       │   └── utils/
+│       └── pubspec.yaml
 │
-├── backend/                 # Python backend
+├── backend/                 # Python backend (UV managed)
 │   ├── app/
 │   │   ├── generated/       # Auto-generated code
 │   │   │   ├── models.py    # Pydantic models
 │   │   │   ├── routes.py    # FastAPI routes
 │   │   │   └── events.py    # Event definitions
 │   │   └── src/             # Custom code
-│   └── pyproject.toml
+│   ├── pyproject.toml       # UV project config
+│   └── uv.lock              # UV lockfile
 │
 └── .schnitzel/              # AI tooling
     ├── mcp-server/
@@ -1034,8 +1735,9 @@ The generation process follows a deterministic pipeline that ensures consistency
 
 ### 8.2 Compatibility
 
-- Flutter: 3.19+ (Dart 3.3+)
+- Flutter: 3.19+ (Dart 3.3+) — required for pub workspaces
 - Python: 3.11+
+- UV: 0.4+ (Python package manager)
 - Docker: 24.0+
 - Node.js: 18+ (for MCP server)
 
@@ -1047,53 +1749,9 @@ The generation process follows a deterministic pipeline that ensures consistency
 
 ---
 
-## 9. Development Roadmap
+## 9. Appendix
 
-### Phase 1: Foundation (MVP)
-*Duration: 6 weeks*
-
-- Schema parser and validator
-- Basic model generation (Pydantic + Freezed)
-- REST endpoint generation
-- CLI: init, generate commands
-- CLAUDE.md generation
-
-### Phase 2: Infrastructure
-*Duration: 4 weeks*
-
-- Docker Compose generation
-- Redis integration
-- PostgreSQL with migrations
-- Basic auth scaffolding
-
-### Phase 3: Real-Time
-*Duration: 4 weeks*
-
-- Event system (WebSocket + Redis pub/sub)
-- SSE streaming support
-- Flutter stream handlers
-
-### Phase 4: AI Integration
-*Duration: 4 weeks*
-
-- MCP server generation
-- Qdrant vector DB integration
-- AI-aware prompts and context
-- Embedding pipeline scaffolding
-
-### Phase 5: Jobs & Polish
-*Duration: 4 weeks*
-
-- Temporal job scheduler
-- Plugin system
-- Documentation site
-- Starter templates
-
----
-
-## 10. Appendix
-
-### 10.1 Complete Schema Example
+### 9.1 Complete Schema Example
 
 ```yaml
 # schema.schnitzel.yaml - Complete Example
@@ -1137,7 +1795,7 @@ services:
   vectors: { type: qdrant }
 ```
 
-### 10.2 Glossary
+### 9.2 Glossary
 
 - **Schema:** The YAML file defining the entire project contract
 - **Generator:** Component that transforms schema to platform-specific code

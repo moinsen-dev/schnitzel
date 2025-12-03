@@ -1,0 +1,49 @@
+# =============================================================================
+# FoodieAI - Reviews Feature
+# =============================================================================
+# Restaurant reviews and ratings.
+# =============================================================================
+
+feature:
+  name: "Reviews"
+  version: "1.0.0"
+  description: "Restaurant reviews and ratings system"
+  docs: docs/features/reviews.md
+
+models:
+  Review:
+    description: "Customer review for a restaurant"
+    fields:
+      id: { type: uuid, primary: true }
+      rating: { type: int }
+      title: { type: string, max: 100, optional: true }
+      comment: { type: string, max: 1000, optional: true }
+      is_verified_purchase: { type: bool, default: false }
+      created_at: { type: datetime, auto: create }
+    relations:
+      user: { type: belongsTo, model: User }
+      restaurant: { type: belongsTo, model: Restaurant }
+      order: { type: belongsTo, model: Order, optional: true }
+
+# =============================================================================
+# ENDPOINTS
+# =============================================================================
+
+endpoints:
+  /restaurants/{slug}/reviews:
+    params:
+      slug: { type: string }
+    GET:
+      name: listReviews
+      query:
+        page: { type: int, default: 1 }
+        limit: { type: int, default: 20 }
+      response:
+        200: { type: PaginatedResponse<Review> }
+
+    POST:
+      name: createReview
+      auth: required
+      body: CreateReviewRequest
+      response:
+        201: { type: Review }

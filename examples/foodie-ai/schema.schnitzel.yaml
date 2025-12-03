@@ -1,0 +1,342 @@
+# =============================================================================
+# FoodieAI - AI-Powered Restaurant Ordering App
+# =============================================================================
+# Root schema with global configuration and feature imports.
+# This demonstrates Schnitzel's multi-file schema organization.
+#
+# Schnitzel Framework Example | Moinsen Development
+# =============================================================================
+
+schnitzel: "1.0"
+
+meta:
+  name: "FoodieAI"
+  version: "1.0.0"
+  org: "dev.moinsen.foodieai"
+  description: "AI-powered restaurant ordering with natural language chat and real-time tracking"
+  docs: docs/app.md
+
+# =============================================================================
+# IMPORTS - Feature schemas
+# =============================================================================
+
+imports:
+  - features/restaurants/schema.yaml
+  - features/orders/schema.yaml
+  - features/chat/schema.yaml
+  - features/reviews/schema.yaml
+
+# =============================================================================
+# AUTHENTICATION & AUTHORIZATION (Global)
+# =============================================================================
+
+auth:
+  providers:
+    - email_password
+    - magic_link
+    - google
+    - apple
+
+  session:
+    type: jwt
+    access_expiry: 900 # 15 minutes
+    refresh_expiry: 2592000 # 30 days
+    refresh: true
+
+  mfa: optional
+
+roles:
+  admin:
+    permissions: ["*"]
+
+  restaurant_staff:
+    permissions:
+      - restaurants:read:own
+      - restaurants:update:own
+      - orders:read:own
+      - orders:update:own
+      - menu:*:own
+
+  kitchen:
+    permissions:
+      - orders:read:own
+      - orders:update:own
+
+  delivery:
+    permissions:
+      - orders:read:assigned
+      - orders:update:assigned
+
+  customer:
+    permissions:
+      - restaurants:read
+      - menu:read
+      - orders:create
+      - orders:read:own
+      - orders:cancel:own
+      - reviews:create
+      - reviews:read
+      - chat:*:own
+
+# =============================================================================
+# SERVICES - Infrastructure configuration (Global)
+# =============================================================================
+
+services:
+  database:
+    type: postgres
+    version: "16"
+    extensions: [pgvector, uuid-ossp, postgis]
+
+  cache:
+    type: redis
+    version: "7"
+    features: [pubsub, streams]
+
+  vectors:
+    type: qdrant
+    collections:
+      - name: menu_items
+        dimensions: 1536
+        distance: cosine
+
+  jobs:
+    type: temporal
+
+# =============================================================================
+# INTEGRATIONS (Global)
+# =============================================================================
+
+storage:
+  provider: s3
+  buckets:
+    restaurant-images:
+      public: true
+      max_size: 10mb
+      allowed_types: [image/jpeg, image/png, image/webp]
+    user-avatars:
+      public: true
+      max_size: 5mb
+      allowed_types: [image/jpeg, image/png]
+
+notifications:
+  push:
+    fcm: true
+    apns: true
+  email:
+    provider: resend
+    templates: true
+
+payments:
+  provider: stripe
+  webhooks: true
+
+i18n:
+  package: shard_i18n
+  default_locale: en
+  supported: [en, de, es, fr]
+  fallback: en
+  structure: feature-sharded
+  plurals: cldr
+  auto_translate:
+    enabled: true
+    provider: deepl
+
+# =============================================================================
+# ERROR CONTRACTS (Global)
+# =============================================================================
+
+errors:
+  format: rfc7807
+  codes:
+    ORDER_NOT_FOUND:
+      status: 404
+      message: "Order not found"
+    ORDER_CANNOT_CANCEL:
+      status: 400
+      message: "Order cannot be cancelled at this stage"
+    RESTAURANT_CLOSED:
+      status: 400
+      message: "Restaurant is currently closed"
+    MINIMUM_ORDER_NOT_MET:
+      status: 400
+      message: "Order does not meet minimum amount"
+    PAYMENT_FAILED:
+      status: 402
+      message: "Payment could not be processed"
+    DELIVERY_ADDRESS_OUT_OF_RANGE:
+      status: 400
+      message: "Delivery address is outside the delivery area"
+
+# =============================================================================
+# ENVIRONMENTS (Global)
+# =============================================================================
+
+environments:
+  dev:
+    api_url: "http://localhost:${PORT_API}"
+    bundle_id: "dev.moinsen.foodieai.dev"
+    application_id: "dev.moinsen.foodieai.dev"
+    app_name: "FoodieAI Dev"
+    debug: true
+    features: [debug_panel, mock_payments, seed_data]
+    secrets: .env.dev
+
+  staging:
+    api_url: "https://staging-api.foodieai.app"
+    bundle_id: "dev.moinsen.foodieai.staging"
+    application_id: "dev.moinsen.foodieai.staging"
+    app_name: "FoodieAI Staging"
+    debug: false
+    features: [analytics, error_tracking]
+    secrets: .env.staging
+
+  production:
+    api_url: "https://api.foodieai.app"
+    bundle_id: "dev.moinsen.foodieai"
+    application_id: "dev.moinsen.foodieai"
+    app_name: "FoodieAI"
+    debug: false
+    features: [analytics, error_tracking, rate_limiting]
+    secrets: .env.production
+
+# =============================================================================
+# OBSERVABILITY (Global)
+# =============================================================================
+
+observability:
+  logging:
+    format: json
+    level: info
+  error_tracking:
+    provider: sentry
+  metrics:
+    enabled: true
+    endpoint: /metrics
+
+# =============================================================================
+# CI/CD & RELEASE MANAGEMENT
+# =============================================================================
+
+cicd:
+  provider: github-actions
+
+  pipelines:
+    pull_request:
+      - schnitzel lint
+      - schnitzel validate --breaking
+      - schnitzel test --flutter
+      - schnitzel test --backend
+      - schnitzel build --env dev --dry-run
+
+    main:
+      - schnitzel test
+      - schnitzel build --env staging
+      - schnitzel deploy --env staging
+
+    release:
+      - schnitzel test
+      - schnitzel build --env production
+      - schnitzel deploy --env production
+      - notify: [slack]
+
+  cache:
+    flutter: true
+    python: true
+    docker: true
+
+release:
+  versioning: semver
+  changelog:
+    format: conventional
+    file: CHANGELOG.md
+
+  stores:
+    ios:
+      app_store_connect: true
+      testflight: true
+    android:
+      play_store: true
+      track: internal
+
+# =============================================================================
+# API DOCUMENTATION
+# =============================================================================
+
+documentation:
+  openapi:
+    enabled: true
+    version: "3.1.0"
+
+  ui:
+    swagger: true
+    redoc: true
+
+  exports:
+    - format: openapi
+      path: docs/openapi.yaml
+    - format: postman
+      path: docs/postman.json
+
+# =============================================================================
+# SCHEMA LINTING
+# =============================================================================
+
+linting:
+  enabled: true
+  rules:
+    naming:
+      models: PascalCase
+      fields: snake_case
+      endpoints: kebab-case
+      events: dot.notation
+    required:
+      model_description: true
+      endpoint_auth: warn
+    security:
+      no_passwords_in_response: error
+
+# =============================================================================
+# FEATURE PACKAGES - Flutter workspace composition
+# =============================================================================
+
+features:
+  restaurants:
+    name: "Restaurants"
+    version: "1.0.0"
+    description: "Restaurant and menu management"
+    docs: docs/features/restaurants.md
+    flutter_package: true
+    exports: [Restaurant, MenuItem]
+
+  orders:
+    name: "Orders"
+    version: "1.0.0"
+    description: "Order management and tracking"
+    docs: docs/features/orders.md
+    flutter_package: true
+    depends_on: [restaurants]
+    exports: [Order]
+
+  chat:
+    name: "AI Chat"
+    version: "1.0.0"
+    description: "AI ordering assistant"
+    docs: docs/features/chat.md
+    flutter_package: true
+    depends_on: [restaurants]
+
+  reviews:
+    name: "Reviews"
+    version: "1.0.0"
+    description: "Restaurant reviews and ratings"
+    docs: docs/features/reviews.md
+    flutter_package: true
+    depends_on: [restaurants, orders]
+
+app:
+  name: "FoodieAI"
+  version: "1.0.0"
+  docs: docs/app.md
+  shell: material
+  features: [restaurants, orders, chat, reviews]
