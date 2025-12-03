@@ -1,0 +1,8 @@
+# Main schema importing multiple feature schemas (auth + posts)
+schnitzel: 1.0.0
+
+imports:
+  - auth.yaml
+  - posts.yaml
+
+models: {}

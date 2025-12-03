@@ -2,6 +2,7 @@
 
 from .models import SchnitzelSchema, Model, Field
 from .parser import SchemaParser
+from .validator import SchemaValidator, ValidationResult
 from .exceptions import (
     SchemaError,
     YAMLParseError,
@@ -15,6 +16,8 @@ __all__ = [
     "Model",
     "Field",
     "SchemaParser",
+    "SchemaValidator",
+    "ValidationResult",
     "SchemaError",
     "YAMLParseError",
     "ImportError",

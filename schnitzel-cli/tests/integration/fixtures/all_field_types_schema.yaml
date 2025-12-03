@@ -1,0 +1,39 @@
+schnitzel: "1.0"
+
+models:
+  CompleteModel:
+    description: "A model demonstrating all supported field types"
+    fields:
+      # Basic scalar types
+      id:
+        type: uuid
+        primary: true
+      name:
+        type: string
+      age:
+        type: int
+      height:
+        type: float
+      is_active:
+        type: bool
+      created_at:
+        type: datetime
+        auto: create
+
+      # Complex types
+      metadata:
+        type: json
+      status:
+        type: enum
+        values: ["pending", "active", "inactive"]
+      embedding:
+        type: vector
+        dimensions: 1536
+
+      # List types
+      tags:
+        type: list<string>
+      scores:
+        type: list<int>
+      weights:
+        type: list<float>

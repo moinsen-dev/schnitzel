@@ -301,13 +301,25 @@ models:
             assert "title" in post_model.fields
 
     def test_merge_multiple_feature_schemas(self) -> None:
-        """Test merging multiple feature schemas without conflicts."""
+        """
+        Test F006: Schema parser can merge feature schemas without conflicts.
+
+        Steps:
+        1. Create auth.yaml with User and Session models
+        2. Create posts.yaml with Post and Comment models
+        3. Create main.yaml importing both feature files
+        4. Call SchemaParser.parse('main.yaml')
+        5. Verify final schema contains all 4 models
+        6. Verify no naming conflicts
+        7. Verify each model retains its original fields
+        8. Verify relationships across feature boundaries work
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             auth_path = Path(tmpdir) / "auth.yaml"
             posts_path = Path(tmpdir) / "posts.yaml"
             main_path = Path(tmpdir) / "main.yaml"
 
-            # Create auth.yaml with User and Session models
+            # Step 1: Create auth.yaml with User and Session models
             auth_content = """
 schnitzel: 1.0.0
 models:
@@ -315,18 +327,33 @@ models:
     fields:
       id:
         type: uuid
+        primary: true
       email:
         type: string
+        unique: true
+      created_at:
+        type: datetime
+        auto: create
   Session:
     fields:
       id:
         type: uuid
+        primary: true
+      user_id:
+        type: uuid
       token:
         type: string
+      expires_at:
+        type: datetime
+    relations:
+      user:
+        type: belongsTo
+        model: User
+        foreign_key: user_id
 """
             auth_path.write_text(auth_content)
 
-            # Create posts.yaml with Post and Comment models
+            # Step 2: Create posts.yaml with Post and Comment models
             posts_content = """
 schnitzel: 1.0.0
 models:
@@ -334,18 +361,51 @@ models:
     fields:
       id:
         type: uuid
+        primary: true
       title:
         type: string
+      content:
+        type: string
+      author_id:
+        type: uuid
+      created_at:
+        type: datetime
+        auto: create
+    relations:
+      author:
+        type: belongsTo
+        model: User
+        foreign_key: author_id
+      comments:
+        type: hasMany
+        model: Comment
   Comment:
     fields:
       id:
         type: uuid
+        primary: true
+      post_id:
+        type: uuid
+      author_id:
+        type: uuid
       text:
         type: string
+      created_at:
+        type: datetime
+        auto: create
+    relations:
+      post:
+        type: belongsTo
+        model: Post
+        foreign_key: post_id
+      author:
+        type: belongsTo
+        model: User
+        foreign_key: author_id
 """
             posts_path.write_text(posts_content)
 
-            # Create main.yaml importing both
+            # Step 3: Create main.yaml importing both feature files
             main_content = """
 schnitzel: 1.0.0
 imports:
@@ -355,24 +415,82 @@ models: {}
 """
             main_path.write_text(main_content)
 
-            # Parse main.yaml
+            # Step 4: Call SchemaParser.parse('main.yaml')
             parser = SchemaParser()
             schema = parser.parse(main_path)
 
-            # Verify all 4 models are present
+            # Step 5: Verify final schema contains all 4 models
             assert "User" in schema.models
             assert "Session" in schema.models
             assert "Post" in schema.models
             assert "Comment" in schema.models
             assert len(schema.models) == 4
 
-            # Verify each model retains its fields
+            # Step 6: Verify no naming conflicts (all 4 models unique)
+            model_names = list(schema.models.keys())
+            assert len(model_names) == len(set(model_names))
+
+            # Step 7: Verify each model retains its original fields
             user_model = schema.models["User"]
             session_model = schema.models["Session"]
             post_model = schema.models["Post"]
             comment_model = schema.models["Comment"]
 
+            # Verify User model fields
+            assert "id" in user_model.fields
             assert "email" in user_model.fields
+            assert "created_at" in user_model.fields
+            assert user_model.fields["email"].unique is True
+
+            # Verify Session model fields
+            assert "user_id" in session_model.fields
             assert "token" in session_model.fields
+            assert "expires_at" in session_model.fields
+
+            # Verify Post model fields
             assert "title" in post_model.fields
+            assert "content" in post_model.fields
+            assert "author_id" in post_model.fields
+
+            # Verify Comment model fields
+            assert "post_id" in comment_model.fields
+            assert "author_id" in comment_model.fields
             assert "text" in comment_model.fields
+
+            # Step 8: Verify relationships across feature boundaries work
+            # Post.author -> User (cross-feature: posts -> auth)
+            assert post_model.relations is not None
+            assert "author" in post_model.relations
+            post_author_rel = post_model.relations["author"]
+            assert post_author_rel.type == "belongsTo"
+            assert post_author_rel.model == "User"
+            assert post_author_rel.foreign_key == "author_id"
+
+            # Post.comments -> Comment (within posts feature)
+            assert "comments" in post_model.relations
+            post_comments_rel = post_model.relations["comments"]
+            assert post_comments_rel.type == "hasMany"
+            assert post_comments_rel.model == "Comment"
+
+            # Comment.author -> User (cross-feature: posts -> auth)
+            assert comment_model.relations is not None
+            assert "author" in comment_model.relations
+            comment_author_rel = comment_model.relations["author"]
+            assert comment_author_rel.type == "belongsTo"
+            assert comment_author_rel.model == "User"
+            assert comment_author_rel.foreign_key == "author_id"
+
+            # Comment.post -> Post (within posts feature)
+            assert "post" in comment_model.relations
+            comment_post_rel = comment_model.relations["post"]
+            assert comment_post_rel.type == "belongsTo"
+            assert comment_post_rel.model == "Post"
+            assert comment_post_rel.foreign_key == "post_id"
+
+            # Session.user -> User (within auth feature)
+            assert session_model.relations is not None
+            assert "user" in session_model.relations
+            session_user_rel = session_model.relations["user"]
+            assert session_user_rel.type == "belongsTo"
+            assert session_user_rel.model == "User"
+            assert session_user_rel.foreign_key == "user_id"

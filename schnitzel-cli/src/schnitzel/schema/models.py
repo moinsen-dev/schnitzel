@@ -23,26 +23,8 @@ class FieldDefinition(BaseModel):
     values: Optional[List[str]] = None  # For enum types
     dimensions: Optional[int] = None  # For vector types
 
-    @field_validator("type")
-    @classmethod
-    def validate_type(cls, v: str) -> str:
-        """Validate field type is supported."""
-        basic_types = {
-            "string", "uuid", "int", "float", "bool", "datetime", "json",
-            "enum", "vector"
-        }
-
-        # Check for list types (e.g., list<string>)
-        if v.startswith("list<") and v.endswith(">"):
-            inner_type = v[5:-1]
-            if inner_type not in basic_types:
-                raise ValueError(f"Unsupported list inner type: {inner_type}")
-            return v
-
-        if v not in basic_types:
-            raise ValueError(f"Unsupported field type: {v}")
-
-        return v
+    # Note: Field type validation is performed by SchemaValidator
+    # to provide better error messages with suggestions.
 
 
 # Legacy alias for backwards compatibility
@@ -167,7 +149,13 @@ class SchnitzelSchema(BaseModel):
                     converted_fields = {}
                     for field_name, field_data in model_dict["fields"].items():
                         if isinstance(field_data, dict):
-                            converted_fields[field_name] = FieldDefinition(**field_data)
+                            try:
+                                converted_fields[field_name] = FieldDefinition(**field_data)
+                            except Exception as e:
+                                # Re-raise with context about which model/field failed
+                                raise ValueError(
+                                    f"Invalid field definition for '{field_name}' in model '{model_name}': {e}"
+                                ) from e
                         else:
                             converted_fields[field_name] = field_data
                     model_dict["fields"] = converted_fields
@@ -177,12 +165,24 @@ class SchnitzelSchema(BaseModel):
                     converted_relations = {}
                     for rel_name, rel_data in model_dict["relations"].items():
                         if isinstance(rel_data, dict):
-                            converted_relations[rel_name] = Relation(**rel_data)
+                            try:
+                                converted_relations[rel_name] = Relation(**rel_data)
+                            except Exception as e:
+                                # Re-raise with context about which model/relation failed
+                                raise ValueError(
+                                    f"Invalid relation definition for '{rel_name}' in model '{model_name}': {e}"
+                                ) from e
                         else:
                             converted_relations[rel_name] = rel_data
                     model_dict["relations"] = converted_relations
 
-                converted_models[model_name] = Model(**model_dict)
+                try:
+                    converted_models[model_name] = Model(**model_dict)
+                except Exception as e:
+                    # Re-raise with context about which model failed
+                    raise ValueError(
+                        f"Invalid model definition for '{model_name}': {e}"
+                    ) from e
             else:
                 converted_models[model_name] = model_data
 
