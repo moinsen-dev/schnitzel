@@ -1,0 +1,19 @@
+"""Generated Pydantic models from Schnitzel schema."""
+
+{% for import_line in imports | sort %}
+{{ import_line }}
+{% endfor %}
+
+
+{% for model in models %}
+class {{ model.name }}(BaseModel):
+    """{{ model.description or model.name + ' model.' }}"""
+
+    {% for field in model.fields %}
+    {{ field.name }}: {{ field.type }}{% if field.default is not none %} = {{ field.default | tojson }}{% elif field.optional %} = None{% endif %}
+
+    {% endfor %}
+{% if not loop.last %}
+
+{% endif %}
+{% endfor %}

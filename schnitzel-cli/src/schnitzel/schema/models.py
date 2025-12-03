@@ -19,6 +19,7 @@ class FieldDefinition(BaseModel):
     default: Optional[Any] = None
     min: Optional[Union[int, float]] = None
     max: Optional[Union[int, float]] = None
+    max_length: Optional[int] = None  # For string length validation
     format: Optional[str] = None
     auto: Optional[Literal["create", "update"]] = None
     values: Optional[List[str]] = None  # For enum types
@@ -209,7 +210,7 @@ PYTHON_TYPE_MAP = {
     "float": "float",
     "bool": "bool",
     "datetime": "datetime",
-    "json": "dict",
+    "json": "dict[str, Any]",
 }
 
 DART_TYPE_MAP = {
