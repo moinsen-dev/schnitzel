@@ -1,0 +1,20 @@
+{
+  "dart.lineLength": 80,
+  "editor.formatOnSave": true,
+  "editor.accessibilitySupport": "off",
+  "editor.rulers": [80],
+  "[dart]": {
+    "editor.defaultFormatter": "Dart-Code.dart-code"
+  },
+  "dart.debugExternalPackageLibraries": true,
+  "dart.debugSdkLibraries": false,
+  "files.exclude": {
+    "**/.dart_tool": true,
+    "**/build": true
+  },
+  "search.exclude": {
+    "**/.dart_tool": true,
+    "**/build": true,
+    "**/generated": true
+  }
+}
