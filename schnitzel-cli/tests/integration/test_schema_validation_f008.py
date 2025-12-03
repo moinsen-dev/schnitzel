@@ -110,14 +110,23 @@ models:
             assert "type" in error_msg.lower() and ("required" in error_msg.lower() or "missing" in error_msg.lower())
 
     def test_invalid_model_name_raises_validation_error(self) -> None:
-        """Test that non-PascalCase model names raise ValidationError."""
+        """
+        Test that non-PascalCase model names are allowed by parser (Pydantic).
+
+        NOTE: PascalCase validation is now performed by SchemaValidator (F014),
+        not during Pydantic parsing. This allows for better error messages with
+        suggestions. The parser only validates that the name is not empty.
+
+        This test now verifies that the parser successfully parses schemas
+        with non-PascalCase names, and the validation happens later.
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             schema_path = Path(tmpdir) / "schema.yaml"
 
             content = """
 schnitzel: 1.0.0
 models:
-  user_account:  # Should be PascalCase
+  user_account:  # Not PascalCase, but should parse OK
     fields:
       id:
         type: uuid
@@ -125,15 +134,14 @@ models:
             schema_path.write_text(content)
 
             parser = SchemaParser()
-            with pytest.raises(ValidationError) as exc_info:
-                parser.parse(schema_path)
+            # Should parse successfully (Pydantic only checks non-empty)
+            schema = parser.parse(schema_path)
 
-            error_msg = str(exc_info.value)
-            print(f"\n=== Error Message ===\n{error_msg}\n")
+            # Verify the schema was parsed
+            assert "user_account" in schema.models
+            assert schema.models["user_account"].name == "user_account"
 
-            # Verify the error mentions PascalCase requirement
-            assert "user_account" in error_msg
-            assert "PascalCase" in error_msg
+            # NOTE: PascalCase validation is tested in test_model_naming_convention_f014.py
 
     def test_multiple_validation_errors_are_reported(self) -> None:
         """Test that multiple validation errors are all reported together."""

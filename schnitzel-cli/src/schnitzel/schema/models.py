@@ -55,12 +55,12 @@ class Model(BaseModel):
 
     @field_validator("name")
     @classmethod
-    def validate_name_pascal_case(cls, v: str) -> str:
-        """Validate model name is PascalCase."""
+    def validate_name_not_empty(cls, v: str) -> str:
+        """Validate model name is not empty."""
         if not v:
             raise ValueError("Model name cannot be empty")
-        if not v[0].isupper():
-            raise ValueError(f"Model name must be PascalCase: {v}")
+        # Note: Full PascalCase validation is performed by SchemaValidator
+        # to provide better error messages with suggestions
         return v
 
 
