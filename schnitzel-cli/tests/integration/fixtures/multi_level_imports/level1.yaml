@@ -1,0 +1,16 @@
+project_name: "Level 1 User"
+version: "1.0.0"
+
+imports:
+  - level0.yaml
+
+models:
+  UserModel:
+    fields:
+      username:
+        type: string
+      email:
+        type: string
+      is_active:
+        type: bool
+        default: true

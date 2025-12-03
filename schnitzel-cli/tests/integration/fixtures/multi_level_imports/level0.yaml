@@ -1,0 +1,12 @@
+project_name: "Level 0 Base"
+version: "1.0.0"
+
+models:
+  BaseModel:
+    fields:
+      id:
+        type: uuid
+      created_at:
+        type: datetime
+      updated_at:
+        type: datetime

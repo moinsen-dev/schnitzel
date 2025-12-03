@@ -1,0 +1,26 @@
+# Main schema importing base and adding Post model
+schnitzel: 1.0.0
+
+imports:
+  - base.yaml
+
+models:
+  Post:
+    fields:
+      id:
+        type: uuid
+        primary: true
+      title:
+        type: string
+      content:
+        type: string
+      author_id:
+        type: uuid
+      created_at:
+        type: datetime
+        auto: create
+    relations:
+      author:
+        type: belongsTo
+        model: User
+        foreign_key: author_id

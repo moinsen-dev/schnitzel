@@ -1,0 +1,17 @@
+# Base schema with User model
+schnitzel: 1.0.0
+
+models:
+  User:
+    fields:
+      id:
+        type: uuid
+        primary: true
+      name:
+        type: string
+      email:
+        type: string
+        unique: true
+      created_at:
+        type: datetime
+        auto: create

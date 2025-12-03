@@ -1,0 +1,11 @@
+schnitzel: "1.0"
+
+models:
+  User:
+    description: "A simple user model for testing"
+    fields:
+      id:
+        type: uuid
+        primary: true
+      name:
+        type: string

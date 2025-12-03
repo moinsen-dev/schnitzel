@@ -1,0 +1,215 @@
+"""Pydantic models for Schnitzel schema validation."""
+
+from typing import Any, Dict, List, Literal, Optional, Union
+from pydantic import BaseModel, Field as PydanticField, field_validator, model_validator
+
+
+# =============================================================================
+# Field Definition Models
+# =============================================================================
+
+class FieldDefinition(BaseModel):
+    """Definition of a model field."""
+
+    type: str
+    primary: bool = False
+    unique: bool = False
+    optional: bool = False
+    default: Optional[Any] = None
+    min: Optional[Union[int, float]] = None
+    max: Optional[Union[int, float]] = None
+    format: Optional[str] = None
+    auto: Optional[Literal["create", "update"]] = None
+    values: Optional[List[str]] = None  # For enum types
+    dimensions: Optional[int] = None  # For vector types
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, v: str) -> str:
+        """Validate field type is supported."""
+        basic_types = {
+            "string", "uuid", "int", "float", "bool", "datetime", "json",
+            "enum", "vector"
+        }
+
+        # Check for list types (e.g., list<string>)
+        if v.startswith("list<") and v.endswith(">"):
+            inner_type = v[5:-1]
+            if inner_type not in basic_types:
+                raise ValueError(f"Unsupported list inner type: {inner_type}")
+            return v
+
+        if v not in basic_types:
+            raise ValueError(f"Unsupported field type: {v}")
+
+        return v
+
+
+# Legacy alias for backwards compatibility
+Field = FieldDefinition
+
+
+class Relation(BaseModel):
+    """Definition of a model relationship."""
+
+    type: Literal["belongsTo", "hasMany", "hasOne"]
+    model: str
+    foreign_key: Optional[str] = None
+    cascade: bool = False
+
+
+# =============================================================================
+# Model Definition
+# =============================================================================
+
+class Model(BaseModel):
+    """Definition of a data model."""
+
+    name: str
+    description: Optional[str] = None
+    fields: Dict[str, FieldDefinition] = PydanticField(default_factory=dict)
+    relations: Optional[Dict[str, Relation]] = None
+    indexes: Optional[List[Union[str, List[str]]]] = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name_pascal_case(cls, v: str) -> str:
+        """Validate model name is PascalCase."""
+        if not v:
+            raise ValueError("Model name cannot be empty")
+        if not v[0].isupper():
+            raise ValueError(f"Model name must be PascalCase: {v}")
+        return v
+
+
+# =============================================================================
+# Schema Metadata Models
+# =============================================================================
+
+class SchemaMetadata(BaseModel):
+    """Metadata for the schema."""
+
+    name: str
+    version: str
+    org: str
+    description: Optional[str] = None
+    docs: Optional[str] = None
+
+
+class FeatureMetadata(BaseModel):
+    """Metadata for a feature schema."""
+
+    name: str
+    version: str
+    description: Optional[str] = None
+    docs: Optional[str] = None
+
+
+# =============================================================================
+# Root Schema Model
+# =============================================================================
+
+class SchnitzelSchema(BaseModel):
+    """Root Schnitzel schema model."""
+
+    schnitzel: Optional[str] = None  # Optional for feature schemas
+    meta: Optional[SchemaMetadata] = None
+    feature: Optional[FeatureMetadata] = None
+    imports: Optional[List[str]] = None
+    models: Dict[str, Model] = PydanticField(default_factory=dict)
+    endpoints: Optional[Dict[str, Any]] = None
+    auth: Optional[Dict[str, Any]] = None
+    roles: Optional[Dict[str, Any]] = None
+    services: Optional[Dict[str, Any]] = None
+    jobs: Optional[Dict[str, Any]] = None
+    storage: Optional[Dict[str, Any]] = None
+    notifications: Optional[Dict[str, Any]] = None
+    payments: Optional[Dict[str, Any]] = None
+    i18n: Optional[Dict[str, Any]] = None
+    errors: Optional[Dict[str, Any]] = None
+    environments: Optional[Dict[str, Any]] = None
+    observability: Optional[Dict[str, Any]] = None
+    cicd: Optional[Dict[str, Any]] = None
+    release: Optional[Dict[str, Any]] = None
+    documentation: Optional[Dict[str, Any]] = None
+    linting: Optional[Dict[str, Any]] = None
+    features: Optional[Dict[str, Any]] = None
+    app: Optional[Dict[str, Any]] = None
+
+    @field_validator("schnitzel")
+    @classmethod
+    def validate_version(cls, v: Optional[str]) -> Optional[str]:
+        """Validate schema version format."""
+        # Version is optional for feature schemas
+        return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def preprocess_models_dict(cls, data: Any) -> Any:
+        """Convert models dict structure to proper format before validation."""
+        if not isinstance(data, dict):
+            return data
+
+        models = data.get("models")
+        if models is None or not isinstance(models, dict):
+            return data
+
+        # Convert dict definitions to Model instances
+        converted_models = {}
+        for model_name, model_data in models.items():
+            if isinstance(model_data, dict):
+                # Add name to model data if not present
+                model_dict = model_data.copy()
+                model_dict["name"] = model_name
+
+                # Convert fields to FieldDefinition instances
+                if "fields" in model_dict and isinstance(model_dict["fields"], dict):
+                    converted_fields = {}
+                    for field_name, field_data in model_dict["fields"].items():
+                        if isinstance(field_data, dict):
+                            converted_fields[field_name] = FieldDefinition(**field_data)
+                        else:
+                            converted_fields[field_name] = field_data
+                    model_dict["fields"] = converted_fields
+
+                # Convert relations to Relation instances
+                if "relations" in model_dict and isinstance(model_dict["relations"], dict):
+                    converted_relations = {}
+                    for rel_name, rel_data in model_dict["relations"].items():
+                        if isinstance(rel_data, dict):
+                            converted_relations[rel_name] = Relation(**rel_data)
+                        else:
+                            converted_relations[rel_name] = rel_data
+                    model_dict["relations"] = converted_relations
+
+                converted_models[model_name] = Model(**model_dict)
+            else:
+                converted_models[model_name] = model_data
+
+        data["models"] = converted_models
+        return data
+
+
+# =============================================================================
+# Helper Type Aliases for Code Generation
+# =============================================================================
+
+PYTHON_TYPE_MAP = {
+    "string": "str",
+    "uuid": "UUID",
+    "int": "int",
+    "float": "float",
+    "bool": "bool",
+    "datetime": "datetime",
+    "json": "dict",
+}
+
+DART_TYPE_MAP = {
+    "string": "String",
+    "uuid": "String",
+    "int": "int",
+    "float": "double",
+    "bool": "bool",
+    "datetime": "DateTime",
+    "json": "Map<String, dynamic>",
+}

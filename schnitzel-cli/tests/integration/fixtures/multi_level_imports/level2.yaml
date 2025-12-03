@@ -1,0 +1,15 @@
+project_name: "Level 2 Post"
+version: "1.0.0"
+
+imports:
+  - level1.yaml
+
+models:
+  PostModel:
+    fields:
+      title:
+        type: string
+      content:
+        type: string
+      author_id:
+        type: uuid
