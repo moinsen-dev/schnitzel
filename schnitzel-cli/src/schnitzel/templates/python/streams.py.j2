@@ -1,0 +1,135 @@
+"""Generated FastAPI SSE streaming endpoints from Schnitzel schema."""
+
+{% for import_line in imports | unique | sort %}
+{{ import_line }}
+{% endfor %}
+
+{% if model_imports %}
+from .models import {{ model_imports | join(', ') }}
+{% endif %}
+
+import logging
+
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+{% for stream in streams %}
+
+{% if stream.chunk_model %}
+class {{ stream.chunk_model.name }}(BaseModel):
+    """Data chunk for {{ stream.function_name }} SSE stream."""
+
+{% for field in stream.chunk_model.fields %}
+    {{ field.name }}: {{ field.type }}
+{% endfor %}
+
+
+{% endif %}
+@router.get("{{ stream.path }}", operation_id="{{ stream.operation_id }}")
+async def {{ stream.function_name }}(
+    {% for param in stream.parameters %}
+    {{ param.name }}: {{ param.type }}{% if param.default %} = {{ param.default }}{% endif %}{% if not loop.last %},{% endif %}
+
+    {% endfor %}
+) -> StreamingResponse:
+    {% if stream.description %}"""{{ stream.description }}"""{% endif %}
+    # Log client connection
+    client_info = {
+        {% for param in stream.parameters %}
+        "{{ param.name }}": {{ param.name }},
+        {% endfor %}
+    }
+    logger.info(f"SSE client connected to {{ stream.name }}: {client_info}")
+
+    return StreamingResponse(
+        {{ stream.generator_name }}(
+            {% for param in stream.generator_params %}
+            {{ param }}{% if not loop.last %},{% endif %}
+
+            {% endfor %}
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+async def {{ stream.generator_name }}(
+    {% for param in stream.generator_params %}
+    {{ param }}: Any{% if not loop.last %},{% endif %}
+
+    {% endfor %}
+) -> AsyncGenerator[str, None]:
+    """Generate SSE events for {{ stream.name }}.
+    {% if stream.events %}
+
+    Subscribed events:
+    {% for event in stream.events %}
+    - {{ event }}
+    {% endfor %}
+    {% endif %}
+    """
+    event_id = 0
+    stream_params = {
+        {% for param in stream.generator_params %}
+        "{{ param }}": {{ param }},
+        {% endfor %}
+    }
+    logger.debug(f"Starting SSE stream {{ stream.name }} with params: {stream_params}")
+
+    try:
+        # TODO: Implement stream logic
+        # Example SSE event format:
+        # id: <event_id>
+        # event: <event_type>
+        # data: <json_data>
+        {% if stream.events %}
+        #
+        # This stream should listen for and emit the following events:
+        {% for event in stream.events %}
+        # - {{ event }}
+        {% endfor %}
+        {% endif %}
+
+        # Send initial connection event
+        event_id += 1
+        data = {
+            "message": "Stream started",
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        yield f"id: {event_id}\n"
+        yield f"event: started\n"
+        yield f"data: {json.dumps(data)}\n\n"
+
+        # TODO: Replace with actual streaming logic
+        # Implement Redis pub/sub subscription or database change listener
+        # Process and format events, then yield SSE-formatted messages
+
+        await asyncio.sleep(1)  # Prevent immediate termination
+
+    except asyncio.CancelledError:
+        # Client disconnected gracefully
+        logger.info(f"SSE client disconnected from {{ stream.name }}: {stream_params}")
+    except Exception as e:
+        # Send error event to client and log
+        logger.error(
+            f"Error in SSE stream {{ stream.name }}: {type(e).__name__}: {e}",
+            exc_info=True,
+        )
+        event_id += 1
+        error_data = {"error": str(e)}
+        yield f"id: {event_id}\n"
+        yield f"event: error\n"
+        yield f"data: {json.dumps(error_data)}\n\n"
+    finally:
+        logger.debug(f"SSE stream {{ stream.name }} closed for params: {stream_params}")
+
+{% if not loop.last %}
+
+{% endif %}
+{% endfor %}

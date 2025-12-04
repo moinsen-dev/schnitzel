@@ -2,9 +2,12 @@
 
 import re
 from difflib import get_close_matches
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Any
 
 from pydantic import BaseModel
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
 
 from .exceptions import ValidationError
 from .models import FieldDefinition, Model, SchnitzelSchema
@@ -1116,6 +1119,269 @@ class SchemaValidator:
         # Replace underscores with dots
         dot_notation = snake.replace('_', '.')
         return dot_notation
+
+    def validate_events(self, schema: SchnitzelSchema) -> List[str]:
+        """Validate events section structure.
+
+        Validates:
+        - Event names follow dot.notation convention
+        - Payload types are valid
+        - Channels are specified and valid
+
+        Args:
+            schema: The schema to validate
+
+        Returns:
+            List of error messages (empty if valid)
+        """
+        errors: List[str] = []
+
+        if not schema.events:
+            return errors
+
+        valid_channels = {"websocket", "redis-pubsub", "redis", "push", "email", "sms"}
+
+        for event_name, event_config in schema.events.items():
+            # Validate event name follows dot.notation
+            if not self._is_dot_notation(event_name):
+                suggested_name = self._to_dot_notation(event_name)
+                error_parts = [
+                    f"[bold red]Invalid event name:[/bold red] '{event_name}'",
+                    f"[yellow]Context:[/yellow] Event names must use dot.notation (e.g., 'order.placed', 'user.registered')",
+                    f"[green]Suggestion:[/green] Rename to '{suggested_name}'"
+                ]
+                errors.append(self._format_error_rich("\n".join(error_parts)))
+
+            # Validate payload field types
+            if event_config.payload:
+                for field_name, field_def in event_config.payload.items():
+                    # Extract type from field definition (could be string or dict)
+                    if isinstance(field_def, dict):
+                        field_type = field_def.get("type", "string")
+                    else:
+                        field_type = field_def
+
+                    # Validate field type
+                    if not self._is_valid_type(field_type):
+                        error_parts = [
+                            f"[bold red]Invalid payload field type:[/bold red] '{field_type}' for field '{field_name}' in event '{event_name}'",
+                            f"[yellow]Context:[/yellow] Event payload field uses unsupported type",
+                            f"[green]Supported types:[/green] {', '.join(sorted(self.SUPPORTED_TYPES))}, list<T>"
+                        ]
+                        suggestions = self._get_type_suggestions(field_type)
+                        if suggestions:
+                            error_parts.append(f"[green]Did you mean:[/green] {' or '.join(suggestions)}?")
+                        errors.append(self._format_error_rich("\n".join(error_parts)))
+
+            # Validate channels
+            if not event_config.channels or len(event_config.channels) == 0:
+                error_parts = [
+                    f"[bold red]Missing channels:[/bold red] Event '{event_name}' has no channels specified",
+                    f"[yellow]Context:[/yellow] Events must publish to at least one channel",
+                    f"[green]Suggestion:[/green] Add channels: ['websocket'] or ['redis-pubsub']"
+                ]
+                errors.append(self._format_error_rich("\n".join(error_parts)))
+            else:
+                # Validate each channel
+                for channel in event_config.channels:
+                    if channel not in valid_channels:
+                        error_parts = [
+                            f"[bold red]Invalid channel:[/bold red] '{channel}' in event '{event_name}'",
+                            f"[yellow]Valid channels:[/yellow] {', '.join(sorted(valid_channels))}",
+                            f"[green]Suggestion:[/green] Use 'websocket' or 'redis-pubsub' for most cases"
+                        ]
+                        errors.append(self._format_error_rich("\n".join(error_parts)))
+
+        return errors
+
+    def validate_streams(self, schema: SchnitzelSchema) -> List[str]:
+        """Validate streams section structure.
+
+        Validates:
+        - Stream type (sse or websocket)
+        - Path is valid route format
+        - Auth level is valid
+
+        Args:
+            schema: The schema to validate
+
+        Returns:
+            List of error messages (empty if valid)
+        """
+        errors: List[str] = []
+
+        if not schema.streams:
+            return errors
+
+        valid_auth_levels = {"required", "optional", "none"}
+
+        for stream_name, stream_config in schema.streams.items():
+            # Validate stream type
+            if stream_config.type not in ["sse", "websocket"]:
+                error_parts = [
+                    f"[bold red]Invalid stream type:[/bold red] '{stream_config.type}' for stream '{stream_name}'",
+                    f"[yellow]Context:[/yellow] Stream type must be 'sse' or 'websocket'",
+                    f"[green]Suggestion:[/green] Use 'sse' for server-sent events or 'websocket' for bidirectional communication"
+                ]
+                errors.append(self._format_error_rich("\n".join(error_parts)))
+
+            # Validate path format
+            if not stream_config.path.startswith('/'):
+                error_parts = [
+                    f"[bold red]Invalid path format:[/bold red] '{stream_config.path}' for stream '{stream_name}'",
+                    f"[yellow]Context:[/yellow] Stream paths must start with '/'",
+                    f"[green]Suggestion:[/green] Change to '/{stream_config.path}'"
+                ]
+                errors.append(self._format_error_rich("\n".join(error_parts)))
+
+            # Validate auth level
+            if stream_config.auth not in valid_auth_levels:
+                error_parts = [
+                    f"[bold red]Invalid auth level:[/bold red] '{stream_config.auth}' for stream '{stream_name}'",
+                    f"[yellow]Valid auth levels:[/yellow] {', '.join(sorted(valid_auth_levels))}",
+                    f"[green]Suggestion:[/green] Use 'required' for authenticated streams or 'none' for public streams"
+                ]
+                errors.append(self._format_error_rich("\n".join(error_parts)))
+
+            # Validate WebSocket-specific fields
+            if stream_config.type == "websocket" and stream_config.messages:
+                for msg_config in stream_config.messages:
+                    if not msg_config.type:
+                        error_parts = [
+                            f"[bold red]Missing message type:[/bold red] in stream '{stream_name}'",
+                            f"[yellow]Context:[/yellow] WebSocket messages must have a 'type' field",
+                            f"[green]Suggestion:[/green] Add type: 'message.type' to identify message"
+                        ]
+                        errors.append(self._format_error_rich("\n".join(error_parts)))
+
+        return errors
+
+    def validate_jobs(self, schema: SchnitzelSchema) -> List[str]:
+        """Validate jobs section structure.
+
+        Validates:
+        - Schedule is valid cron expression (if provided)
+        - Workflow name is PascalCase
+        - Timeout format is valid
+
+        Args:
+            schema: The schema to validate
+
+        Returns:
+            List of error messages (empty if valid)
+        """
+        errors: List[str] = []
+
+        if not schema.jobs:
+            return errors
+
+        for job_name, job_config in schema.jobs.items():
+            # Validate workflow name is PascalCase
+            if not self._is_pascal_case(job_config.workflow):
+                suggested_name = self._to_pascal_case(job_config.workflow)
+                error_parts = [
+                    f"[bold red]Invalid workflow name:[/bold red] '{job_config.workflow}' for job '{job_name}'",
+                    f"[yellow]Context:[/yellow] Workflow names must be PascalCase",
+                    f"[green]Suggestion:[/green] Rename to '{suggested_name}'"
+                ]
+                errors.append(self._format_error_rich("\n".join(error_parts)))
+
+            # Validate schedule format (if provided)
+            if job_config.schedule:
+                if not self._is_valid_cron(job_config.schedule):
+                    error_parts = [
+                        f"[bold red]Invalid cron schedule:[/bold red] '{job_config.schedule}' for job '{job_name}'",
+                        f"[yellow]Context:[/yellow] Schedule must be a valid cron expression",
+                        f"[green]Examples:[/green]",
+                        "  - '0 0 * * *' (daily at midnight)",
+                        "  - '*/15 * * * *' (every 15 minutes)",
+                        "  - '0 */6 * * *' (every 6 hours)"
+                    ]
+                    errors.append(self._format_error_rich("\n".join(error_parts)))
+
+            # Validate timeout format
+            try:
+                from schnitzel.generators.python.jobs import _parse_duration
+                _parse_duration(job_config.timeout)
+            except (ValueError, AttributeError) as e:
+                error_parts = [
+                    f"[bold red]Invalid timeout format:[/bold red] '{job_config.timeout}' for job '{job_name}'",
+                    f"[yellow]Context:[/yellow] {str(e)}",
+                    f"[green]Valid formats:[/green] '30s', '5m', '1h', '2d', or plain integer (seconds)"
+                ]
+                errors.append(self._format_error_rich("\n".join(error_parts)))
+
+            # Validate retry policy if present
+            if job_config.retry_policy:
+                if job_config.retry_policy.max_attempts < 1:
+                    error_parts = [
+                        f"[bold red]Invalid retry policy:[/bold red] max_attempts must be at least 1 for job '{job_name}'",
+                        f"[yellow]Context:[/yellow] Got max_attempts={job_config.retry_policy.max_attempts}",
+                        f"[green]Suggestion:[/green] Set max_attempts: 3 or higher"
+                    ]
+                    errors.append(self._format_error_rich("\n".join(error_parts)))
+
+        return errors
+
+    def _is_valid_type(self, type_str: str) -> bool:
+        """Check if a type string is valid.
+
+        Args:
+            type_str: Type string to validate
+
+        Returns:
+            True if valid, False otherwise
+        """
+        # Handle list types
+        if type_str.startswith("list<") and type_str.endswith(">"):
+            inner_type = type_str[5:-1]
+            return inner_type in self.SUPPORTED_TYPES
+
+        return type_str.lower() in self.SUPPORTED_TYPES
+
+    def _is_valid_cron(self, cron_expr: str) -> bool:
+        """Validate cron expression format.
+
+        Args:
+            cron_expr: Cron expression to validate
+
+        Returns:
+            True if valid cron format, False otherwise
+        """
+        if not cron_expr:
+            return False
+
+        # Basic cron validation: 5 parts (minute hour day month weekday)
+        parts = cron_expr.split()
+        if len(parts) != 5:
+            return False
+
+        # Each part should be either:
+        # - A number
+        # - A range (e.g., "1-5")
+        # - A step (e.g., "*/15")
+        # - An asterisk "*"
+        # - A list (e.g., "1,2,3")
+        cron_pattern = r'^(\*|(\d+(-\d+)?(,\d+(-\d+)?)*)|(\*/\d+))$'
+
+        for part in parts:
+            if not re.match(cron_pattern, part):
+                return False
+
+        return True
+
+    def _format_error_rich(self, message: str) -> str:
+        """Format error message with Rich markup.
+
+        Args:
+            message: Error message with Rich markup
+
+        Returns:
+            Formatted error message
+        """
+        # For now, return the message as-is with markup
+        # Rich formatting will be applied when displaying to console
+        return message
 
 
 class BreakingChangesDetector:

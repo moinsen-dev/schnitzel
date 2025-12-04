@@ -1,0 +1,219 @@
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:equatable/equatable.dart';
+
+part '{{ model_name_snake }}_event.dart';
+part '{{ model_name_snake }}_state.dart';
+
+/// BLoC for managing {{ model_name }} state
+class {{ model_name }}Bloc extends Bloc<{{ model_name }}Event, {{ model_name }}State> {
+  final {{ model_name }}Repository repository;
+
+  {{ model_name }}Bloc({required this.repository}) : super({{ model_name }}Initial()) {
+    on<{{ model_name }}Load>(_onLoad);
+    on<{{ model_name }}LoadMore>(_onLoadMore);
+    on<{{ model_name }}Filter>(_onFilter);
+    on<{{ model_name }}Sort>(_onSort);
+    on<{{ model_name }}Create>(_onCreate);
+    on<{{ model_name }}Update>(_onUpdate);
+    on<{{ model_name }}Delete>(_onDelete);
+    on<{{ model_name }}Refresh>(_onRefresh);
+  }
+
+  Future<void> _onLoad({{ model_name }}Load event, Emitter<{{ model_name }}State> emit) async {
+    emit({{ model_name }}Loading());
+    try {
+      // Load from cache first for offline support
+      final cachedItems = await repository.getAllFromCache();
+      if (cachedItems.isNotEmpty) {
+        emit({{ model_name }}Loaded(
+          items: cachedItems,
+          hasMore: false,
+          currentPage: 1,
+          isFromCache: true,
+        ));
+      }
+
+      // Fetch from API with pagination, filtering, and sorting
+      final items = await repository.getAll(
+        page: event.page,
+        pageSize: event.pageSize,
+        filters: event.filters,
+        sortBy: event.sortBy,
+        sortOrder: event.sortOrder,
+      );
+
+      // Update cache on success
+      await repository.updateCache(items);
+
+      emit({{ model_name }}Loaded(
+        items: items,
+        hasMore: items.length >= event.pageSize,
+        currentPage: event.page,
+        currentFilters: event.filters,
+        currentSortBy: event.sortBy,
+        currentSortOrder: event.sortOrder,
+      ));
+    } catch (error) {
+      // If we have cached data and API fails, keep showing cached data with error
+      if (state is {{ model_name }}Loaded) {
+        final currentState = state as {{ model_name }}Loaded;
+        if (currentState.isFromCache) {
+          return; // Keep cached data visible
+        }
+      }
+      emit({{ model_name }}Error(message: error.toString()));
+    }
+  }
+
+  Future<void> _onLoadMore({{ model_name }}LoadMore event, Emitter<{{ model_name }}State> emit) async {
+    if (state is! {{ model_name }}Loaded) return;
+
+    final currentState = state as {{ model_name }}Loaded;
+    if (!currentState.hasMore) return;
+
+    try {
+      final nextPage = currentState.currentPage + 1;
+      final moreItems = await repository.getAll(
+        page: nextPage,
+        pageSize: event.pageSize,
+        filters: currentState.currentFilters,
+        sortBy: currentState.currentSortBy,
+        sortOrder: currentState.currentSortOrder,
+      );
+
+      final updatedItems = List<{{ model_name }}>.from(currentState.items)..addAll(moreItems);
+
+      emit({{ model_name }}Loaded(
+        items: updatedItems,
+        hasMore: moreItems.length >= event.pageSize,
+        currentPage: nextPage,
+        currentFilters: currentState.currentFilters,
+        currentSortBy: currentState.currentSortBy,
+        currentSortOrder: currentState.currentSortOrder,
+      ));
+    } catch (error) {
+      // Keep current state and emit error separately
+      emit({{ model_name }}Error(message: error.toString()));
+      emit(currentState);
+    }
+  }
+
+  Future<void> _onFilter({{ model_name }}Filter event, Emitter<{{ model_name }}State> emit) async {
+    emit({{ model_name }}Loading());
+    try {
+      final items = await repository.getAll(
+        page: 1,
+        pageSize: event.pageSize,
+        filters: event.filters,
+        sortBy: state is {{ model_name }}Loaded ? (state as {{ model_name }}Loaded).currentSortBy : null,
+        sortOrder: state is {{ model_name }}Loaded ? (state as {{ model_name }}Loaded).currentSortOrder : null,
+      );
+
+      emit({{ model_name }}Loaded(
+        items: items,
+        hasMore: items.length >= event.pageSize,
+        currentPage: 1,
+        currentFilters: event.filters,
+        currentSortBy: state is {{ model_name }}Loaded ? (state as {{ model_name }}Loaded).currentSortBy : null,
+        currentSortOrder: state is {{ model_name }}Loaded ? (state as {{ model_name }}Loaded).currentSortOrder : null,
+      ));
+    } catch (error) {
+      emit({{ model_name }}Error(message: error.toString()));
+    }
+  }
+
+  Future<void> _onSort({{ model_name }}Sort event, Emitter<{{ model_name }}State> emit) async {
+    emit({{ model_name }}Loading());
+    try {
+      final items = await repository.getAll(
+        page: 1,
+        pageSize: event.pageSize,
+        filters: state is {{ model_name }}Loaded ? (state as {{ model_name }}Loaded).currentFilters : null,
+        sortBy: event.sortBy,
+        sortOrder: event.sortOrder,
+      );
+
+      emit({{ model_name }}Loaded(
+        items: items,
+        hasMore: items.length >= event.pageSize,
+        currentPage: 1,
+        currentFilters: state is {{ model_name }}Loaded ? (state as {{ model_name }}Loaded).currentFilters : null,
+        currentSortBy: event.sortBy,
+        currentSortOrder: event.sortOrder,
+      ));
+    } catch (error) {
+      emit({{ model_name }}Error(message: error.toString()));
+    }
+  }
+
+  Future<void> _onCreate({{ model_name }}Create event, Emitter<{{ model_name }}State> emit) async {
+    if (state is! {{ model_name }}Loaded) return;
+
+    final currentState = state as {{ model_name }}Loaded;
+    emit({{ model_name }}Loading());
+
+    try {
+      final created = await repository.create(event.item);
+
+      // Optimistic update: add to existing list
+      final updatedItems = List<{{ model_name }}>.from(currentState.items)..add(created);
+      emit({{ model_name }}Loaded(items: updatedItems));
+    } catch (error) {
+      // Rollback to previous state on error
+      emit(currentState);
+      emit({{ model_name }}Error(message: error.toString()));
+    }
+  }
+
+  Future<void> _onUpdate({{ model_name }}Update event, Emitter<{{ model_name }}State> emit) async {
+    if (state is! {{ model_name }}Loaded) return;
+
+    final currentState = state as {{ model_name }}Loaded;
+    emit({{ model_name }}Loading());
+
+    try {
+      final updated = await repository.update(event.item);
+
+      // Optimistic update: replace in existing list
+      final updatedItems = currentState.items.map((item) {
+        // Assuming model has an 'id' field for comparison
+        return item.id == updated.id ? updated : item;
+      }).toList();
+
+      emit({{ model_name }}Loaded(items: updatedItems));
+    } catch (error) {
+      // Rollback to previous state on error
+      emit(currentState);
+      emit({{ model_name }}Error(message: error.toString()));
+    }
+  }
+
+  Future<void> _onDelete({{ model_name }}Delete event, Emitter<{{ model_name }}State> emit) async {
+    if (state is! {{ model_name }}Loaded) return;
+
+    final currentState = state as {{ model_name }}Loaded;
+    emit({{ model_name }}Loading());
+
+    try {
+      await repository.delete(event.id);
+
+      // Optimistic update: remove from existing list
+      final updatedItems = currentState.items.where((item) => item.id != event.id).toList();
+      emit({{ model_name }}Loaded(items: updatedItems));
+    } catch (error) {
+      // Rollback to previous state on error
+      emit(currentState);
+      emit({{ model_name }}Error(message: error.toString()));
+    }
+  }
+
+  Future<void> _onRefresh({{ model_name }}Refresh event, Emitter<{{ model_name }}State> emit) async {
+    // Refresh without showing loading state
+    try {
+      final items = await repository.getAll();
+      emit({{ model_name }}Loaded(items: items));
+    } catch (error) {
+      emit({{ model_name }}Error(message: error.toString()));
+    }
+  }
+}

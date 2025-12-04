@@ -1,0 +1,507 @@
+"""Generated WebSocket handlers from Schnitzel schema."""
+
+import asyncio
+import json
+import logging
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+{% if needs_uuid %}
+from uuid import UUID
+{% endif %}
+
+from fastapi import (
+    APIRouter,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+{% if needs_auth %}
+    Depends,
+    HTTPException,
+{% endif %}
+)
+from pydantic import BaseModel, ValidationError
+
+{% if needs_auth %}
+from app.auth import get_current_user  # TODO: Update import path as needed
+{% endif %}
+
+
+logger = logging.getLogger(__name__)
+
+
+router = APIRouter()
+
+
+# =============================================================================
+# Message Payload Models
+# =============================================================================
+
+{% for stream in streams %}
+{% if stream.messages %}
+{% for message in stream.messages %}
+class {{ message.payload_class_name }}(BaseModel):
+    """Payload for {{ message.type }} message type."""
+    {% if message.payload_fields %}
+
+    {% for field_name, field_def in message.payload_fields.items() %}
+    {{ field_name }}: {{ field_def.python_type }}
+    {% endfor %}
+    {% else %}
+    pass
+    {% endif %}
+
+{% if not loop.last %}
+
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if not loop.last %}
+
+{% endif %}
+{% endfor %}
+
+# =============================================================================
+# WebSocket Message Types
+# =============================================================================
+
+class WebSocketMessage(BaseModel):
+    """Base WebSocket message structure."""
+
+    type: str
+    data: Dict[str, Any]
+    timestamp: Optional[str] = None
+    message_id: Optional[str] = None  # For acknowledgments
+    correlation_id: Optional[str] = None  # For request-response pattern
+
+
+class AckMessage(BaseModel):
+    """Acknowledgment message for processed messages."""
+
+    type: str = "ack"
+    message_id: str
+    status: str = "success"
+    timestamp: str
+
+
+class HeartbeatMessage(BaseModel):
+    """Heartbeat/ping message."""
+
+    type: str = "heartbeat"
+    timestamp: str
+
+{% if needs_auth %}
+
+class AuthMessage(BaseModel):
+    """Authentication message for first-message auth."""
+
+    type: str = "auth"
+    token: str
+{% endif %}
+
+
+class ErrorMessage(BaseModel):
+    """Error message."""
+
+    type: str = "error"
+    error: str
+    details: Optional[str] = None
+
+
+# =============================================================================
+# Connection Manager
+# =============================================================================
+
+class ConnectionManager:
+    """Manages WebSocket connections and message broadcasting."""
+
+    def __init__(self, max_connections_per_user: Optional[int] = None):
+        """Initialize the connection manager.
+
+        Args:
+            max_connections_per_user: Maximum connections allowed per user (None = unlimited)
+        """
+        self.active_connections: Dict[str, List[WebSocket]] = {}
+        self._heartbeat_tasks: Dict[WebSocket, asyncio.Task] = {}
+        self._user_connections: Dict[str, List[WebSocket]] = {}  # Track connections per user
+        self.max_connections_per_user = max_connections_per_user
+
+    async def connect(self, websocket: WebSocket, room: str = "default", user_id: Optional[str] = None):
+        """Accept and register a new WebSocket connection.
+
+        Args:
+            websocket: The WebSocket connection to register
+            room: Room/channel identifier for grouping connections
+            user_id: Optional user identifier for connection limiting
+
+        Returns:
+            True if connection accepted, False if rejected due to limits
+        """
+        # Check max connections per user if configured
+        if user_id and self.max_connections_per_user:
+            user_connections = self._user_connections.get(user_id, [])
+
+            if len(user_connections) >= self.max_connections_per_user:
+                # Close oldest connection for this user
+                oldest = user_connections[0]
+                logger.info(
+                    f"Max connections ({self.max_connections_per_user}) reached for user {user_id}. "
+                    f"Closing oldest connection."
+                )
+                try:
+                    await oldest.close(code=1008, reason="Max connections exceeded")
+                except Exception as e:
+                    logger.error(f"Error closing oldest connection: {e}")
+
+                # Remove from tracking
+                for room_name, connections in self.active_connections.items():
+                    if oldest in connections:
+                        connections.remove(oldest)
+                        break
+
+                user_connections.remove(oldest)
+
+                if oldest in self._heartbeat_tasks:
+                    self._heartbeat_tasks[oldest].cancel()
+                    del self._heartbeat_tasks[oldest]
+
+        await websocket.accept()
+
+        if room not in self.active_connections:
+            self.active_connections[room] = []
+
+        self.active_connections[room].append(websocket)
+
+        # Track user connection
+        if user_id:
+            if user_id not in self._user_connections:
+                self._user_connections[user_id] = []
+            self._user_connections[user_id].append(websocket)
+
+        logger.info(f"Client connected to room '{room}'. Total connections: {len(self.active_connections[room])}")
+
+        # Start heartbeat for this connection
+        heartbeat_task = asyncio.create_task(self._send_heartbeat(websocket))
+        self._heartbeat_tasks[websocket] = heartbeat_task
+
+        return True
+
+    def disconnect(self, websocket: WebSocket, room: str = "default", user_id: Optional[str] = None):
+        """Unregister a WebSocket connection.
+
+        Args:
+            websocket: The WebSocket connection to unregister
+            room: Room/channel identifier
+            user_id: Optional user identifier for connection tracking
+        """
+        if room in self.active_connections and websocket in self.active_connections[room]:
+            self.active_connections[room].remove(websocket)
+            logger.info(f"Client disconnected from room '{room}'. Remaining connections: {len(self.active_connections[room])}")
+
+            # Clean up empty rooms
+            if len(self.active_connections[room]) == 0:
+                del self.active_connections[room]
+
+        # Remove from user connections tracking
+        if user_id and user_id in self._user_connections:
+            if websocket in self._user_connections[user_id]:
+                self._user_connections[user_id].remove(websocket)
+
+            # Clean up empty user tracking
+            if len(self._user_connections[user_id]) == 0:
+                del self._user_connections[user_id]
+
+        # Cancel heartbeat task
+        if websocket in self._heartbeat_tasks:
+            self._heartbeat_tasks[websocket].cancel()
+            del self._heartbeat_tasks[websocket]
+
+    async def send_personal_message(self, message: str, websocket: WebSocket):
+        """Send a message to a specific WebSocket connection.
+
+        Args:
+            message: The message to send (JSON string)
+            websocket: The target WebSocket connection
+        """
+        try:
+            await websocket.send_text(message)
+        except Exception as e:
+            logger.error(f"Failed to send personal message: {e}")
+
+    async def broadcast(self, message: str, room: str = "default", exclude: Optional[WebSocket] = None):
+        """Broadcast a message to all connections in a room.
+
+        Args:
+            message: The message to broadcast (JSON string)
+            room: Room/channel to broadcast to
+            exclude: Optional WebSocket connection to exclude from broadcast
+        """
+        if room not in self.active_connections:
+            logger.warning(f"Attempted to broadcast to non-existent room '{room}'")
+            return
+
+        disconnected = []
+        for connection in self.active_connections[room]:
+            if exclude and connection == exclude:
+                continue
+
+            try:
+                await connection.send_text(message)
+            except Exception as e:
+                logger.error(f"Failed to broadcast to connection: {e}")
+                disconnected.append(connection)
+
+        # Clean up disconnected clients
+        for connection in disconnected:
+            self.disconnect(connection, room)
+
+    async def _send_heartbeat(self, websocket: WebSocket, interval: int = 30):
+        """Send periodic heartbeat messages to keep connection alive.
+
+        Args:
+            websocket: The WebSocket connection
+            interval: Heartbeat interval in seconds
+        """
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                heartbeat = HeartbeatMessage(timestamp=datetime.utcnow().isoformat())
+                await websocket.send_text(heartbeat.model_dump_json())
+        except asyncio.CancelledError:
+            # Task was cancelled during disconnect
+            pass
+        except Exception as e:
+            logger.error(f"Heartbeat error: {e}")
+
+
+# Global connection manager instance
+# TODO: Configure max_connections_per_user in your application settings
+# Example: manager = ConnectionManager(max_connections_per_user=5)
+manager = ConnectionManager(max_connections_per_user=None)
+
+
+# =============================================================================
+# WebSocket Endpoints
+# =============================================================================
+
+{% for stream in streams %}
+@router.websocket("{{ stream.path }}")
+async def {{ stream.function_name }}(
+    websocket: WebSocket,
+    {% if stream.path_params %}
+    {% for param in stream.path_params %}
+    {{ param.name }}: {{ param.python_type }},
+    {% endfor %}
+    {% endif %}
+    {% if stream.auth == "required" %}
+    token: Optional[str] = Query(None, description="Authentication token (optional if using first-message auth)"),
+    {% elif stream.auth == "optional" %}
+    token: Optional[str] = Query(None, description="Authentication token"),
+    {% endif %}
+):
+    """{{ stream.description or 'WebSocket endpoint for ' + stream.name }}.
+    {% if stream.auth == "required" %}
+
+    Authentication:
+        Required via query parameter 'token' OR first message with type='auth'
+        If token query param is not provided, first message must be auth message
+    {% elif stream.auth == "optional" %}
+
+    Authentication:
+        Optional via query parameter 'token' OR first message with type='auth'
+    {% endif %}
+    {% if stream.messages %}
+
+    Message Types:
+        {% for message in stream.messages %}
+        - {{ message.type }}{% if message.description %}: {{ message.description }}{% endif %}
+        {% endfor %}
+    {% endif %}
+    """
+    {% if stream.auth == "required" %}
+    # Authenticate user - support both query param and first-message auth
+    authenticated = False
+
+    if token:
+        # Query param authentication
+        # TODO: Implement authentication validation
+        # try:
+        #     user = await verify_token(token)
+        #     authenticated = True
+        # except Exception as e:
+        #     logger.error(f"Authentication failed: {e}")
+        #     await websocket.close(code=1008, reason="Authentication failed")
+        #     return
+        authenticated = True  # Remove this when implementing real auth
+    {% endif %}
+
+    # Determine room identifier
+    {% if stream.path_params %}
+    room = f"{{ stream.name }}_{{ '{' + stream.path_params[0].name + '}' }}"
+    {% else %}
+    room = "{{ stream.name }}"
+    {% endif %}
+
+    # Connect to room
+    await manager.connect(websocket, room)
+
+    try:
+        {% if stream.auth == "required" %}
+        # If not authenticated via query param, expect first message to be auth
+        if not authenticated:
+            try:
+                auth_data = await websocket.receive_text()
+                auth_message_data = json.loads(auth_data)
+
+                if auth_message_data.get("type") != "auth":
+                    error_msg = ErrorMessage(
+                        error="Authentication required",
+                        details="First message must be auth message with type='auth' and 'token' field"
+                    )
+                    await manager.send_personal_message(error_msg.model_dump_json(), websocket)
+                    await websocket.close(code=1008, reason="Authentication required")
+                    manager.disconnect(websocket, room)
+                    return
+
+                # Validate auth message
+                auth_msg = AuthMessage(**auth_message_data)
+
+                # TODO: Implement authentication validation
+                # try:
+                #     user = await verify_token(auth_msg.token)
+                # except Exception as e:
+                #     logger.error(f"Authentication failed: {e}")
+                #     error_msg = ErrorMessage(error="Authentication failed", details=str(e))
+                #     await manager.send_personal_message(error_msg.model_dump_json(), websocket)
+                #     await websocket.close(code=1008, reason="Authentication failed")
+                #     manager.disconnect(websocket, room)
+                #     return
+
+                authenticated = True
+                logger.info(f"Client authenticated via first message in room '{room}'")
+
+            except json.JSONDecodeError:
+                error_msg = ErrorMessage(error="Invalid JSON in auth message")
+                await manager.send_personal_message(error_msg.model_dump_json(), websocket)
+                await websocket.close(code=1008, reason="Invalid auth message")
+                manager.disconnect(websocket, room)
+                return
+            except ValidationError as e:
+                error_msg = ErrorMessage(error="Invalid auth message format", details=str(e))
+                await manager.send_personal_message(error_msg.model_dump_json(), websocket)
+                await websocket.close(code=1008, reason="Invalid auth message")
+                manager.disconnect(websocket, room)
+                return
+        {% endif %}
+
+        while True:
+            # Receive message from client
+            data = await websocket.receive_text()
+
+            # Extract message_id and correlation_id before parsing
+            message_id = None
+            correlation_id = None
+
+            try:
+                # Parse message
+                message_data = json.loads(data)
+                message_type = message_data.get("type")
+                message_id = message_data.get("message_id")
+                correlation_id = message_data.get("correlation_id")
+
+                if not message_type:
+                    error_msg = ErrorMessage(error="Missing message type")
+                    await manager.send_personal_message(error_msg.model_dump_json(), websocket)
+                    continue
+
+                # Route message based on type
+                {% if stream.messages %}
+                {% for message in stream.messages %}
+                {% if loop.first %}if{% else %}elif{% endif %} message_type == "{{ message.type }}":
+                    # Handle {{ message.type }} message
+                    try:
+                        {% if message.payload_fields %}
+                        payload = {{ message.payload_class_name }}(**message_data.get("data", {}))
+                        {% endif %}
+
+                        # TODO: Implement {{ message.type }} message handling
+                        # Process the message and broadcast/respond as needed
+
+                        # Example: Broadcast to all clients in room
+                        response = WebSocketMessage(
+                            type="{{ message.type }}",
+                            data=message_data.get("data", {}),
+                            timestamp=datetime.utcnow().isoformat(),
+                            correlation_id=correlation_id  # Preserve correlation_id for request-response
+                        )
+                        await manager.broadcast(response.model_dump_json(), room)
+
+                        # Send acknowledgment if message_id is present
+                        if message_id:
+                            ack = AckMessage(
+                                message_id=message_id,
+                                timestamp=datetime.utcnow().isoformat()
+                            )
+                            await manager.send_personal_message(ack.model_dump_json(), websocket)
+
+                    except ValidationError as e:
+                        error_msg = ErrorMessage(
+                            error="Invalid message payload",
+                            details=str(e)
+                        )
+                        await manager.send_personal_message(error_msg.model_dump_json(), websocket)
+
+                        # Send failure acknowledgment if message_id is present
+                        if message_id:
+                            ack = AckMessage(
+                                message_id=message_id,
+                                status="error",
+                                timestamp=datetime.utcnow().isoformat()
+                            )
+                            await manager.send_personal_message(ack.model_dump_json(), websocket)
+
+                {% endfor %}
+                else:
+                    # Unknown message type
+                    error_msg = ErrorMessage(
+                        error=f"Unknown message type: {message_type}",
+                        details=f"Supported types: {{ stream.messages | map(attribute='type') | join(', ') }}"
+                    )
+                    await manager.send_personal_message(error_msg.model_dump_json(), websocket)
+                {% else %}
+                # No message types defined - echo back
+                response = WebSocketMessage(
+                    type=message_type,
+                    data=message_data.get("data", {}),
+                    timestamp=datetime.utcnow().isoformat()
+                )
+                await manager.broadcast(response.model_dump_json(), room, exclude=websocket)
+                {% endif %}
+
+            except json.JSONDecodeError as e:
+                # Handle malformed JSON gracefully - send error but keep connection open
+                logger.warning(f"Received malformed JSON from client: {e}")
+                error_msg = ErrorMessage(
+                    error="Invalid JSON format",
+                    details="Message could not be parsed. Please ensure valid JSON format."
+                )
+                await manager.send_personal_message(error_msg.model_dump_json(), websocket)
+                # Connection stays open - client can send valid messages next
+                continue
+            except Exception as e:
+                logger.error(f"Error processing message: {e}")
+                error_msg = ErrorMessage(error="Internal server error", details=str(e))
+                await manager.send_personal_message(error_msg.model_dump_json(), websocket)
+                # Connection stays open for error recovery
+                continue
+
+    except WebSocketDisconnect:
+        logger.info(f"Client disconnected from {{ stream.name }}")
+        manager.disconnect(websocket, room)
+    except Exception as e:
+        logger.error(f"WebSocket error in {{ stream.name }}: {e}")
+        manager.disconnect(websocket, room)
+
+{% if not loop.last %}
+
+{% endif %}
+{% endfor %}

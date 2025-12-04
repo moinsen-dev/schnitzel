@@ -11,29 +11,42 @@ class ApiClient {
   ApiClient(this._dio);
 
 {% for method in methods %}
-  {% if method.description %}
+{% if method.description %}
   /// {{ method.description }}
-  {% endif %}
-  Future<{{ method.return_type }}> {{ method.name }}({% if method.params %}{{ method.params }}{% endif %}) async {
-    {% if method.query_params %}
+{% endif %}
+  Future<{{ method.return_type }}> {{ method.name }}(
+    {% if method.params %}
+    {{ method.params }}
+    {% endif %}
+  ) async {
+{% if method.query_params %}
     final queryParameters = {
-      {% for qp in method.query_params %}
+{% for qp in method.query_params %}
       '{{ qp.name }}': {{ qp.value }},
-      {% endfor %}
+{% endfor %}
     };
-    {% endif %}
-    {% if method.has_body %}
-    final response = await _dio.{{ method.http_method }}('{{ method.path }}', data: {{ method.body_var }}{% if method.query_params %}, queryParameters: queryParameters{% endif %});
-    {% else %}
-    final response = await _dio.{{ method.http_method }}('{{ method.path }}'{% if method.query_params %}, queryParameters: queryParameters{% endif %});
-    {% endif %}
-    {% if method.has_response %}
-    {% if method.is_list_response %}
-    return (response.data as List).map((e) => {{ method.response_model }}.fromJson(e)).toList();
-    {% else %}
+{% endif %}
+{% if method.has_body %}
+    final response = await _dio.{{ method.http_method }}(
+      '{{ method.path }}',
+      data: {{ method.body_var }}{% if method.query_params %},
+      queryParameters: queryParameters{% endif %},
+    );
+{% else %}
+    final response = await _dio.{{ method.http_method }}(
+      '{{ method.path }}'{% if method.query_params %},
+      queryParameters: queryParameters{% endif %},
+    );
+{% endif %}
+{% if method.has_response %}
+{% if method.is_list_response %}
+    return (response.data as List)
+        .map((e) => {{ method.response_model }}.fromJson(e))
+        .toList();
+{% else %}
     return {{ method.response_model }}.fromJson(response.data);
-    {% endif %}
-    {% endif %}
+{% endif %}
+{% endif %}
   }
 {% if not loop.last %}
 

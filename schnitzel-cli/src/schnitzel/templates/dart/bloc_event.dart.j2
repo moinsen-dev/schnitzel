@@ -1,0 +1,105 @@
+part of '{{ model_name_snake }}_bloc.dart';
+
+abstract class {{ model_name }}Event extends Equatable {
+  const {{ model_name }}Event();
+
+  @override
+  List<Object?> get props => [];
+}
+
+/// Load all {{ model_name }} items with pagination, filtering, and sorting
+class {{ model_name }}Load extends {{ model_name }}Event {
+  final int page;
+  final int pageSize;
+  final Map<String, dynamic>? filters;
+  final String? sortBy;
+  final String? sortOrder;
+
+  const {{ model_name }}Load({
+    this.page = 1,
+    this.pageSize = 20,
+    this.filters,
+    this.sortBy,
+    this.sortOrder,
+  });
+
+  @override
+  List<Object?> get props => [page, pageSize, filters, sortBy, sortOrder];
+}
+
+/// Load more {{ model_name }} items for infinite scrolling
+class {{ model_name }}LoadMore extends {{ model_name }}Event {
+  final int pageSize;
+
+  const {{ model_name }}LoadMore({
+    this.pageSize = 20,
+  });
+
+  @override
+  List<Object?> get props => [pageSize];
+}
+
+/// Filter {{ model_name }} items
+class {{ model_name }}Filter extends {{ model_name }}Event {
+  final Map<String, dynamic> filters;
+  final int pageSize;
+
+  const {{ model_name }}Filter({
+    required this.filters,
+    this.pageSize = 20,
+  });
+
+  @override
+  List<Object?> get props => [filters, pageSize];
+}
+
+/// Sort {{ model_name }} items
+class {{ model_name }}Sort extends {{ model_name }}Event {
+  final String sortBy;
+  final String sortOrder;
+  final int pageSize;
+
+  const {{ model_name }}Sort({
+    required this.sortBy,
+    this.sortOrder = 'asc',
+    this.pageSize = 20,
+  });
+
+  @override
+  List<Object?> get props => [sortBy, sortOrder, pageSize];
+}
+
+/// Create a new {{ model_name }}
+class {{ model_name }}Create extends {{ model_name }}Event {
+  final {{ model_name }} item;
+
+  const {{ model_name }}Create({required this.item});
+
+  @override
+  List<Object?> get props => [item];
+}
+
+/// Update an existing {{ model_name }}
+class {{ model_name }}Update extends {{ model_name }}Event {
+  final {{ model_name }} item;
+
+  const {{ model_name }}Update({required this.item});
+
+  @override
+  List<Object?> get props => [item];
+}
+
+/// Delete a {{ model_name }}
+class {{ model_name }}Delete extends {{ model_name }}Event {
+  final String id;
+
+  const {{ model_name }}Delete({required this.id});
+
+  @override
+  List<Object?> get props => [id];
+}
+
+/// Refresh {{ model_name }} list without showing loading state
+class {{ model_name }}Refresh extends {{ model_name }}Event {
+  const {{ model_name }}Refresh();
+}

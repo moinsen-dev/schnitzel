@@ -1,0 +1,126 @@
+"""Generated Temporal workflow definitions from Schnitzel schema."""
+
+from datetime import timedelta
+from typing import Any
+
+from temporalio import workflow
+from temporalio.common import RetryPolicy
+
+
+{% for job in jobs %}
+@workflow.defn(name="{{ job.workflow_name }}")
+class {{ job.class_name }}:
+    """{{ job.description }}
+
+    {% if job.has_schedule %}Schedule: {{ job.schedule }}{% else %}Trigger: Manual (no schedule){% endif %}
+    Timeout: {{ job.timeout_seconds }}s
+    Max Retries: {{ job.retry_max_attempts }}
+    """
+
+    @workflow.run
+    async def run(self{% if job.has_params %}{% for param in job.params %}, {{ param.name }}: {{ param.type }}{% endfor %}{% endif %}) -> dict[str, Any]:
+        """Execute the {{ job.name }} workflow.
+
+        {% if job.has_schedule %}Cron Schedule: {{ job.schedule }}{% else %}Manual Trigger: Can be started via Temporal client or CLI{% endif %}
+        {% if job.has_params %}
+        Args:
+        {% for param in job.params %}    {{ param.name }}: {{ param.schema_type }} parameter
+        {% endfor %}{% endif %}
+        Returns:
+            Dictionary containing workflow execution results.
+        """
+        # TODO: Implement workflow logic
+        # This is a stub that should be customized based on your business logic
+
+        workflow.logger.info("Starting {{ job.name }} workflow")
+        {% if job.has_params %}
+        # Workflow parameters received:
+        {% for param in job.params %}
+        workflow.logger.info(f"  {{ param.name }}: {{ '{' }}{{ param.name }}{{ '}' }}")
+        {% endfor %}
+        {% endif %}
+
+        # TODO: Add activity executions here
+        # Example:
+        # result = await workflow.execute_activity(
+        #     activity_name,
+        #     {% if job.has_params %}{{ job.params[0].name }},  # Pass parameters to activities
+        #     {% endif %}args,
+        #     start_to_close_timeout=timedelta(seconds={{ job.timeout_seconds }}),
+        #     retry_policy=RetryPolicy(
+        #         maximum_attempts={{ job.retry_max_attempts }},
+        #         initial_interval=timedelta(seconds={{ job.retry_initial_interval_seconds }}),
+        #         backoff_coefficient={{ job.retry_backoff_coefficient }},
+        #     ),
+        # )
+
+        workflow.logger.info("Completed {{ job.name }} workflow")
+
+        return {
+            "status": "completed",
+            "message": "{{ job.name }} workflow executed successfully"{% if job.has_params %},
+            "parameters": {% raw %}{{% endraw %}{% for param in job.params %}
+                "{{ param.name }}": {{ param.name }}{% if not loop.last %},{% endif %}{% endfor %}
+            {% raw %}}{% endraw %}{% endif %}
+        }
+
+{% if not loop.last %}
+
+{% endif %}
+{% endfor %}
+
+
+# =============================================================================
+# Worker Registration
+# =============================================================================
+
+def get_workflow_classes() -> list[type]:
+    """Get all workflow classes for worker registration.
+
+    Returns:
+        List of workflow class types to register with Temporal worker.
+
+    Example:
+        ```python
+        from temporalio.client import Client
+        from temporalio.worker import Worker
+
+        async def main():
+            client = await Client.connect("localhost:7233")
+
+            worker = Worker(
+                client,
+                task_queue="default",
+                workflows=get_workflow_classes(),
+                activities=[],  # Add your activities here
+            )
+
+            await worker.run()
+        ```
+    """
+    return [
+        {% for job in jobs %}
+        {{ job.class_name }},
+        {% endfor %}
+    ]
+
+
+# Schedule configuration for Temporal schedule creation
+# Only includes jobs with cron schedules (manual-trigger jobs excluded)
+SCHEDULE_CONFIGS = {
+    {% for job in jobs %}{% if job.has_schedule %}
+    "{{ job.name }}": {
+        "workflow": "{{ job.workflow_name }}",
+        "schedule": "{{ job.schedule }}",
+        "task_queue": "default",
+    },
+    {% endif %}{% endfor %}
+}
+
+# Manual-trigger workflows (no schedule)
+# These can be started via Temporal client:
+#   client.start_workflow(workflow_name, args, id="workflow-id", task_queue="default")
+MANUAL_WORKFLOWS = [
+    {% for job in jobs %}{% if not job.has_schedule %}"{{ job.workflow_name }}",
+    {% endif %}{% endfor %}
+]

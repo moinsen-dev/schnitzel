@@ -17,18 +17,19 @@ part '{{ filename }}.g.dart';
 @freezed
 abstract class {{ model.name }} with _${{ model.name }} {
   const factory {{ model.name }}({
-    {% for field in model.fields %}
-    {% if field.description %}
+{% for field in model.fields %}
+{% if field.description %}
     /// {{ field.description }}
-    {% endif %}
+{% endif %}
     {% if field.json_key %}@JsonKey(name: '{{ field.json_key }}') {% endif %}{% if field.default is not none %}@Default({{ field.default }}) {% endif %}{% if field.required %}required {% endif %}{{ field.type }} {{ field.name }},
-    {% endfor %}
-    {% for rel in model.relationships %}
+{% endfor %}
+{% for rel in model.relationships %}
     {% if rel.json_key %}@JsonKey(name: '{{ rel.json_key }}') {% endif %}{{ rel.type }} {{ rel.name }},
-    {% endfor %}
+{% endfor %}
   }) = _{{ model.name }};
 
-  factory {{ model.name }}.fromJson(Map<String, dynamic> json) => _${{ model.name }}FromJson(json);
+  factory {{ model.name }}.fromJson(Map<String, dynamic> json) =>
+      _${{ model.name }}FromJson(json);
 }
 
 {% if not loop.last %}

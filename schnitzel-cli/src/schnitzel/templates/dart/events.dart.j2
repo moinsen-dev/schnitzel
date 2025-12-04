@@ -1,0 +1,330 @@
+// Generated Dart event client from Schnitzel schema
+
+import 'dart:async';
+import 'dart:convert';
+{% if has_sse_streams %}
+import 'package:http/http.dart' as http;
+{% endif %}
+{% if has_websocket_streams %}
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:web_socket_channel/io.dart';
+{% endif %}
+
+{% if events %}
+// =============================================================================
+// Event Classes
+// =============================================================================
+
+{% for event in events %}
+/// Event: {{ event.name }}
+{% if event.description %}
+/// {{ event.description }}
+{% endif %}
+class {{ event.class_name }} {
+{% for field in event.fields %}
+  final {{ field.dart_type }} {{ field.dart_name }};
+{% endfor %}
+
+  {{ event.class_name }}({
+{% for field in event.fields %}
+    required this.{{ field.dart_name }},
+{% endfor %}
+  });
+
+  factory {{ event.class_name }}.fromJson(Map<String, dynamic> json) {
+    return {{ event.class_name }}(
+{% for field in event.fields %}
+      {{ field.dart_name }}: json['{{ field.json_key }}'] as {{ field.dart_type }},
+{% endfor %}
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+{% for field in event.fields %}
+      '{{ field.json_key }}': {{ field.dart_name }},
+{% endfor %}
+    };
+  }
+}
+
+{% endfor %}
+{% endif %}
+
+{% if has_sse_streams %}
+// =============================================================================
+// SSE Client
+// =============================================================================
+
+/// SSE client for server-sent events with automatic reconnection
+class SSEClient {
+  final String baseUrl;
+  final String? authToken;
+  final Duration reconnectDelay;
+
+  http.Client? _httpClient;
+  final Map<String, StreamController<Map<String, dynamic>>> _controllers =
+      {};
+  final Map<String, bool> _isConnected = {};
+
+  SSEClient({
+    required this.baseUrl,
+    this.authToken,
+    this.reconnectDelay = const Duration(seconds: 3),
+  }) {
+    _httpClient = http.Client();
+  }
+
+  void dispose() {
+    for (final controller in _controllers.values) {
+      controller.close();
+    }
+    _controllers.clear();
+    _httpClient?.close();
+    _httpClient = null;
+  }
+
+{% for stream in sse_streams %}
+  /// Subscribe to {{ stream.name }} SSE stream
+  Stream<Map<String, dynamic>> {{ stream.method_name }}(
+    {% for param in stream.path_params %}
+    String {{ param }}{% if not loop.last %},{% endif %}
+
+    {% endfor %}
+  ) {
+    final streamKey = '{{ stream.name }}';
+
+    if (_controllers.containsKey(streamKey)) {
+      return _controllers[streamKey]!.stream;
+    }
+
+    final controller = StreamController<Map<String, dynamic>>.broadcast();
+    _controllers[streamKey] = controller;
+
+    Future<void> connect() async {
+      if (_isConnected[streamKey] == true) return;
+      _isConnected[streamKey] = true;
+
+      try {
+        final uri = Uri.parse('$baseUrl/{{ stream.dart_path }}');
+        final request = http.Request('GET', uri);
+
+        if (authToken != null) {
+          request.headers['Authorization'] = 'Bearer $authToken';
+        }
+        request.headers['Accept'] = 'text/event-stream';
+        request.headers['Cache-Control'] = 'no-cache';
+
+        final response = await _httpClient!.send(request);
+
+        if (response.statusCode != 200) {
+          throw Exception(
+            'SSE connection failed: ${response.statusCode}',
+          );
+        }
+
+        response.stream
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())
+            .listen(
+              (line) {
+                if (line.startsWith('data: ')) {
+                  final data = line.substring(6);
+                  try {
+                    final json = jsonDecode(data) as Map<String, dynamic>;
+                    controller.add(json);
+                  } catch (e) {
+                    // Skip malformed JSON
+                  }
+                }
+              },
+              onError: (error) {
+                _isConnected[streamKey] = false;
+                // Reconnect after delay
+                Future.delayed(reconnectDelay, connect);
+              },
+              onDone: () {
+                _isConnected[streamKey] = false;
+                // Reconnect after delay
+                Future.delayed(reconnectDelay, connect);
+              },
+              cancelOnError: false,
+            );
+      } catch (e) {
+        _isConnected[streamKey] = false;
+        // Reconnect after delay
+        Future.delayed(reconnectDelay, connect);
+      }
+    }
+
+    connect();
+    return controller.stream;
+  }
+
+{% endfor %}
+}
+
+{% endif %}
+
+{% if has_websocket_streams %}
+// =============================================================================
+// WebSocket Client
+// =============================================================================
+
+/// WebSocket client for bidirectional communication with automatic
+/// reconnection
+class WebSocketClient {
+  final String baseUrl;
+  final String? authToken;
+  final Duration reconnectDelay;
+  final Duration heartbeatInterval;
+
+  final Map<String, WebSocketChannel?> _channels = {};
+  final Map<String, StreamController<Map<String, dynamic>>> _controllers =
+      {};
+  final Map<String, Timer?> _heartbeatTimers = {};
+  final Map<String, bool> _isConnected = {};
+  final Map<String, int> _reconnectAttempts = {};
+
+  WebSocketClient({
+    required this.baseUrl,
+    this.authToken,
+    this.reconnectDelay = const Duration(seconds: 3),
+    this.heartbeatInterval = const Duration(seconds: 30),
+  });
+
+  void dispose() {
+    for (final channel in _channels.values) {
+      channel?.sink.close();
+    }
+    _channels.clear();
+
+    for (final controller in _controllers.values) {
+      controller.close();
+    }
+    _controllers.clear();
+
+    for (final timer in _heartbeatTimers.values) {
+      timer?.cancel();
+    }
+    _heartbeatTimers.clear();
+  }
+
+  void send(String streamKey, Map<String, dynamic> message) {
+    final channel = _channels[streamKey];
+    if (channel != null && _isConnected[streamKey] == true) {
+      channel.sink.add(jsonEncode(message));
+    }
+  }
+
+{% for stream in websocket_streams %}
+  /// Connect to {{ stream.name }} WebSocket stream
+  Stream<Map<String, dynamic>> {{ stream.method_name }}(
+    {% for param in stream.path_params %}
+    String {{ param }}{% if not loop.last %},{% endif %}
+
+    {% endfor %}
+  ) {
+    final streamKey = '{{ stream.name }}';
+
+    if (_controllers.containsKey(streamKey)) {
+      return _controllers[streamKey]!.stream;
+    }
+
+    final controller = StreamController<Map<String, dynamic>>.broadcast();
+    _controllers[streamKey] = controller;
+
+    Future<void> connect() async {
+      if (_isConnected[streamKey] == true) return;
+
+      try {
+        // Convert http(s):// to ws(s)://
+        final wsUrl = baseUrl
+            .replaceFirst('http://', 'ws://')
+            .replaceFirst('https://', 'wss://');
+        var uri = Uri.parse('$wsUrl/{{ stream.dart_path }}');
+
+        // Add auth token as query parameter if provided
+        if (authToken != null) {
+          uri = uri.replace(
+            queryParameters: {
+              ...uri.queryParameters,
+              'token': authToken!,
+            },
+          );
+        }
+
+        final channel = IOWebSocketChannel.connect(uri);
+        _channels[streamKey] = channel;
+        _isConnected[streamKey] = true;
+        _reconnectAttempts[streamKey] = 0;
+
+        // Start heartbeat
+        _heartbeatTimers[streamKey]?.cancel();
+        _heartbeatTimers[streamKey] = Timer.periodic(
+          heartbeatInterval,
+          (timer) {
+            if (_isConnected[streamKey] == true) {
+              channel.sink.add(jsonEncode({'type': 'ping'}));
+            }
+          },
+        );
+
+        channel.stream.listen(
+          (message) {
+            try {
+              final json = jsonDecode(message) as Map<String, dynamic>;
+              controller.add(json);
+            } catch (e) {
+              // Skip malformed JSON
+            }
+          },
+          onError: (error) {
+            _isConnected[streamKey] = false;
+            _heartbeatTimers[streamKey]?.cancel();
+            // Exponential backoff
+            final attempts = _reconnectAttempts[streamKey] ?? 0;
+            final delay = reconnectDelay * (1 << attempts.clamp(0, 5));
+            _reconnectAttempts[streamKey] = attempts + 1;
+            Future.delayed(delay, connect);
+          },
+          onDone: () {
+            _isConnected[streamKey] = false;
+            _heartbeatTimers[streamKey]?.cancel();
+            // Exponential backoff
+            final attempts = _reconnectAttempts[streamKey] ?? 0;
+            final delay = reconnectDelay * (1 << attempts.clamp(0, 5));
+            _reconnectAttempts[streamKey] = attempts + 1;
+            Future.delayed(delay, connect);
+          },
+          cancelOnError: false,
+        );
+      } catch (e) {
+        _isConnected[streamKey] = false;
+        // Exponential backoff
+        final attempts = _reconnectAttempts[streamKey] ?? 0;
+        final delay = reconnectDelay * (1 << attempts.clamp(0, 5));
+        _reconnectAttempts[streamKey] = attempts + 1;
+        Future.delayed(delay, connect);
+      }
+    }
+
+    connect();
+    return controller.stream;
+  }
+
+{% endfor %}
+}
+
+{% endif %}
+
+{% if not events and not has_sse_streams and not has_websocket_streams %}
+// =============================================================================
+// Empty Event Client
+// =============================================================================
+
+/// Empty event client - no events or streams defined in schema
+class EventClient {
+  EventClient();
+}
+{% endif %}

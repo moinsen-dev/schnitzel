@@ -9,10 +9,19 @@ router = APIRouter()
 
 
 {% for route in routes %}
-@router.{{ route.method }}('{{ route.path }}'{% if route.status_code %}, status_code={{ route.status_code }}{% endif %}, operation_id="{{ route.operation_id }}")
-async def {{ route.function_name }}({% for param in route.parameters %}{{ param.name }}: {{ param.type }}{% if param.default is not none %} = {{ param.default }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}) -> {{ route.return_type }}:
+@router.{{ route.method }}(
+    "{{ route.path }}"{% if route.status_code %},
+    status_code={{ route.status_code }}{% endif %},
+    operation_id="{{ route.operation_id }}",
+)
+async def {{ route.function_name }}(
+    {% for param in route.parameters %}
+    {{ param.name }}: {{ param.type }}{% if param.default is not none %} = {{ param.default }}{% endif %}{% if not loop.last %},{% endif %}
+
+    {% endfor %}
+) -> {{ route.return_type }}:
     {% if route.description %}"""{{ route.description }}"""{% endif %}
-    # TODO: Implement
+    # TODO: Implement endpoint logic
     pass
 
 {% if not loop.last %}

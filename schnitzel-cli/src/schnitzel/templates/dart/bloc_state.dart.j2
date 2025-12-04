@@ -1,0 +1,60 @@
+part of '{{ model_name_snake }}_bloc.dart';
+
+abstract class {{ model_name }}State extends Equatable {
+  const {{ model_name }}State();
+
+  @override
+  List<Object?> get props => [];
+}
+
+/// Initial state before any operation
+class {{ model_name }}Initial extends {{ model_name }}State {
+  const {{ model_name }}Initial();
+}
+
+/// Loading state during async operations
+class {{ model_name }}Loading extends {{ model_name }}State {
+  const {{ model_name }}Loading();
+}
+
+/// Loaded state with items, pagination, and filter info
+class {{ model_name }}Loaded extends {{ model_name }}State {
+  final List<{{ model_name }}> items;
+  final bool hasMore;
+  final int currentPage;
+  final Map<String, dynamic>? currentFilters;
+  final String? currentSortBy;
+  final String? currentSortOrder;
+  final bool isFromCache;
+
+  const {{ model_name }}Loaded({
+    required this.items,
+    this.hasMore = false,
+    this.currentPage = 1,
+    this.currentFilters,
+    this.currentSortBy,
+    this.currentSortOrder,
+    this.isFromCache = false,
+  });
+
+  @override
+  List<Object?> get props => [
+        items,
+        hasMore,
+        currentPage,
+        currentFilters,
+        currentSortBy,
+        currentSortOrder,
+        isFromCache,
+      ];
+}
+
+/// Error state with message
+class {{ model_name }}Error extends {{ model_name }}State {
+  final String message;
+
+  const {{ model_name }}Error({required this.message});
+
+  @override
+  List<Object?> get props => [message];
+}
