@@ -1,9 +1,14 @@
-Modular Project - Module Initialized
+Modular Project - Module Status
+=====================================
+
+Project: Schnitzel Framework v1.0.0
+
+=====================================
+MODULE 00: FOUNDATION (COMPLETE)
 =====================================
 
 Date: 2025-12-03
 Module: module_00_foundation - Foundation (MVP)
-Project: Schnitzel Framework v1.0.0
 
 Completed:
 - Read app_spec_master.txt (tech stack, design system, project structure)
@@ -125,3 +130,183 @@ Notes:
 - Integration tests first, unit tests second (per testing approach)
 - All generated code must compile and pass strict type checking
 - Use FoodieAI example schema for integration testing
+
+=====================================
+MODULE 01: API LAYER (INITIALIZED)
+=====================================
+
+Date: 2025-12-04
+Module: module_01_api_layer - API Layer
+Depends on: module_00_foundation (COMPLETE - 158/158 features passing)
+
+Completed:
+- Read app_spec_master.txt (tech stack: FastAPI, SQLAlchemy 2.0, Alembic, Dio, Uvicorn)
+- Read modules/module_01_api_layer.txt (API generation features)
+- Merged master spec (tech stack, design) with module spec (endpoints, generators)
+- Generated feature_list_module_01_api_layer.json with 180 test cases
+  - Functional: 164 tests
+  - Style: 16 tests
+
+Module Feature Breakdown:
+- SQLAlchemy ORM Generator (28 tests): Table definitions, column types, PKs, FKs, indexes, relationships, enums, timestamps, many-to-many
+- FastAPI Route Generator (31 tests): Path params, query params, body validation, auth decorators, role checking, file uploads, WebSockets
+- Dart API Client Generator (25 tests): Dio-based HTTP client, path interpolation, query encoding, error handling, auth interceptor, retries
+- Database Migration Generator (18 tests): Alembic integration, schema diffs, SQL generation, column changes, index/FK management
+- Serve Command (12 tests): Docker Compose, uvicorn hot reload, Flutter dev server, port config, service status display
+- Validate Command (10 tests): Schema validation, breaking changes, naming conventions, security checks, formatted reports
+- Migrate Command (9 tests): diff, up, down, status subcommands, validation, dry-run
+- Integration Tests (14 tests): Full pipeline, API contracts, CRUD operations, auth flows, relationships, pagination
+- Templates & Generators (10 tests): Jinja2 templates, model iteration, edge cases, generation metadata
+- Error Handling & CLI (8 tests): Network failures, port conflicts, database connections, help text, verbose mode
+- Performance & Testing (6 tests): Generation speed, concurrent requests, test coverage, CI integration
+- Documentation & Style (9 tests): Code formatting, type hints, docstrings, RESTful conventions, zero-tolerance compliance
+
+Test Complexity Distribution:
+- Short tests (2-5 steps): 82 tests - Quick validations
+- Medium tests (6-9 steps): 68 tests - Feature verification
+- Comprehensive tests (10+ steps): 30 tests - End-to-end workflows
+
+Priority Breakdown:
+- P0 (Critical - 53 tests): Core generation, basic endpoints, migrations, serve/migrate commands
+- P1 (High - 78 tests): Advanced features, validation, error handling, integration
+- P2 (Medium - 49 tests): Polish, performance, edge cases, documentation
+
+Files to Create:
+Generators:
+- schnitzel-cli/src/schnitzel/generators/python/routes.py
+- schnitzel-cli/src/schnitzel/generators/python/orm.py
+- schnitzel-cli/src/schnitzel/generators/dart/api_client.py
+- schnitzel-cli/src/schnitzel/generators/infra/migrations.py
+
+Templates (Jinja2):
+- schnitzel-cli/src/schnitzel/templates/python/routes.py.j2
+- schnitzel-cli/src/schnitzel/templates/python/orm.py.j2
+- schnitzel-cli/src/schnitzel/templates/dart/api_client.dart.j2
+- schnitzel-cli/src/schnitzel/templates/infra/alembic_migration.py.j2
+
+Commands:
+- schnitzel-cli/src/schnitzel/commands/serve.py
+- schnitzel-cli/src/schnitzel/commands/validate.py
+- schnitzel-cli/src/schnitzel/commands/migrate.py
+
+Integration Tests:
+- schnitzel-cli/tests/integration/test_api_generation.py
+- schnitzel-cli/tests/integration/test_migrations.py
+
+Module Status: 0/180 features passing (0%)
+
+Dependencies:
+- Depends on: module_00_foundation (COMPLETE)
+- Uses: Schema parser, schema validator, Pydantic model generator, Freezed model generator
+- Extends: CLI commands, code generators
+- Required by: Future modules needing API functionality
+
+Technology Stack for This Module:
+Backend Generation:
+- FastAPI for HTTP routes
+- SQLAlchemy 2.0 ORM with type hints
+- Alembic for database migrations
+- Uvicorn for ASGI server
+- Pydantic v2 for validation
+- python-jose for auth tokens
+
+Frontend Generation:
+- Dart/Flutter
+- Dio for HTTP client
+- Freezed models (from module_00)
+- json_serializable
+
+Infrastructure:
+- Docker Compose orchestration
+- PostgreSQL 16 with pgvector
+- Redis 7 for caching
+- Alembic for schema migrations
+
+CLI Tools:
+- Typer for commands
+- Rich for formatted output
+- Jinja2 for code templates
+
+Testing:
+- pytest for Python tests
+- pyright for type checking
+- dart analyze for Dart validation
+- Integration tests with FoodieAI schema
+
+Files Created in This Session:
+- /Users/udi/work/moinsen/ideas/schnitzel/feature_list_module_01_api_layer.json (180 tests)
+- /Users/udi/work/moinsen/ideas/schnitzel/claude-progress.txt (updated)
+
+Next Steps:
+1. Initialize SQLite database for module tracking (if not done):
+   autocoder-db init /Users/udi/work/moinsen/ideas/schnitzel --name "Schnitzel Framework"
+
+2. Import module_01 features to database:
+   autocoder-db import /Users/udi/work/moinsen/ideas/schnitzel/feature_list_module_01_api_layer.json --project /Users/udi/work/moinsen/ideas/schnitzel --module module_01_api_layer
+
+3. Verify import:
+   autocoder-db stats --project /Users/udi/work/moinsen/ideas/schnitzel
+
+4. Begin implementation (when ready):
+   /auto-coder:run --module module_01_api_layer
+
+First Wave Should Focus On (10-12 features):
+1. api_001: SQLAlchemy ORM generator creates basic model with primary key
+2. api_002: SQLAlchemy ORM generator maps all basic field types correctly
+3. api_003: SQLAlchemy ORM generator creates foreign key relationships
+4. api_011: FastAPI route generator creates basic GET endpoint
+5. api_012: FastAPI route generator creates POST endpoint with request body
+6. api_023: Dart API client generator creates basic GET method
+7. api_024: Dart API client generator creates POST method with request body
+8. api_036: Database migration generator creates initial migration
+9. api_123: Templates directory includes all required Jinja2 templates
+10. api_165: Generators module structure is properly organized
+11. api_166: Commands module structure is properly organized
+12. api_168: Generated code includes proper imports
+
+Success Criteria for Module 01:
+API Generation:
+- Generated FastAPI routes respond to HTTP requests correctly
+- Generated SQLAlchemy ORM models create proper database schema
+- Generated Dart API client makes successful API calls to backend
+- Type contracts match between Python routes and Dart client
+- All generated code passes strict type checking (pyright, dart analyze)
+
+Commands:
+- schnitzel serve starts complete dev environment (Docker + FastAPI + Flutter)
+- schnitzel validate detects breaking changes and security issues
+- schnitzel migrate manages database schema versions with Alembic
+
+Integration:
+- Full generation pipeline (schema → ORM + routes + client) produces working code
+- End-to-end CRUD operations work (create user via Dart → stored in DB → fetch via Dart)
+- Auth flow works (login, protected endpoints, token injection)
+- Database migrations apply cleanly and can be rolled back
+
+Code Quality:
+- Zero errors, zero warnings, zero TODOs (zero-tolerance policy)
+- All generated code follows language conventions (PEP 8, Dart style guide)
+- Generated code includes proper type hints and documentation
+- Test coverage >80% for all generators and commands
+
+Module Completion Estimate:
+- 180 tests total (100-200 range met)
+- Estimated waves: 12-18 waves (10-15 tests per wave)
+- Expected completion: After all P0 and P1 tests pass
+- P2 tests can be addressed in polish phase
+
+Implementation Order:
+Wave 1-3: Core ORM and route generation (foundation)
+Wave 4-6: Dart API client generation
+Wave 7-9: Database migrations and Alembic integration
+Wave 10-12: serve, validate, migrate commands
+Wave 13-15: Integration tests and end-to-end validation
+Wave 16-18: Error handling, performance, polish
+
+Notes for Implementation:
+- This module extends module_00 - reuse schema parser, validator, model generators
+- Focus on Jinja2 templates first - they drive all code generation
+- Integration tests validate the entire pipeline - prioritize these
+- Use FoodieAI schema for realistic testing (User, Recipe, Order models)
+- All generated code must compile before committing
+- Test generated API with real HTTP requests, not just unit tests

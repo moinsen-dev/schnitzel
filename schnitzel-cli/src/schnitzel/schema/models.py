@@ -45,10 +45,11 @@ Field = FieldDefinition
 class Relation(BaseModel):
     """Definition of a model relationship."""
 
-    type: Literal["belongsTo", "hasMany", "hasOne"]
+    type: Literal["belongsTo", "hasMany", "hasOne", "manyToMany"]
     model: str
     foreign_key: Optional[str] = None
     cascade: bool = False
+    through: Optional[str] = None  # Association table name for manyToMany
 
 
 # =============================================================================

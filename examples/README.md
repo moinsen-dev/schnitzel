@@ -2,6 +2,42 @@
 
 This directory contains example Schnitzel schemas demonstrating framework features.
 
+---
+
+## PROMPT DUEL - Competitive Prompt Engineering Game
+
+A multiplayer game where players battle using prompt engineering skills. Features cyberpunk aesthetics, real-time gameplay, and triple AI integration.
+
+### Structure
+
+```
+prompt-duel/
+├── prd.md                              # Product Requirements Document
+├── schema.schnitzel.yaml               # Root schema (global config)
+└── features/
+    ├── game/schema.yaml                # Matches, rounds, prompts, AI opponents
+    └── social/schema.yaml              # Leaderboards, spectating, friends
+```
+
+### Features Demonstrated
+
+- **13 Models** with complex relationships
+- **25+ REST Endpoints** with auth, roles, pagination
+- **5 Real-time Streams** (WebSocket + SSE)
+- **15+ Events** with push notifications
+- **12 Background Jobs** with scheduling
+- **Triple AI Integration** (Executor, Arbiter, Adversary)
+- **Vector Embeddings** (prompt analysis)
+- **Seasonal Rankings** and achievements
+
+### Quick Start
+
+```bash
+schnitzel init my-prompt-duel --from examples/prompt-duel
+```
+
+---
+
 ## FoodieAI - AI-Powered Restaurant Ordering App
 
 A comprehensive example showcasing ALL Schnitzel schema features.

@@ -1749,7 +1749,580 @@ The generation process follows a deterministic pipeline that ensures consistency
 
 ---
 
-## 9. Appendix
+## 9. Business Logic Specification
+
+Schnitzel schemas are not just structural definitions — they can express **behavioral rules** that govern how data changes, transitions, and interacts. This section defines the formal specification for embedding business logic directly in YAML schemas.
+
+### 9.1 Design Philosophy
+
+**Declarative over Imperative:** Business logic is expressed as rules and constraints, not code. The framework generates the implementation.
+
+**Single Source of Truth:** Rules live alongside models, ensuring documentation and implementation never drift.
+
+**Platform Agnostic:** The same rules generate Python validators, Dart validators, and database constraints.
+
+### 9.2 Field Validation Rules
+
+Field-level rules extend basic type constraints with expressive validation logic.
+
+#### Syntax
+
+```yaml
+models:
+  Player:
+    fields:
+      username:
+        type: string
+        min: 3
+        max: 20
+        rules:
+          - pattern: "^[a-zA-Z0-9_]+$"
+            message: "Username can only contain letters, numbers, and underscores"
+          - not_in: [admin, system, null, undefined]
+            message: "This username is reserved"
+
+      email:
+        type: string
+        format: email
+        rules:
+          - unique: true
+            scope: global
+            message: "Email already registered"
+
+      elo_rating:
+        type: int
+        default: 1000
+        rules:
+          - range: [0, 5000]
+            message: "ELO rating must be between 0 and 5000"
+```
+
+#### Supported Rule Types
+
+| Rule | Applies To | Description |
+|------|------------|-------------|
+| `pattern` | string | Regex pattern match |
+| `not_in` | any | Value must not be in list |
+| `in` | any | Value must be in list |
+| `range` | int, float | Value within [min, max] |
+| `length` | string, list | Length within [min, max] |
+| `unique` | any | Unique constraint with optional scope |
+| `custom` | any | Custom validation expression |
+
+#### Generated Code
+
+**Python (Pydantic):**
+```python
+class Player(BaseModel):
+    username: str = Field(..., min_length=3, max_length=20)
+
+    @field_validator('username')
+    def validate_username(cls, v):
+        if not re.match(r'^[a-zA-Z0-9_]+$', v):
+            raise ValueError('Username can only contain letters, numbers, and underscores')
+        if v.lower() in ['admin', 'system', 'null', 'undefined']:
+            raise ValueError('This username is reserved')
+        return v
+```
+
+**Dart (Freezed):**
+```dart
+@freezed
+class Player with _$Player {
+  @Assert('username.length >= 3 && username.length <= 20')
+  @Assert('RegExp(r"^[a-zA-Z0-9_]+\$").hasMatch(username)')
+  factory Player({required String username}) = _Player;
+}
+```
+
+### 9.3 Model Constraints
+
+Model-level constraints validate relationships between fields within a single record.
+
+#### Syntax
+
+```yaml
+models:
+  DateRange:
+    fields:
+      start_date: { type: datetime }
+      end_date: { type: datetime }
+
+    constraints:
+      - name: valid_date_range
+        check: "end_date > start_date"
+        message: "End date must be after start date"
+
+  MatchPlayer:
+    fields:
+      match_id: { type: uuid }
+      player_id: { type: uuid }
+      score: { type: int, default: 0 }
+
+    constraints:
+      - name: unique_player_per_match
+        unique: [match_id, player_id]
+        message: "Player can only join a match once"
+
+      - name: non_negative_score
+        check: "score >= 0"
+        message: "Score cannot be negative"
+```
+
+#### Constraint Types
+
+| Type | Description |
+|------|-------------|
+| `check` | Boolean expression that must be true |
+| `unique` | Compound uniqueness across fields |
+| `immutable` | Fields that cannot change after creation |
+| `required_if` | Conditional required fields |
+
+### 9.4 State Machines
+
+State machines formalize entity lifecycle with explicit states, transitions, guards, and actions.
+
+#### Syntax
+
+```yaml
+models:
+  Match:
+    fields:
+      status:
+        type: enum
+        values: [waiting, active, completed, cancelled, abandoned]
+        default: waiting
+
+    state_machine:
+      field: status
+      initial: waiting
+
+      states:
+        waiting:
+          description: "Waiting for players to join"
+          on_enter: "set created_at = now()"
+
+        active:
+          description: "Game in progress"
+          on_enter: "set started_at = now()"
+          timeout:
+            duration: 3600  # 1 hour max game time
+            transition: abandoned
+
+        completed:
+          description: "Game finished normally"
+          final: true
+          on_enter: "set ended_at = now()"
+
+        cancelled:
+          description: "Game cancelled before start"
+          final: true
+
+        abandoned:
+          description: "Game abandoned due to disconnection"
+          final: true
+
+      transitions:
+        start:
+          from: waiting
+          to: active
+          guard: "players.count >= 2 and all_players_ready"
+          action: "emit match.started"
+
+        finish:
+          from: active
+          to: completed
+          guard: "current_round > max_rounds or has_winner"
+          action: |
+            calculate_elo_changes()
+            emit match.ended
+
+        cancel:
+          from: waiting
+          to: cancelled
+          roles: [admin, creator]
+          action: "emit match.cancelled"
+
+        abandon:
+          from: active
+          to: abandoned
+          guard: "all_players_disconnected"
+          auto: true  # System-triggered
+          delay: 300  # 5 minutes grace period
+```
+
+#### State Machine Components
+
+| Component | Description |
+|-----------|-------------|
+| `field` | The enum field that holds state |
+| `initial` | Starting state for new records |
+| `states` | State definitions with metadata |
+| `transitions` | Named transitions between states |
+| `on_enter` | Action when entering a state |
+| `on_exit` | Action when leaving a state |
+| `guard` | Boolean condition that must be true |
+| `action` | Side effects when transition occurs |
+| `roles` | Who can trigger this transition |
+| `auto` | System-triggered transition |
+| `delay` | Delay before auto-transition |
+| `timeout` | State timeout configuration |
+
+#### Transition Guards
+
+Guards are boolean expressions that prevent invalid transitions:
+
+```yaml
+transitions:
+  submit_prompt:
+    from: prompt_phase
+    to: prompt_phase  # Self-transition (stays in same state)
+    guard: |
+      round.phase == 'prompt'
+      and not player.has_submitted
+      and time_remaining > 0
+    action: "player.has_submitted = true"
+```
+
+#### Generated Code
+
+**Python (State Machine):**
+```python
+from transitions import Machine
+
+class MatchStateMachine:
+    states = ['waiting', 'active', 'completed', 'cancelled', 'abandoned']
+
+    def __init__(self, match: Match):
+        self.match = match
+        self.machine = Machine(
+            model=self,
+            states=self.states,
+            initial=match.status,
+            auto_transitions=False
+        )
+
+        # Define transitions
+        self.machine.add_transition(
+            trigger='start',
+            source='waiting',
+            dest='active',
+            conditions=['can_start'],
+            after='on_start'
+        )
+
+    def can_start(self) -> bool:
+        return len(self.match.players) >= 2 and all(p.is_ready for p in self.match.players)
+
+    def on_start(self):
+        self.match.started_at = datetime.utcnow()
+        emit_event('match.started', {'match_id': self.match.id})
+```
+
+**Dart (BLoC):**
+```dart
+// Generated BLoC events
+abstract class MatchEvent {}
+class StartMatch extends MatchEvent {}
+class FinishMatch extends MatchEvent {}
+class CancelMatch extends MatchEvent {}
+class AbandonMatch extends MatchEvent {}
+
+// Generated BLoC states
+abstract class MatchState {
+  final MatchStatus status;
+  MatchState(this.status);
+}
+class MatchWaiting extends MatchState { MatchWaiting() : super(MatchStatus.waiting); }
+class MatchActive extends MatchState { MatchActive() : super(MatchStatus.active); }
+// ...
+
+// Generated BLoC
+class MatchBloc extends Bloc<MatchEvent, MatchState> {
+  MatchBloc() : super(MatchWaiting()) {
+    on<StartMatch>(_onStart);
+    on<FinishMatch>(_onFinish);
+    // ...
+  }
+
+  void _onStart(StartMatch event, Emitter<MatchState> emit) {
+    if (state is! MatchWaiting) return; // Guard: must be in waiting
+    if (!_canStart()) return; // Guard: conditions met
+
+    emit(MatchActive());
+    _emitMatchStarted(); // Action
+  }
+}
+```
+
+### 9.5 Computed Fields
+
+Computed fields derive their value from other fields, either at read-time (virtual) or write-time (stored).
+
+#### Syntax
+
+```yaml
+models:
+  Player:
+    fields:
+      games_played: { type: int, default: 0 }
+      games_won: { type: int, default: 0 }
+
+    computed:
+      win_rate:
+        type: float
+        virtual: true  # Calculated on read, not stored
+        formula: "games_played > 0 ? games_won / games_played : 0.0"
+
+      tier:
+        type: enum
+        values: [bronze, silver, gold, platinum, diamond, master, grandmaster]
+        virtual: true
+        formula: |
+          case
+            when elo_rating >= 2500 then 'grandmaster'
+            when elo_rating >= 2200 then 'master'
+            when elo_rating >= 1900 then 'diamond'
+            when elo_rating >= 1600 then 'platinum'
+            when elo_rating >= 1300 then 'gold'
+            when elo_rating >= 1000 then 'silver'
+            else 'bronze'
+          end
+
+      display_name:
+        type: string
+        stored: true  # Computed on write, stored in DB
+        formula: "username"  # Default to username
+        on_update: [username]  # Recompute when username changes
+```
+
+#### Computed Field Types
+
+| Type | Storage | When Calculated |
+|------|---------|-----------------|
+| `virtual: true` | Not stored | Every read |
+| `stored: true` | In database | On create/update |
+| `cached: true` | In cache | On demand, with TTL |
+
+### 9.6 Business Rules
+
+Cross-model rules that enforce domain invariants across the system.
+
+#### Syntax
+
+```yaml
+rules:
+  one_prompt_per_round:
+    description: "A player can only submit one prompt per round"
+    scope: Prompt
+    when: create
+    check: |
+      not exists(
+        Prompt
+        where round_id = :round_id
+        and match_player_id = :match_player_id
+      )
+    error:
+      code: PROMPT_ALREADY_SUBMITTED
+      message: "You have already submitted a prompt for this round"
+
+  match_player_limit:
+    description: "Match cannot exceed max players"
+    scope: MatchPlayer
+    when: create
+    check: "count(match.players) < match.max_players"
+    error:
+      code: MATCH_FULL
+      message: "This match is already full"
+
+  elo_bounds:
+    description: "ELO rating must stay within bounds after update"
+    scope: Player
+    when: update
+    fields: [elo_rating]
+    check: "elo_rating >= 0 and elo_rating <= 5000"
+    action: "elo_rating = clamp(elo_rating, 0, 5000)"  # Auto-correct
+```
+
+#### Rule Triggers
+
+| Trigger | Description |
+|---------|-------------|
+| `create` | Before inserting new record |
+| `update` | Before updating existing record |
+| `delete` | Before deleting record |
+| `read` | Before returning record (for filtering) |
+
+### 9.7 Triggers and Hooks
+
+Side effects that execute at specific points in the data lifecycle.
+
+#### Syntax
+
+```yaml
+models:
+  Match:
+    hooks:
+      before_create:
+        - name: set_defaults
+          action: |
+            if not arena_config:
+              arena_config = ArenaTemplate.random(mode).to_config()
+
+        - name: validate_creator
+          check: "not creator.is_banned"
+          error: "Banned players cannot create matches"
+
+      after_create:
+        - name: notify_matchmaking
+          action: "emit match.created"
+
+        - name: schedule_cleanup
+          action: "schedule cleanup_match after 300s if status == 'waiting'"
+
+      after_update:
+        - name: on_completion
+          when: "status changed to 'completed'"
+          action: |
+            emit match.ended
+            update_player_stats(winner, loser)
+            calculate_elo_changes()
+
+      before_delete:
+        - name: prevent_delete
+          check: "false"
+          error: "Matches cannot be deleted"
+```
+
+#### Hook Types
+
+| Hook | Timing | Can Cancel |
+|------|--------|------------|
+| `before_create` | Before insert | Yes |
+| `after_create` | After insert | No |
+| `before_update` | Before update | Yes |
+| `after_update` | After update | No |
+| `before_delete` | Before delete | Yes |
+| `after_delete` | After delete | No |
+
+### 9.8 Domain Functions
+
+Reusable functions that encapsulate domain logic.
+
+#### Syntax
+
+```yaml
+functions:
+  elo_delta:
+    description: "Calculate ELO rating change using standard formula"
+    params:
+      player_elo: { type: int }
+      opponent_elo: { type: int }
+      result: { type: float }  # 1.0 = win, 0.5 = draw, 0.0 = loss
+    returns: int
+    body: |
+      k = 32
+      expected = 1.0 / (1.0 + pow(10, (opponent_elo - player_elo) / 400.0))
+      return round(k * (result - expected))
+
+  can_join_match:
+    description: "Check if a player can join a specific match"
+    params:
+      player: { type: Player }
+      match: { type: Match }
+    returns: bool
+    body: |
+      return (
+        not player.is_banned
+        and match.status == 'waiting'
+        and count(match.players) < match.max_players
+        and player.id not in match.players.map(p => p.player_id)
+      )
+
+  calculate_tier:
+    description: "Determine player tier from ELO rating"
+    params:
+      elo: { type: int }
+    returns: string
+    body: |
+      thresholds = [
+        (2500, 'grandmaster'),
+        (2200, 'master'),
+        (1900, 'diamond'),
+        (1600, 'platinum'),
+        (1300, 'gold'),
+        (1000, 'silver'),
+        (0, 'bronze')
+      ]
+      for threshold, tier in thresholds:
+        if elo >= threshold:
+          return tier
+      return 'bronze'
+```
+
+### 9.9 Expression Language
+
+Business logic expressions use a SQL-like syntax that compiles to both Python and Dart.
+
+#### Supported Operators
+
+| Category | Operators |
+|----------|-----------|
+| Comparison | `==`, `!=`, `<`, `>`, `<=`, `>=` |
+| Logical | `and`, `or`, `not` |
+| Arithmetic | `+`, `-`, `*`, `/`, `%` |
+| String | `contains`, `starts_with`, `ends_with`, `matches` |
+| Collection | `in`, `not_in`, `any`, `all`, `count`, `sum`, `avg` |
+| Null | `is_null`, `is_not_null`, `??` (coalesce) |
+| Conditional | `if/then/else`, `case/when/then/else/end` |
+
+#### Built-in Functions
+
+| Function | Description |
+|----------|-------------|
+| `now()` | Current timestamp |
+| `today()` | Current date |
+| `uuid()` | Generate UUID |
+| `count(collection)` | Count items |
+| `sum(collection, field)` | Sum field values |
+| `exists(query)` | Check if records exist |
+| `clamp(value, min, max)` | Constrain to range |
+| `round(value)` | Round to integer |
+| `floor(value)` | Round down |
+| `ceil(value)` | Round up |
+
+#### Example Expressions
+
+```yaml
+# Simple comparison
+"status == 'active'"
+
+# Compound conditions
+"status == 'active' and players.count >= 2"
+
+# Collection operations
+"all(players, p => p.is_ready)"
+"any(rounds, r => r.winner_id == player.id)"
+"count(prompts where round_id == :round_id) < 2"
+
+# Conditional
+"if games_played > 0 then games_won / games_played else 0.0"
+
+# Case expression
+"case
+  when elo >= 2500 then 'grandmaster'
+  when elo >= 2200 then 'master'
+  else 'bronze'
+end"
+
+# Field changed detection (in hooks)
+"status changed from 'waiting' to 'active'"
+"elo_rating changed"
+```
+
+---
+
+## 10. Appendix
 
 ### 9.1 Complete Schema Example
 

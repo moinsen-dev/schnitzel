@@ -15,17 +15,18 @@ class ValidationResult(BaseModel):
 
     valid: bool
     errors: List[str] = []
+    warnings: List[str] = []
     unique_fields: Dict[str, List[str]] = {}  # model_name -> [field_names with unique=True]
 
     @classmethod
-    def success(cls, unique_fields: Dict[str, List[str]] | None = None) -> "ValidationResult":
+    def success(cls, unique_fields: Dict[str, List[str]] | None = None, warnings: List[str] | None = None) -> "ValidationResult":
         """Create a successful validation result."""
-        return cls(valid=True, errors=[], unique_fields=unique_fields or {})
+        return cls(valid=True, errors=[], warnings=warnings or [], unique_fields=unique_fields or {})
 
     @classmethod
-    def failure(cls, errors: List[str]) -> "ValidationResult":
+    def failure(cls, errors: List[str], warnings: List[str] | None = None) -> "ValidationResult":
         """Create a failed validation result."""
-        return cls(valid=False, errors=errors, unique_fields={})
+        return cls(valid=False, errors=errors, warnings=warnings or [], unique_fields={})
 
 
 class SchemaValidator:
@@ -75,6 +76,8 @@ class SchemaValidator:
         self.required_fields: dict[str, Set[str]] = {}
         # Track optional fields for each model
         self.optional_fields: dict[str, Set[str]] = {}
+        # Track warnings (non-critical issues)
+        self.warnings: List[str] = []
 
     def validate(self, schema: SchnitzelSchema) -> ValidationResult:
         """
@@ -87,6 +90,7 @@ class SchemaValidator:
             ValidationResult with validation status, any errors found, and tracked unique fields
         """
         errors: List[str] = []
+        self.warnings = []  # Reset warnings
         unique_fields: Dict[str, List[str]] = {}
 
         # Check for duplicate model names
@@ -111,10 +115,15 @@ class SchemaValidator:
         relationship_errors = self._validate_relationships(schema)
         errors.extend(relationship_errors)
 
+        # Validate endpoint paths naming conventions (warnings only)
+        if schema.endpoints:
+            endpoint_warnings = self._validate_endpoint_paths(schema.endpoints)
+            self.warnings.extend(endpoint_warnings)
+
         # Return validation result
         if errors:
-            return ValidationResult.failure(errors)
-        return ValidationResult.success(unique_fields=unique_fields)
+            return ValidationResult.failure(errors, warnings=self.warnings)
+        return ValidationResult.success(unique_fields=unique_fields, warnings=self.warnings)
 
     def _validate_model(self, model: Model) -> List[str]:
         """
@@ -914,3 +923,690 @@ class SchemaValidator:
         )
 
         return "\n".join(error_parts)
+
+    def _validate_endpoint_paths(self, endpoints: Dict[str, any]) -> List[str]:
+        """
+        Validate endpoint paths follow kebab-case naming convention.
+
+        Args:
+            endpoints: Dictionary of endpoint definitions
+
+        Returns:
+            List of warning messages for naming convention violations
+        """
+        warnings: List[str] = []
+
+        for endpoint_path, endpoint_def in endpoints.items():
+            # Skip if it's not a string path
+            if not isinstance(endpoint_path, str):
+                continue
+
+            # Check if path follows kebab-case convention
+            # Endpoints should be like: /user-profiles, /order-items
+            if not self._is_kebab_case_path(endpoint_path):
+                suggested_path = self._to_kebab_case_path(endpoint_path)
+                warning_parts = [
+                    f"Endpoint path '{endpoint_path}' does not follow naming convention",
+                    "Endpoint paths should use kebab-case",
+                    f"Suggested path: '{suggested_path}'"
+                ]
+                warnings.append("\n".join(warning_parts))
+
+        return warnings
+
+    def _validate_event_names(self, events: Dict[str, any]) -> List[str]:
+        """
+        Validate event names follow dot.notation convention.
+
+        Args:
+            events: Dictionary of event definitions
+
+        Returns:
+            List of warning messages for naming convention violations
+        """
+        warnings: List[str] = []
+
+        for event_name, event_def in events.items():
+            # Check if event name follows dot.notation convention
+            # Events should be like: order.placed, user.registered
+            if not self._is_dot_notation(event_name):
+                suggested_name = self._to_dot_notation(event_name)
+                warning_parts = [
+                    f"Event name '{event_name}' does not follow naming convention",
+                    "Event names should use dot.notation",
+                    f"Suggested name: '{suggested_name}'"
+                ]
+                warnings.append("\n".join(warning_parts))
+
+        return warnings
+
+    def _is_kebab_case_path(self, path: str) -> bool:
+        """
+        Check if an endpoint path follows kebab-case convention.
+
+        Valid paths:
+        - /users
+        - /user-profiles
+        - /api/v1/order-items
+        - /users/{id}
+        - /users/{id}/orders
+
+        Invalid paths:
+        - /userProfiles (camelCase)
+        - /user_profiles (snake_case)
+        - /UserProfiles (PascalCase)
+
+        Args:
+            path: The endpoint path to check
+
+        Returns:
+            True if path follows kebab-case, False otherwise
+        """
+        if not path:
+            return False
+
+        # Remove leading slash and parameter placeholders for validation
+        path_without_params = re.sub(r'\{[^}]+\}', '', path)
+        path_clean = path_without_params.strip('/')
+
+        # Split by slashes to check each segment
+        segments = [s for s in path_clean.split('/') if s]
+
+        for segment in segments:
+            # Each segment should be kebab-case: lowercase letters, numbers, and hyphens
+            # Cannot start or end with hyphen
+            # Cannot have consecutive hyphens
+            pattern = r'^[a-z][a-z0-9]*(-[a-z0-9]+)*$'
+            if not re.match(pattern, segment):
+                return False
+
+        return True
+
+    def _to_kebab_case_path(self, path: str) -> str:
+        """
+        Convert an endpoint path to kebab-case.
+
+        Args:
+            path: The endpoint path to convert
+
+        Returns:
+            Path converted to kebab-case
+        """
+        # Preserve parameter placeholders
+        placeholders = re.findall(r'\{[^}]+\}', path)
+        path_without_params = re.sub(r'\{[^}]+\}', '<<<PLACEHOLDER>>>', path)
+
+        # Split by slashes
+        segments = path_without_params.split('/')
+
+        converted_segments = []
+        for segment in segments:
+            if segment == '<<<PLACEHOLDER>>>':
+                # Will be replaced later
+                converted_segments.append(segment)
+            elif segment:
+                # Convert segment to kebab-case
+                # First handle camelCase/PascalCase
+                s1 = re.sub('(.)([A-Z][a-z]+)', r'\1-\2', segment)
+                s2 = re.sub('([a-z0-9])([A-Z])', r'\1-\2', s1)
+                # Replace underscores with hyphens
+                s3 = s2.replace('_', '-')
+                # Convert to lowercase
+                converted_segments.append(s3.lower())
+            else:
+                converted_segments.append(segment)
+
+        result = '/'.join(converted_segments)
+
+        # Restore placeholders
+        for placeholder in placeholders:
+            result = result.replace('<<<PLACEHOLDER>>>', placeholder, 1)
+
+        return result
+
+    def _is_dot_notation(self, name: str) -> bool:
+        """
+        Check if an event name follows dot.notation convention.
+
+        Valid event names:
+        - order.placed
+        - user.registered
+        - payment.completed
+
+        Invalid event names:
+        - OrderPlaced (PascalCase)
+        - order_placed (snake_case)
+        - order-placed (kebab-case)
+
+        Args:
+            name: The event name to check
+
+        Returns:
+            True if name follows dot.notation, False otherwise
+        """
+        if not name:
+            return False
+
+        # Must contain at least one dot
+        if '.' not in name:
+            return False
+
+        # Split by dots
+        parts = name.split('.')
+
+        for part in parts:
+            # Each part should be lowercase letters only (no numbers, underscores, etc.)
+            if not part or not part.islower() or not part.isalpha():
+                return False
+
+        return True
+
+    def _to_dot_notation(self, name: str) -> str:
+        """
+        Convert an event name to dot.notation.
+
+        Args:
+            name: The event name to convert
+
+        Returns:
+            Name converted to dot.notation
+        """
+        # Convert to snake_case first, then replace underscores with dots
+        snake = self._to_snake_case(name)
+        # Replace underscores with dots
+        dot_notation = snake.replace('_', '.')
+        return dot_notation
+
+
+class BreakingChangesDetector:
+    """
+    Detects breaking changes between two schema versions.
+
+    Breaking changes include:
+    - Removing required fields from models
+    - Changing field types in incompatible ways
+    - Removing models entirely
+    - Changing field from optional to required
+    - Removing or changing relationships
+    """
+
+    # Type changes that lose data (breaking)
+    BREAKING_TYPE_CHANGES: Dict[str, Set[str]] = {
+        "string": {"int", "float", "bool", "datetime", "uuid"},  # string -> numeric loses data
+        "text": {"int", "float", "bool", "datetime", "uuid"},
+        "int": {"string", "text", "bool", "datetime", "uuid"},  # int -> non-numeric loses data
+        "float": {"string", "text", "int", "bool", "datetime", "uuid"},  # float -> int loses precision
+        "bool": {"string", "text", "int", "float", "datetime", "uuid"},
+        "datetime": {"string", "text", "int", "float", "bool", "uuid"},
+        "uuid": {"int", "float", "bool", "datetime"},  # uuid -> string/text is OK
+        "json": {"string", "text", "int", "float", "bool", "datetime", "uuid"},
+        "vector": {"string", "text", "int", "float", "bool", "datetime", "uuid", "json"},
+    }
+
+    def detect_breaking_changes(self, old_schema: SchnitzelSchema, new_schema: SchnitzelSchema) -> List[str]:
+        """
+        Detect breaking changes between two schema versions.
+
+        Args:
+            old_schema: The previous schema version
+            new_schema: The new schema version
+
+        Returns:
+            List of breaking change descriptions
+        """
+        breaking_changes: List[str] = []
+
+        # Check for removed models
+        breaking_changes.extend(self._check_removed_models(old_schema, new_schema))
+
+        # Check for field changes in existing models
+        for model_name, old_model in old_schema.models.items():
+            if model_name in new_schema.models:
+                new_model = new_schema.models[model_name]
+                breaking_changes.extend(
+                    self._check_model_changes(model_name, old_model, new_model)
+                )
+
+        return breaking_changes
+
+    def _check_removed_models(self, old_schema: SchnitzelSchema, new_schema: SchnitzelSchema) -> List[str]:
+        """
+        Check for models that were removed.
+
+        Args:
+            old_schema: The previous schema version
+            new_schema: The new schema version
+
+        Returns:
+            List of breaking change messages for removed models
+        """
+        breaking_changes: List[str] = []
+
+        old_models = set(old_schema.models.keys())
+        new_models = set(new_schema.models.keys())
+        removed_models = old_models - new_models
+
+        for model_name in sorted(removed_models):
+            breaking_changes.append(
+                f"BREAKING: Model '{model_name}' was removed\n"
+                f"  Impact: All API endpoints and database tables for this model will be removed\n"
+                f"  Migration: Ensure dependent code is updated before deploying"
+            )
+
+        return breaking_changes
+
+    def _check_model_changes(self, model_name: str, old_model: Model, new_model: Model) -> List[str]:
+        """
+        Check for breaking changes in a model.
+
+        Args:
+            model_name: Name of the model being checked
+            old_model: The old model definition
+            new_model: The new model definition
+
+        Returns:
+            List of breaking change messages
+        """
+        breaking_changes: List[str] = []
+
+        # Check for removed required fields
+        breaking_changes.extend(
+            self._check_removed_required_fields(model_name, old_model, new_model)
+        )
+
+        # Check for type changes
+        breaking_changes.extend(
+            self._check_field_type_changes(model_name, old_model, new_model)
+        )
+
+        # Check for required constraint changes
+        breaking_changes.extend(
+            self._check_required_constraint_changes(model_name, old_model, new_model)
+        )
+
+        # Check for removed relationships
+        breaking_changes.extend(
+            self._check_removed_relationships(model_name, old_model, new_model)
+        )
+
+        return breaking_changes
+
+    def _check_removed_required_fields(
+        self, model_name: str, old_model: Model, new_model: Model
+    ) -> List[str]:
+        """
+        Check for required fields that were removed.
+
+        Args:
+            model_name: Name of the model
+            old_model: The old model definition
+            new_model: The new model definition
+
+        Returns:
+            List of breaking change messages
+        """
+        breaking_changes: List[str] = []
+
+        old_fields = set(old_model.fields.keys())
+        new_fields = set(new_model.fields.keys())
+        removed_fields = old_fields - new_fields
+
+        for field_name in sorted(removed_fields):
+            old_field = old_model.fields[field_name]
+            # Only flag as breaking if field was required or not explicitly optional
+            if old_field.required or (not old_field.optional and not old_field.primary):
+                breaking_changes.append(
+                    f"BREAKING: Required field '{field_name}' removed from model '{model_name}'\n"
+                    f"  Field type: {old_field.type}\n"
+                    f"  Impact: API endpoints and database queries expecting this field will break\n"
+                    f"  Migration: Mark field as optional before removing, or update all consumers"
+                )
+
+        return breaking_changes
+
+    def _check_field_type_changes(
+        self, model_name: str, old_model: Model, new_model: Model
+    ) -> List[str]:
+        """
+        Check for field type changes that lose data.
+
+        Args:
+            model_name: Name of the model
+            old_model: The old model definition
+            new_model: The new model definition
+
+        Returns:
+            List of breaking change messages
+        """
+        breaking_changes: List[str] = []
+
+        # Check fields that exist in both versions
+        common_fields = set(old_model.fields.keys()) & set(new_model.fields.keys())
+
+        for field_name in sorted(common_fields):
+            old_field = old_model.fields[field_name]
+            new_field = new_model.fields[field_name]
+
+            old_type = old_field.type
+            new_type = new_field.type
+
+            # Check if type changed
+            if old_type != new_type:
+                # Check if this is a breaking type change
+                if self._is_breaking_type_change(old_type, new_type):
+                    breaking_changes.append(
+                        f"BREAKING: Field '{field_name}' in model '{model_name}' changed type from '{old_type}' to '{new_type}'\n"
+                        f"  Impact: Data may be lost or corrupted during migration\n"
+                        f"  Migration: Create migration script to transform existing data"
+                    )
+
+        return breaking_changes
+
+    def _check_required_constraint_changes(
+        self, model_name: str, old_model: Model, new_model: Model
+    ) -> List[str]:
+        """
+        Check for fields that changed from optional to required.
+
+        Args:
+            model_name: Name of the model
+            old_model: The old model definition
+            new_model: The new model definition
+
+        Returns:
+            List of breaking change messages
+        """
+        breaking_changes: List[str] = []
+
+        # Check fields that exist in both versions
+        common_fields = set(old_model.fields.keys()) & set(new_model.fields.keys())
+
+        for field_name in sorted(common_fields):
+            old_field = old_model.fields[field_name]
+            new_field = new_model.fields[field_name]
+
+            # Check if field became required
+            old_optional = old_field.optional or (not old_field.required and not old_field.primary)
+            new_required = new_field.required
+
+            if old_optional and new_required:
+                breaking_changes.append(
+                    f"BREAKING: Field '{field_name}' in model '{model_name}' changed from optional to required\n"
+                    f"  Impact: Existing API calls without this field will fail\n"
+                    f"  Migration: Ensure all existing records have a value for this field"
+                )
+
+        return breaking_changes
+
+    def _check_removed_relationships(
+        self, model_name: str, old_model: Model, new_model: Model
+    ) -> List[str]:
+        """
+        Check for relationships that were removed.
+
+        Args:
+            model_name: Name of the model
+            old_model: The old model definition
+            new_model: The new model definition
+
+        Returns:
+            List of breaking change messages
+        """
+        breaking_changes: List[str] = []
+
+        # Handle cases where relations might be None
+        old_relations = old_model.relations or {}
+        new_relations = new_model.relations or {}
+
+        old_relation_names = set(old_relations.keys())
+        new_relation_names = set(new_relations.keys())
+        removed_relations = old_relation_names - new_relation_names
+
+        for relation_name in sorted(removed_relations):
+            old_relation = old_relations[relation_name]
+            breaking_changes.append(
+                f"BREAKING: Relationship '{relation_name}' removed from model '{model_name}'\n"
+                f"  Relationship type: {old_relation.type}\n"
+                f"  Target model: {old_relation.model}\n"
+                f"  Impact: API endpoints using this relationship will break\n"
+                f"  Migration: Update queries to use alternative relationships or direct lookups"
+            )
+
+        return breaking_changes
+
+    def _is_breaking_type_change(self, old_type: str, new_type: str) -> bool:
+        """
+        Check if a type change is breaking (loses data).
+
+        Args:
+            old_type: The old field type
+            new_type: The new field type
+
+        Returns:
+            True if the type change is breaking
+        """
+        # Handle list types
+        if old_type.startswith("list<") and old_type.endswith(">"):
+            old_inner = old_type[5:-1]
+            if new_type.startswith("list<") and new_type.endswith(">"):
+                new_inner = new_type[5:-1]
+                # Check if inner type change is breaking
+                return self._is_breaking_type_change(old_inner, new_inner)
+            else:
+                # Changing from list to non-list is breaking
+                return True
+
+        if new_type.startswith("list<") and new_type.endswith(">"):
+            # Changing from non-list to list is breaking
+            return True
+
+        # Check if this type change is in the breaking changes map
+        if old_type in self.BREAKING_TYPE_CHANGES:
+            return new_type in self.BREAKING_TYPE_CHANGES[old_type]
+
+        # Default: if types are different and not in safe changes, consider it breaking
+        return old_type != new_type
+
+
+class UnusedModelDetector:
+    """Detects models that are defined but never used in endpoints or relationships."""
+
+    def detect_unused_models(self, schema: SchnitzelSchema) -> List[str]:
+        """Detect models that are not referenced by any endpoint or relationship.
+
+        Args:
+            schema: The schema to analyze
+
+        Returns:
+            List of unused model names
+        """
+        all_models = set(schema.models.keys())
+        used_models: Set[str] = set()
+
+        # Check models used in endpoints
+        if schema.endpoints:
+            for endpoint_path, methods in schema.endpoints.items():
+                if isinstance(methods, dict):
+                    for method, config in methods.items():
+                        if isinstance(config, dict):
+                            # Check request body type
+                            if "body" in config:
+                                body_type = self._extract_type_name(config["body"])
+                                if body_type:
+                                    used_models.add(body_type)
+
+                            # Check response types
+                            if "response" in config:
+                                resp = config["response"]
+                                if isinstance(resp, dict):
+                                    for status_code, resp_config in resp.items():
+                                        if isinstance(resp_config, dict) and "type" in resp_config:
+                                            resp_type = self._extract_type_name(resp_config["type"])
+                                            if resp_type:
+                                                used_models.add(resp_type)
+                                        elif isinstance(resp_config, str):
+                                            resp_type = self._extract_type_name(resp_config)
+                                            if resp_type:
+                                                used_models.add(resp_type)
+
+        # Check models used in relationships
+        for model_name, model in schema.models.items():
+            # The model itself is used if it has relationships pointing to other models
+            if model.relations:
+                for rel_name, relation in model.relations.items():
+                    if relation.model:
+                        used_models.add(relation.model)
+                        # The model that has the relationship is also "used"
+                        used_models.add(model_name)
+
+            # Check if any field references another model (FK)
+            for field_name, field in model.fields.items():
+                field_type = self._extract_type_name(field.type)
+                if field_type and field_type in all_models:
+                    used_models.add(field_type)
+                    used_models.add(model_name)
+
+        # Find unused models
+        unused = all_models - used_models
+        return sorted(list(unused))
+
+    def _extract_type_name(self, type_str: str | dict) -> str | None:
+        """Extract the base type name from a type string.
+
+        Args:
+            type_str: Type string like "User", "list[User]", "list<User>"
+
+        Returns:
+            Base type name or None
+        """
+        if isinstance(type_str, dict):
+            return type_str.get("type")
+
+        if not isinstance(type_str, str):
+            return None
+
+        # Handle list<Type> or list[Type]
+        if type_str.startswith("list<") and type_str.endswith(">"):
+            return type_str[5:-1]
+        if type_str.startswith("list[") and type_str.endswith("]"):
+            return type_str[5:-1]
+
+        # Handle Optional<Type>
+        if type_str.startswith("Optional<") and type_str.endswith(">"):
+            return type_str[9:-1]
+
+        return type_str
+
+
+class MissingResponseTypeDetector:
+    """Detects endpoints that are missing response type definitions."""
+
+    def detect_missing_response_types(self, schema: SchnitzelSchema) -> List[str]:
+        """Detect endpoints that don't have response types defined.
+
+        Args:
+            schema: The schema to analyze
+
+        Returns:
+            List of endpoint descriptions that are missing response types
+        """
+        missing = []
+
+        if not schema.endpoints:
+            return missing
+
+        for endpoint_path, methods in schema.endpoints.items():
+            if not isinstance(methods, dict):
+                continue
+
+            for method, config in methods.items():
+                if not isinstance(config, dict):
+                    continue
+
+                # Skip DELETE endpoints as they often don't need response types
+                if method.upper() == "DELETE":
+                    continue
+
+                # Check if response is defined
+                has_response = False
+                if "response" in config:
+                    resp = config["response"]
+                    if isinstance(resp, dict):
+                        # Check if any status code has a type
+                        for status_code, resp_config in resp.items():
+                            if isinstance(resp_config, dict) and "type" in resp_config:
+                                has_response = True
+                                break
+                            elif isinstance(resp_config, str):
+                                has_response = True
+                                break
+                    elif isinstance(resp, str):
+                        has_response = True
+
+                if not has_response:
+                    endpoint_desc = f"{method.upper()} {endpoint_path}"
+                    missing.append(endpoint_desc)
+
+        return missing
+
+    def detect_undefined_response_types(self, schema: SchnitzelSchema) -> List[str]:
+        """Detect endpoints that reference undefined models in response types.
+
+        Args:
+            schema: The schema to analyze
+
+        Returns:
+            List of errors for undefined response types
+        """
+        errors = []
+        all_models = set(schema.models.keys())
+
+        # Add primitive types
+        primitive_types = {"string", "int", "float", "bool", "uuid", "datetime", "json", "void", "null"}
+
+        if not schema.endpoints:
+            return errors
+
+        for endpoint_path, methods in schema.endpoints.items():
+            if not isinstance(methods, dict):
+                continue
+
+            for method, config in methods.items():
+                if not isinstance(config, dict):
+                    continue
+
+                if "response" not in config:
+                    continue
+
+                resp = config["response"]
+                if isinstance(resp, dict):
+                    for status_code, resp_config in resp.items():
+                        resp_type = None
+                        if isinstance(resp_config, dict) and "type" in resp_config:
+                            resp_type = resp_config["type"]
+                        elif isinstance(resp_config, str):
+                            resp_type = resp_config
+
+                        if resp_type:
+                            # Extract base type
+                            base_type = self._extract_base_type(resp_type)
+                            if base_type and base_type.lower() not in primitive_types:
+                                if base_type not in all_models:
+                                    errors.append(
+                                        f"{method.upper()} {endpoint_path}: Response type '{base_type}' is not defined"
+                                    )
+
+        return errors
+
+    def _extract_base_type(self, type_str: str) -> str | None:
+        """Extract base type from type string."""
+        if not isinstance(type_str, str):
+            return None
+
+        # Handle list<Type> or list[Type]
+        if type_str.startswith("list<") and type_str.endswith(">"):
+            return type_str[5:-1]
+        if type_str.startswith("list[") and type_str.endswith("]"):
+            return type_str[5:-1]
+
+        return type_str

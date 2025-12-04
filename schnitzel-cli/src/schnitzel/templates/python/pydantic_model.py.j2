@@ -1,0 +1,29 @@
+"""Generated Pydantic models from Schnitzel schema."""
+
+{% if needs_future_annotations %}
+from __future__ import annotations
+
+{% endif %}
+{% for import_line in imports | sort %}
+{{ import_line }}
+{% endfor %}
+
+
+{% for model in models %}
+class {{ model.name }}(BaseModel):
+    """{{ model.description or model.name + ' model.' }}"""
+
+    {% for field in model.fields %}
+    {{ field.name }}: {{ field.type }}{% if field.default is not none %} = {{ field.default }}{% elif field.optional %} = None{% endif %}
+    {% endfor %}
+    {% if model.relationships %}
+
+    {% for rel in model.relationships %}
+    {{ rel.name }}: {{ rel.type }}{% if rel.default is not none %} = {{ rel.default }}{% endif %}
+    {% endfor %}
+    {% endif %}
+
+{% if not loop.last %}
+
+{% endif %}
+{% endfor %}

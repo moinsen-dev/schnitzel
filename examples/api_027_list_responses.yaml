@@ -1,0 +1,119 @@
+schnitzel: "1.0"
+
+# Example schema demonstrating list response handling in Dart API client
+# Feature: api_027 - Dart API client generator handles list responses
+
+models:
+  User:
+    fields:
+      id:
+        type: uuid
+        primary: true
+      name:
+        type: string
+      email:
+        type: string
+      created_at:
+        type: datetime
+
+  Post:
+    fields:
+      id:
+        type: uuid
+        primary: true
+      title:
+        type: string
+      content:
+        type: text
+      author_id:
+        type: uuid
+      created_at:
+        type: datetime
+
+  Comment:
+    fields:
+      id:
+        type: uuid
+        primary: true
+      text:
+        type: string
+      post_id:
+        type: uuid
+      author_id:
+        type: uuid
+
+endpoints:
+  # List all users - returns List[User]
+  /users:
+    GET:
+      name: list_users
+      description: "Get all users"
+      response:
+        200:
+          type: List[User]
+
+  # Get a single user - returns User
+  /users/{id}:
+    params:
+      id:
+        type: uuid
+    GET:
+      name: get_user
+      description: "Get a single user by ID"
+      response:
+        200:
+          type: User
+
+  # List all posts - returns List[Post]
+  /posts:
+    GET:
+      name: list_posts
+      description: "Get all posts"
+      response:
+        200:
+          type: List[Post]
+
+  # List posts by a specific user - returns List[Post]
+  /users/{userId}/posts:
+    params:
+      userId:
+        type: uuid
+    GET:
+      name: list_user_posts
+      description: "Get all posts by a user"
+      response:
+        200:
+          type: List[Post]
+
+  # Get a single post - returns Post
+  /posts/{id}:
+    params:
+      id:
+        type: uuid
+    GET:
+      name: get_post
+      description: "Get a single post by ID"
+      response:
+        200:
+          type: Post
+
+  # List comments for a post - returns List[Comment]
+  /posts/{postId}/comments:
+    params:
+      postId:
+        type: uuid
+    GET:
+      name: list_post_comments
+      description: "Get all comments for a post"
+      response:
+        200:
+          type: List[Comment]
+
+  # Batch create users - returns List[User]
+  /users/batch:
+    POST:
+      name: create_users
+      description: "Create multiple users at once"
+      response:
+        201:
+          type: List[User]

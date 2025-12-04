@@ -1,0 +1,316 @@
+# =============================================================================
+# PROMPT DUEL - Competitive Prompt Engineering Game
+# =============================================================================
+# Root schema with global configuration and feature imports.
+# This demonstrates Schnitzel's multi-file schema organization.
+#
+# Schnitzel Framework Example | Moinsen Development
+# =============================================================================
+
+schnitzel: "1.0"
+
+meta:
+  name: "PromptDuel"
+  version: "1.0.0"
+  org: "dev.moinsen.promptduel"
+  description: "Competitive prompt engineering game with AI-powered gameplay"
+  docs: docs/app.md
+
+# =============================================================================
+# IMPORTS - Feature schemas
+# =============================================================================
+
+imports:
+  - features/game/schema.yaml
+  - features/social/schema.yaml
+
+# =============================================================================
+# AUTHENTICATION & AUTHORIZATION (Global)
+# =============================================================================
+
+auth:
+  providers:
+    - email_password
+    - google
+    - apple
+    - discord  # Popular for gaming
+
+  session:
+    type: jwt
+    access_expiry: 3600      # 1 hour (longer for games)
+    refresh_expiry: 2592000  # 30 days
+    refresh: true
+
+  mfa: optional
+
+roles:
+  admin:
+    permissions: ["*"]
+
+  moderator:
+    permissions:
+      - matches:read
+      - matches:cancel
+      - players:read
+      - players:ban
+      - leaderboard:*
+
+  player:
+    permissions:
+      - matches:create
+      - matches:read
+      - matches:join
+      - matches:spectate
+      - players:read
+      - players:update:own
+      - leaderboard:read
+      - puzzles:create
+      - puzzles:read
+
+  guest:
+    permissions:
+      - matches:spectate
+      - leaderboard:read
+
+# =============================================================================
+# SERVICES - Infrastructure configuration (Global)
+# =============================================================================
+
+services:
+  database:
+    type: postgres
+    version: "16"
+    extensions: [pgvector, uuid-ossp]
+
+  cache:
+    type: redis
+    version: "7"
+    features: [pubsub, streams]
+    # Used for: matchmaking queue, real-time state, session cache
+
+  vectors:
+    type: qdrant
+    collections:
+      - name: prompts
+        dimensions: 1536
+        distance: cosine
+        # Used for: prompt similarity, strategy analysis
+
+  jobs:
+    type: temporal
+    # Used for: matchmaking, cleanup, analytics
+
+# =============================================================================
+# AI SERVICES - LLM configuration
+# =============================================================================
+
+ai:
+  executor:
+    provider: anthropic
+    model: claude-sonnet-4-20250514
+    temperature: 0.3  # Low for consistent execution
+    max_tokens: 500
+    purpose: "Interpret and execute player prompts"
+
+  arbiter:
+    provider: anthropic
+    model: claude-3-5-haiku-latest
+    temperature: 0.5
+    max_tokens: 200
+    purpose: "Evaluate prompt quality and creativity"
+
+  adversary:
+    provider: anthropic
+    model: claude-sonnet-4-20250514
+    temperature: 0.7  # Higher for varied play styles
+    max_tokens: 300
+    purpose: "AI opponent for single-player modes"
+
+# =============================================================================
+# ERROR CONTRACTS (Global)
+# =============================================================================
+
+errors:
+  format: rfc7807
+  codes:
+    MATCH_NOT_FOUND:
+      status: 404
+      message: "Match not found"
+    MATCH_FULL:
+      status: 400
+      message: "Match is already full"
+    MATCH_ALREADY_STARTED:
+      status: 400
+      message: "Match has already started"
+    NOT_YOUR_TURN:
+      status: 400
+      message: "It is not your turn to submit a prompt"
+    PROMPT_TOO_LONG:
+      status: 400
+      message: "Prompt exceeds maximum length"
+    PROMPT_TIMEOUT:
+      status: 408
+      message: "Prompt submission timed out"
+    PLAYER_BANNED:
+      status: 403
+      message: "Player is banned from matchmaking"
+    INVALID_ARENA_CONFIG:
+      status: 400
+      message: "Invalid arena configuration"
+
+# =============================================================================
+# ENVIRONMENTS (Global)
+# =============================================================================
+
+environments:
+  dev:
+    api_url: "http://localhost:${PORT_API}"
+    bundle_id: "dev.moinsen.promptduel.dev"
+    application_id: "dev.moinsen.promptduel.dev"
+    app_name: "Prompt Duel Dev"
+    debug: true
+    features: [debug_panel, mock_ai, unlimited_matches]
+    secrets: .env.dev
+
+  staging:
+    api_url: "https://staging-api.promptduel.game"
+    bundle_id: "dev.moinsen.promptduel.staging"
+    application_id: "dev.moinsen.promptduel.staging"
+    app_name: "Prompt Duel Staging"
+    debug: false
+    features: [analytics, error_tracking]
+    secrets: .env.staging
+
+  production:
+    api_url: "https://api.promptduel.game"
+    bundle_id: "dev.moinsen.promptduel"
+    application_id: "dev.moinsen.promptduel"
+    app_name: "Prompt Duel"
+    debug: false
+    features: [analytics, error_tracking, rate_limiting]
+    secrets: .env.production
+
+# =============================================================================
+# OBSERVABILITY (Global)
+# =============================================================================
+
+observability:
+  logging:
+    format: json
+    level: info
+  error_tracking:
+    provider: sentry
+  metrics:
+    enabled: true
+    endpoint: /metrics
+
+# =============================================================================
+# CI/CD & RELEASE MANAGEMENT
+# =============================================================================
+
+cicd:
+  provider: github-actions
+
+  pipelines:
+    pull_request:
+      - schnitzel lint
+      - schnitzel validate --breaking
+      - schnitzel test --flutter
+      - schnitzel test --backend
+      - schnitzel build --env dev --dry-run
+
+    main:
+      - schnitzel test
+      - schnitzel build --env staging
+      - schnitzel deploy --env staging
+
+    release:
+      - schnitzel test
+      - schnitzel build --env production
+      - schnitzel deploy --env production
+      - notify: [discord]
+
+  cache:
+    flutter: true
+    python: true
+    docker: true
+
+release:
+  versioning: semver
+  changelog:
+    format: conventional
+    file: CHANGELOG.md
+
+  stores:
+    ios:
+      app_store_connect: true
+      testflight: true
+    android:
+      play_store: true
+      track: internal
+
+# =============================================================================
+# API DOCUMENTATION
+# =============================================================================
+
+documentation:
+  openapi:
+    enabled: true
+    version: "3.1.0"
+
+  ui:
+    swagger: true
+    redoc: true
+
+  exports:
+    - format: openapi
+      path: docs/openapi.yaml
+    - format: postman
+      path: docs/postman.json
+
+# =============================================================================
+# SCHEMA LINTING
+# =============================================================================
+
+linting:
+  enabled: true
+  rules:
+    naming:
+      models: PascalCase
+      fields: snake_case
+      endpoints: kebab-case
+      events: dot.notation
+    required:
+      model_description: true
+      endpoint_auth: warn
+    security:
+      no_passwords_in_response: error
+
+# =============================================================================
+# FEATURE PACKAGES - Flutter workspace composition
+# =============================================================================
+
+features:
+  game:
+    name: "Game"
+    version: "1.0.0"
+    description: "Core game logic, matches, rounds, prompts"
+    docs: docs/features/game.md
+    flutter_package: true
+    exports: [Player, Match, Round, Prompt]
+
+  social:
+    name: "Social"
+    version: "1.0.0"
+    description: "Leaderboards, spectating, friends"
+    docs: docs/features/social.md
+    flutter_package: true
+    depends_on: [game]
+    exports: [Leaderboard, Season]
+
+app:
+  name: "PromptDuel"
+  version: "1.0.0"
+  docs: docs/app.md
+  shell: material
+  features: [game, social]

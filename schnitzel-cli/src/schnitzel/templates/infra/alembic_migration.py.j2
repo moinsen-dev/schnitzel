@@ -1,0 +1,34 @@
+"""{{ migration_name }}
+
+Revision ID: {{ revision_id }}
+Revises: {{ down_revision or '' }}
+Create Date: {{ create_date }}
+
+"""
+from alembic import op
+import sqlalchemy as sa
+
+revision = '{{ revision_id }}'
+down_revision = {{ "'%s'" % down_revision if down_revision else 'None' }}
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    {% if upgrade_operations %}
+    {% for operation in upgrade_operations %}
+    {{ operation }}
+    {% endfor %}
+    {% else %}
+    pass
+    {% endif %}
+
+
+def downgrade() -> None:
+    {% if downgrade_operations %}
+    {% for operation in downgrade_operations %}
+    {{ operation }}
+    {% endfor %}
+    {% else %}
+    pass
+    {% endif %}

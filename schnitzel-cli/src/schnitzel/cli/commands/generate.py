@@ -20,7 +20,10 @@ from schnitzel.schema.exceptions import (
     VersionError,
 )
 from schnitzel.generators.python.models import PythonModelGenerator
+from schnitzel.generators.python.orm import SQLAlchemyORMGenerator
+from schnitzel.generators.python.routes import PythonRouteGenerator
 from schnitzel.generators.dart.models import DartModelGenerator
+from schnitzel.generators.dart.api_client import DartApiClientGenerator
 from schnitzel.utils.logging import get_logger
 
 console = Console()
@@ -297,6 +300,92 @@ def _generate_python(schema, output_dir: Path, schema_path: Path, force: bool, d
     }
 
 
+def _generate_orm(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
+    """Generate SQLAlchemy ORM models.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        Dictionary with file info: {'path': Path, 'size': int, 'type': str} or None if skipped
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating SQLAlchemy ORM models...[/blue]")
+
+    # Determine output path: output_dir/backend/app/generated
+    orm_output_dir = output_dir / "backend" / "app" / "generated"
+
+    # Check if orm.py already exists
+    orm_file = orm_output_dir / "orm.py"
+    if orm_file.exists() and not force and not dry_run:
+        console.print(f"[yellow]Warning: {orm_file} already exists. Use --force to overwrite.[/yellow]")
+        return None
+
+    if dry_run:
+        return {'path': orm_file, 'size': 0, 'type': 'orm'}
+
+    # Generate SQLAlchemy ORM models
+    generator = SQLAlchemyORMGenerator()
+    output_file, size = generator.generate_to_file(schema, orm_output_dir, schema_source=schema_path.name)
+
+    model_count = len(schema.models)
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated backend/app/generated/orm.py[/green] ({model_count} models)")
+
+    return {
+        'path': output_file,
+        'size': size,
+        'type': 'orm'
+    }
+
+
+def _generate_routes(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
+    """Generate FastAPI routes.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        Dictionary with file info: {'path': Path, 'size': int, 'type': str} or None if skipped
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating FastAPI routes...[/blue]")
+
+    # Determine output path: output_dir/backend/app/generated
+    routes_output_dir = output_dir / "backend" / "app" / "generated"
+
+    # Check if routes.py already exists
+    routes_file = routes_output_dir / "routes.py"
+    if routes_file.exists() and not force and not dry_run:
+        console.print(f"[yellow]Warning: {routes_file} already exists. Use --force to overwrite.[/yellow]")
+        return None
+
+    if dry_run:
+        return {'path': routes_file, 'size': 0, 'type': 'routes'}
+
+    # Generate FastAPI routes
+    generator = PythonRouteGenerator()
+    output_file, size = generator.generate_to_file(schema, routes_output_dir, schema_source=schema_path.name)
+
+    endpoint_count = len(schema.endpoints) if schema.endpoints else 0
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated backend/app/generated/routes.py[/green] ({endpoint_count} endpoints)")
+
+    return {
+        'path': output_file,
+        'size': size,
+        'type': 'routes'
+    }
+
+
 def _generate_dart(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
     """Generate Dart Freezed models.
 
@@ -336,6 +425,49 @@ def _generate_dart(schema, output_dir: Path, schema_path: Path, force: bool, dry
         'path': output_file,
         'size': size,
         'type': 'dart'
+    }
+
+
+def _generate_dart_api_client(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
+    """Generate Dart API client.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        Dictionary with file info: {'path': Path, 'size': int, 'type': str} or None if skipped
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating Dart API client...[/blue]")
+
+    # Determine output path: output_dir/packages/shared/lib/generated
+    dart_output_dir = output_dir / "packages" / "shared" / "lib" / "generated"
+
+    # Check if api_client.dart already exists
+    api_client_file = dart_output_dir / "api_client.dart"
+    if api_client_file.exists() and not force and not dry_run:
+        console.print(f"[yellow]Warning: {api_client_file} already exists. Use --force to overwrite.[/yellow]")
+        return None
+
+    if dry_run:
+        return {'path': api_client_file, 'size': 0, 'type': 'dart_api'}
+
+    # Generate Dart API client
+    generator = DartApiClientGenerator()
+    output_file, size = generator.generate_to_file(schema, dart_output_dir, schema_source=schema_path.name)
+
+    endpoint_count = len(schema.endpoints) if schema.endpoints else 0
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated packages/shared/lib/generated/api_client.dart[/green] ({endpoint_count} endpoints)")
+
+    return {
+        'path': output_file,
+        'size': size,
+        'type': 'dart_api'
     }
 
 
@@ -509,13 +641,13 @@ def _run_generation(
         # Count total generation steps for progress tracking
         generation_steps = []
         if target == "python":
-            generation_steps = ["python"]
+            generation_steps = ["python", "orm", "routes"]
         elif target == "dart":
-            generation_steps = ["dart"]
+            generation_steps = ["dart", "dart_api"]
         elif target == "docker":
             generation_steps = ["docker"]
         elif target == "all":
-            generation_steps = ["python", "dart", "docker"]
+            generation_steps = ["python", "orm", "routes", "dart", "dart_api", "docker"]
 
         # Handle dry-run mode
         if dry_run:
@@ -537,6 +669,26 @@ def _run_generation(
                         result['model_count'] = len(schema.models)
                         generated_files.append(result)
                         total_size += result['size']
+                elif step == "orm":
+                    result = _generate_orm(schema, output_path, schema_path, force, dry_run)
+                    if result:
+                        # Calculate actual size by generating content
+                        gen = SQLAlchemyORMGenerator()
+                        content = gen.generate(schema)
+                        result['size'] = len(content.encode('utf-8'))
+                        result['model_count'] = len(schema.models)
+                        generated_files.append(result)
+                        total_size += result['size']
+                elif step == "routes":
+                    result = _generate_routes(schema, output_path, schema_path, force, dry_run)
+                    if result:
+                        # Calculate actual size by generating content
+                        gen = PythonRouteGenerator()
+                        content = gen.generate(schema)
+                        result['size'] = len(content.encode('utf-8'))
+                        result['endpoint_count'] = len(schema.endpoints) if schema.endpoints else 0
+                        generated_files.append(result)
+                        total_size += result['size']
                 elif step == "dart":
                     result = _generate_dart(schema, output_path, schema_path, force, dry_run)
                     if result:
@@ -544,6 +696,15 @@ def _run_generation(
                         content = gen.generate(schema)
                         result['size'] = len(content.encode('utf-8'))
                         result['model_count'] = len(schema.models)
+                        generated_files.append(result)
+                        total_size += result['size']
+                elif step == "dart_api":
+                    result = _generate_dart_api_client(schema, output_path, schema_path, force, dry_run)
+                    if result:
+                        gen = DartApiClientGenerator()
+                        content = gen.generate(schema)
+                        result['size'] = len(content.encode('utf-8'))
+                        result['endpoint_count'] = len(schema.endpoints) if schema.endpoints else 0
                         generated_files.append(result)
                         total_size += result['size']
                 elif step == "docker":
@@ -562,7 +723,10 @@ def _run_generation(
                     console.print(f"  [green]✓[/green] {file_info['path']}")
                     type_display = {
                         'python': 'Python models',
+                        'orm': 'SQLAlchemy ORM',
+                        'routes': 'FastAPI routes',
                         'dart': 'Dart models',
+                        'dart_api': 'Dart API client',
                         'docker': 'Docker Compose'
                     }.get(file_info['type'], file_info['type'])
                     console.print(f"    Type: {type_display}")
@@ -579,6 +743,8 @@ def _run_generation(
 
                     if 'model_count' in file_info:
                         console.print(f"    Models: {file_info['model_count']}")
+                    if 'endpoint_count' in file_info:
+                        console.print(f"    Endpoints: {file_info['endpoint_count']}")
                     console.print()
 
                 # Display summary
@@ -625,8 +791,20 @@ def _run_generation(
                             result = _generate_python(schema, output_path, schema_path, force, dry_run)
                             if result:
                                 generated_files.append(result['path'])
+                        elif step == "orm":
+                            result = _generate_orm(schema, output_path, schema_path, force, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
+                        elif step == "routes":
+                            result = _generate_routes(schema, output_path, schema_path, force, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
                         elif step == "dart":
                             result = _generate_dart(schema, output_path, schema_path, force, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
+                        elif step == "dart_api":
+                            result = _generate_dart_api_client(schema, output_path, schema_path, force, dry_run)
                             if result:
                                 generated_files.append(result['path'])
                         elif step == "docker":
@@ -660,8 +838,20 @@ def _run_generation(
                         result = _generate_python(schema, output_path, schema_path, force, dry_run)
                         if result:
                             generated_files.append(result['path'])
+                    elif step == "orm":
+                        result = _generate_orm(schema, output_path, schema_path, force, dry_run)
+                        if result:
+                            generated_files.append(result['path'])
+                    elif step == "routes":
+                        result = _generate_routes(schema, output_path, schema_path, force, dry_run)
+                        if result:
+                            generated_files.append(result['path'])
                     elif step == "dart":
                         result = _generate_dart(schema, output_path, schema_path, force, dry_run)
+                        if result:
+                            generated_files.append(result['path'])
+                    elif step == "dart_api":
+                        result = _generate_dart_api_client(schema, output_path, schema_path, force, dry_run)
                         if result:
                             generated_files.append(result['path'])
                     elif step == "docker":

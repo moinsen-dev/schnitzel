@@ -1,0 +1,812 @@
+# =============================================================================
+# PROMPT DUEL - Game Feature
+# =============================================================================
+# Core game logic: players, matches, rounds, prompts, AI opponents
+# =============================================================================
+
+feature:
+  name: "Game"
+  version: "1.0.0"
+  description: "Core game logic, matches, rounds, prompts"
+  docs: docs/features/game.md
+
+# =============================================================================
+# MODELS
+# =============================================================================
+
+models:
+  Player:
+    description: "Game player with stats and history"
+    fields:
+      id: { type: uuid, primary: true }
+      user_id: { type: uuid, unique: true }  # Reference to auth user
+      username: { type: string, unique: true, min: 3, max: 20 }
+      display_name: { type: string, max: 50 }
+      avatar_url: { type: string, optional: true }
+      elo_rating: { type: int, default: 1000 }
+      games_played: { type: int, default: 0 }
+      games_won: { type: int, default: 0 }
+      win_streak: { type: int, default: 0 }
+      best_win_streak: { type: int, default: 0 }
+      style_points_total: { type: int, default: 0 }
+      favorite_strategies: { type: json, optional: true }
+      is_banned: { type: bool, default: false }
+      banned_until: { type: datetime, optional: true }
+      created_at: { type: datetime, auto: create }
+      updated_at: { type: datetime, auto: update }
+    indexes:
+      - [elo_rating]
+      - [games_won]
+      - [username]
+
+  Match:
+    description: "A game match between players"
+    fields:
+      id: { type: uuid, primary: true }
+      mode: { type: enum, values: [ranked, casual, puzzle, arena, practice] }
+      status: { type: enum, values: [waiting, active, completed, cancelled, abandoned] }
+      current_round: { type: int, default: 1 }
+      max_rounds: { type: int, default: 5 }
+      time_per_prompt: { type: int, default: 15 }  # seconds
+      arena_config: { type: json }  # Grid size, objectives, obstacles
+      created_at: { type: datetime, auto: create }
+      started_at: { type: datetime, optional: true }
+      ended_at: { type: datetime, optional: true }
+    relations:
+      players: { type: hasMany, model: MatchPlayer }
+      rounds: { type: hasMany, model: Round }
+      winner: { type: belongsTo, model: Player, optional: true }
+      ai_opponent: { type: belongsTo, model: AIOpponent, optional: true }
+    indexes:
+      - [status]
+      - [mode, status]
+      - [created_at]
+
+    # =========================================================================
+    # STATE MACHINE - Match Lifecycle
+    # =========================================================================
+    state_machine:
+      field: status
+      initial: waiting
+
+      states:
+        waiting:
+          description: "Waiting for players to join and ready up"
+          timeout:
+            duration: 300  # 5 minutes to fill
+            transition: cancelled
+            message: "Match expired - not enough players joined"
+
+        active:
+          description: "Game is in progress"
+          on_enter: "set started_at = now()"
+          timeout:
+            duration: 3600  # 1 hour max game time
+            transition: abandoned
+            message: "Match timed out"
+
+        completed:
+          description: "Game finished with a winner"
+          final: true
+          on_enter: |
+            set ended_at = now()
+            emit match.ended
+
+        cancelled:
+          description: "Game cancelled before starting"
+          final: true
+          on_enter: "emit match.cancelled"
+
+        abandoned:
+          description: "Game abandoned due to disconnection or timeout"
+          final: true
+          on_enter: |
+            set ended_at = now()
+            emit match.abandoned
+
+      transitions:
+        start:
+          description: "Start the match when all players are ready"
+          from: waiting
+          to: active
+          guard: |
+            count(players) >= 2
+            and all(players, p => p.is_ready)
+          action: |
+            create_first_round()
+            emit match.started
+
+        finish:
+          description: "End the match normally with a winner"
+          from: active
+          to: completed
+          guard: "current_round > max_rounds or has_decisive_winner()"
+          action: |
+            determine_winner()
+            calculate_elo_changes()
+            award_style_points()
+            update_player_stats()
+
+        cancel:
+          description: "Cancel match before it starts"
+          from: waiting
+          to: cancelled
+          roles: [admin, creator]
+
+        forfeit:
+          description: "Player forfeits the match"
+          from: active
+          to: completed
+          roles: [player]
+          action: |
+            set winner = opponent_of(forfeiting_player)
+            calculate_elo_changes()
+
+        abandon:
+          description: "Abandon match due to disconnection"
+          from: active
+          to: abandoned
+          guard: "all(players, p => not p.connected)"
+          auto: true
+          delay: 120  # 2 minutes grace period for reconnection
+
+    # =========================================================================
+    # COMPUTED FIELDS
+    # =========================================================================
+    computed:
+      player_count:
+        type: int
+        virtual: true
+        formula: "count(players)"
+
+      is_full:
+        type: bool
+        virtual: true
+        formula: "count(players) >= max_players_for_mode(mode)"
+
+      has_decisive_winner:
+        type: bool
+        virtual: true
+        formula: |
+          any(players, p =>
+            p.score > sum(other_players, op => op.score)
+            and current_round > max_rounds / 2
+          )
+
+    # =========================================================================
+    # BUSINESS RULES
+    # =========================================================================
+    constraints:
+      - name: valid_round_count
+        check: "max_rounds >= 1 and max_rounds <= 15"
+        message: "Match must have between 1 and 15 rounds"
+
+      - name: valid_time_limit
+        check: "time_per_prompt >= 5 and time_per_prompt <= 60"
+        message: "Prompt time must be between 5 and 60 seconds"
+
+    hooks:
+      before_create:
+        - name: set_arena_config
+          action: |
+            if arena_config is null:
+              arena_config = ArenaTemplate.random_for_mode(mode).to_config()
+
+        - name: validate_creator_not_banned
+          check: "not creator.is_banned"
+          error: "Banned players cannot create matches"
+
+      after_create:
+        - name: emit_created_event
+          action: "emit match.created"
+
+        - name: schedule_timeout
+          action: "schedule check_match_timeout after 300s"
+
+  MatchPlayer:
+    description: "Player participation in a match"
+    fields:
+      id: { type: uuid, primary: true }
+      score: { type: int, default: 0 }
+      style_points: { type: int, default: 0 }
+      color: { type: enum, values: [cyan, magenta, yellow, green] }
+      is_ready: { type: bool, default: false }
+      connected: { type: bool, default: true }
+      joined_at: { type: datetime, auto: create }
+    relations:
+      match: { type: belongsTo, model: Match }
+      player: { type: belongsTo, model: Player }
+
+  Round:
+    description: "A single round within a match"
+    fields:
+      id: { type: uuid, primary: true }
+      round_number: { type: int }
+      phase: { type: enum, values: [waiting, prompt, merge, execute, reveal, resolve] }
+      time_limit_seconds: { type: int, default: 15 }
+      arena_state_before: { type: json }
+      arena_state_after: { type: json, optional: true }
+      executor_reasoning: { type: string, optional: true }
+      executor_action: { type: string, optional: true }
+      executor_confidence: { type: float, optional: true }
+      started_at: { type: datetime, optional: true }
+      ended_at: { type: datetime, optional: true }
+    relations:
+      match: { type: belongsTo, model: Match }
+      prompts: { type: hasMany, model: Prompt }
+      round_winner: { type: belongsTo, model: MatchPlayer, optional: true }
+
+    # =========================================================================
+    # STATE MACHINE - Round Phase Lifecycle
+    # =========================================================================
+    state_machine:
+      field: phase
+      initial: waiting
+
+      states:
+        waiting:
+          description: "Round created, waiting to begin prompt phase"
+          on_enter: "set arena_state_before = match.current_arena_state"
+
+        prompt:
+          description: "Players are writing their prompts (timed)"
+          on_enter: |
+            set started_at = now()
+            emit round.started
+            start_timer(time_limit_seconds)
+          timeout:
+            duration_field: time_limit_seconds
+            transition: merge
+            action: "submit_empty_prompts_for_missing()"
+
+        merge:
+          description: "Both prompts received, preparing for AI execution"
+          on_enter: |
+            combine_prompts()
+            prepare_executor_context()
+
+        execute:
+          description: "AI Executor is processing the combined prompts"
+          on_enter: |
+            invoke ai.executor with {
+              prompts: combined_prompts,
+              arena_state: arena_state_before,
+              match_context: match.arena_config
+            }
+            emit executor.thinking
+          timeout:
+            duration: 30
+            transition: reveal
+            action: "set executor_action = 'timeout_default_action'"
+
+        reveal:
+          description: "Showing execution results and prompts to players"
+          on_enter: |
+            reveal_all_prompts()
+            emit round.execution_complete
+          timeout:
+            duration: 5
+            transition: resolve
+
+        resolve:
+          description: "Round complete, calculating scores and winner"
+          final: true
+          on_enter: |
+            calculate_round_scores()
+            determine_round_winner()
+            update_arena_state()
+            set ended_at = now()
+            check_match_completion()
+
+      transitions:
+        begin_prompting:
+          description: "Start the prompt writing phase"
+          from: waiting
+          to: prompt
+          guard: "match.status == 'active'"
+          auto: true
+
+        prompts_ready:
+          description: "All players have submitted prompts"
+          from: prompt
+          to: merge
+          guard: "count(prompts) >= count(match.players)"
+          auto: true
+
+        start_execution:
+          description: "Begin AI execution of merged prompts"
+          from: merge
+          to: execute
+          auto: true
+          delay: 1  # Brief pause for dramatic effect
+
+        execution_complete:
+          description: "AI has finished processing"
+          from: execute
+          to: reveal
+          guard: "executor_action is not null"
+          auto: true
+
+        finish_reveal:
+          description: "Reveal phase complete, resolve the round"
+          from: reveal
+          to: resolve
+          auto: true
+          delay: 3  # Time for players to see results
+
+    # =========================================================================
+    # COMPUTED FIELDS
+    # =========================================================================
+    computed:
+      all_prompts_submitted:
+        type: bool
+        virtual: true
+        formula: "count(prompts) >= count(match.players)"
+
+      time_elapsed:
+        type: int
+        virtual: true
+        formula: "seconds_between(started_at, now())"
+
+      time_remaining:
+        type: int
+        virtual: true
+        formula: "max(0, time_limit_seconds - time_elapsed)"
+
+      is_overtime:
+        type: bool
+        virtual: true
+        formula: "time_elapsed > time_limit_seconds"
+
+    # =========================================================================
+    # BUSINESS RULES
+    # =========================================================================
+    constraints:
+      - name: valid_round_number
+        check: "round_number >= 1 and round_number <= match.max_rounds"
+        message: "Round number must be within match bounds"
+
+      - name: prompts_match_players
+        check: "count(prompts) <= count(match.players)"
+        message: "Cannot have more prompts than players"
+
+    hooks:
+      before_create:
+        - name: copy_arena_state
+          action: "arena_state_before = match.current_arena_state"
+
+      after_update:
+        - name: notify_phase_change
+          when: "phase changed"
+          action: |
+            emit round.phase_changed with {
+              round_id: id,
+              match_id: match.id,
+              new_phase: phase,
+              time_remaining: time_remaining
+            }
+
+  Prompt:
+    description: "A prompt submitted by a player"
+    fields:
+      id: { type: uuid, primary: true }
+      text: { type: string, max: 500 }
+      submitted_at: { type: datetime, auto: create }
+      creativity_score: { type: float, optional: true }
+      effectiveness_score: { type: float, optional: true }
+      was_dominant: { type: bool, default: false }
+      arbiter_feedback: { type: string, optional: true }
+      embedding: { type: vector, dimensions: 1536 }
+    relations:
+      round: { type: belongsTo, model: Round }
+      match_player: { type: belongsTo, model: MatchPlayer }
+
+  AIOpponent:
+    description: "AI opponent configuration for practice and single-player"
+    fields:
+      id: { type: uuid, primary: true }
+      name: { type: string }
+      personality: { type: string }  # Prompt style description for the AI
+      difficulty: { type: enum, values: [tutorial, easy, medium, hard, adversary] }
+      avatar_url: { type: string, optional: true }
+      bio: { type: string, optional: true }  # Displayed to players
+      win_rate: { type: float, default: 0.5 }
+      signature_moves: { type: json, optional: true }  # Known strategies
+      is_active: { type: bool, default: true }
+    indexes:
+      - [difficulty]
+
+  ArenaTemplate:
+    description: "Pre-configured arena layouts for different game modes"
+    fields:
+      id: { type: uuid, primary: true }
+      name: { type: string }
+      description: { type: string }
+      grid_type: { type: enum, values: [square, hex] }
+      grid_size: { type: int }  # 6, 8, 10, etc.
+      objectives: { type: json }  # Target positions and types
+      obstacles: { type: json }  # Walls, traps, etc.
+      difficulty: { type: enum, values: [easy, medium, hard] }
+      game_mode: { type: enum, values: [ranked, casual, puzzle, arena] }
+      is_active: { type: bool, default: true }
+
+  Puzzle:
+    description: "Pre-designed puzzle scenarios for Puzzle Rush mode"
+    fields:
+      id: { type: uuid, primary: true }
+      name: { type: string }
+      description: { type: string }
+      arena_config: { type: json }
+      optimal_solution: { type: string, optional: true }  # Best known prompt
+      par_rounds: { type: int }  # Expected rounds to solve
+      difficulty: { type: enum, values: [easy, medium, hard, expert] }
+      times_played: { type: int, default: 0 }
+      times_solved: { type: int, default: 0 }
+      best_time_seconds: { type: int, optional: true }
+      created_at: { type: datetime, auto: create }
+    relations:
+      creator: { type: belongsTo, model: Player, optional: true }
+    indexes:
+      - [difficulty]
+      - [times_played]
+
+# =============================================================================
+# ENDPOINTS
+# =============================================================================
+
+endpoints:
+  # --- Players ---
+  /players:
+    GET:
+      name: listPlayers
+      description: "Get paginated list of players"
+      auth: required
+      query:
+        page: { type: int, default: 1 }
+        limit: { type: int, default: 20, max: 100 }
+        search: { type: string, optional: true }
+        sort_by: { type: enum, values: [elo_rating, games_won, created_at], default: elo_rating }
+      response:
+        200: { type: PaginatedResponse<Player> }
+
+  /players/{id}:
+    params:
+      id: { type: uuid }
+    GET:
+      name: getPlayer
+      description: "Get player profile and stats"
+      auth: required
+      response:
+        200: { type: Player }
+        404: { type: ErrorResponse }
+
+  /players/me:
+    GET:
+      name: getCurrentPlayer
+      description: "Get current authenticated player"
+      auth: required
+      response:
+        200: { type: Player }
+
+    PATCH:
+      name: updateCurrentPlayer
+      description: "Update current player profile"
+      auth: required
+      body: UpdatePlayerRequest
+      response:
+        200: { type: Player }
+        400: { type: ValidationError }
+
+  # --- Matches ---
+  /matches:
+    GET:
+      name: listMatches
+      description: "Get list of matches (active, completed, etc.)"
+      auth: required
+      query:
+        status: { type: enum, values: [waiting, active, completed], optional: true }
+        mode: { type: enum, values: [ranked, casual, puzzle, arena], optional: true }
+        limit: { type: int, default: 20 }
+      response:
+        200: { type: list<Match> }
+
+    POST:
+      name: createMatch
+      description: "Create a new match"
+      auth: required
+      body: CreateMatchRequest
+      response:
+        201: { type: Match }
+        400: { type: ValidationError }
+
+  /matches/{id}:
+    params:
+      id: { type: uuid }
+    GET:
+      name: getMatch
+      description: "Get match details"
+      auth: required
+      response:
+        200: { type: Match }
+        404: { type: ErrorResponse }
+
+  /matches/{id}/join:
+    params:
+      id: { type: uuid }
+    POST:
+      name: joinMatch
+      description: "Join a waiting match"
+      auth: required
+      response:
+        200: { type: MatchPlayer }
+        400: { type: ErrorResponse }
+        404: { type: ErrorResponse }
+
+  /matches/{id}/ready:
+    params:
+      id: { type: uuid }
+    POST:
+      name: setReady
+      description: "Mark player as ready to start"
+      auth: required
+      response:
+        200: { type: MatchPlayer }
+
+  /matches/{id}/leave:
+    params:
+      id: { type: uuid }
+    POST:
+      name: leaveMatch
+      description: "Leave a match (forfeit if in progress)"
+      auth: required
+      response:
+        200: { type: json }
+
+  # --- Rounds & Prompts ---
+  /matches/{match_id}/rounds/{round_number}/prompt:
+    params:
+      match_id: { type: uuid }
+      round_number: { type: int }
+    POST:
+      name: submitPrompt
+      description: "Submit a prompt for the current round"
+      auth: required
+      body: SubmitPromptRequest
+      response:
+        201: { type: Prompt }
+        400: { type: ErrorResponse }
+        408: { type: ErrorResponse }  # Timeout
+
+  # --- Matchmaking ---
+  /matchmaking/queue:
+    POST:
+      name: joinQueue
+      description: "Join the matchmaking queue"
+      auth: required
+      body: JoinQueueRequest
+      response:
+        200: { type: QueueStatus }
+
+    DELETE:
+      name: leaveQueue
+      description: "Leave the matchmaking queue"
+      auth: required
+      response:
+        200: { type: json }
+
+  /matchmaking/status:
+    GET:
+      name: getQueueStatus
+      description: "Get current queue status"
+      auth: required
+      response:
+        200: { type: QueueStatus }
+
+  # --- AI Opponents ---
+  /ai-opponents:
+    GET:
+      name: listAIOpponents
+      description: "Get available AI opponents"
+      auth: required
+      query:
+        difficulty: { type: enum, values: [tutorial, easy, medium, hard, adversary], optional: true }
+      response:
+        200: { type: list<AIOpponent> }
+
+  /matches/practice:
+    POST:
+      name: createPracticeMatch
+      description: "Create a practice match against AI"
+      auth: required
+      body: CreatePracticeMatchRequest
+      response:
+        201: { type: Match }
+
+  # --- Puzzles ---
+  /puzzles:
+    GET:
+      name: listPuzzles
+      description: "Get available puzzles"
+      auth: required
+      query:
+        difficulty: { type: enum, values: [easy, medium, hard, expert], optional: true }
+        sort_by: { type: enum, values: [difficulty, times_played, created_at], default: difficulty }
+      response:
+        200: { type: list<Puzzle> }
+
+    POST:
+      name: createPuzzle
+      description: "Create a new community puzzle"
+      auth: required
+      body: CreatePuzzleRequest
+      response:
+        201: { type: Puzzle }
+
+  /puzzles/{id}/attempt:
+    params:
+      id: { type: uuid }
+    POST:
+      name: attemptPuzzle
+      description: "Start a puzzle attempt"
+      auth: required
+      response:
+        201: { type: Match }
+
+# =============================================================================
+# STREAMS - Real-time updates
+# =============================================================================
+
+streams:
+  /matches/{match_id}/live:
+    name: matchLiveStream
+    description: "Real-time match state updates"
+    type: websocket
+    auth: required
+    params:
+      match_id: { type: uuid }
+    chunks:
+      event_type: { type: enum, values: [phase_change, prompt_submitted, player_ready, execution, round_end, match_end, player_disconnected, player_reconnected] }
+      phase: { type: string, optional: true }
+      round_number: { type: int, optional: true }
+      arena_state: { type: json, optional: true }
+      players_ready: { type: json, optional: true }
+      time_remaining: { type: int, optional: true }
+      action: { type: json, optional: true }
+      scores: { type: json, optional: true }
+      winner_id: { type: uuid, optional: true }
+
+  /matches/{match_id}/executor:
+    name: executorThoughtStream
+    description: "Stream AI executor's reasoning process"
+    type: sse
+    auth: required
+    params:
+      match_id: { type: uuid }
+    chunks:
+      step: { type: enum, values: [analyzing, weighing, deciding, acting, done] }
+      thought: { type: string }
+      confidence: { type: float, optional: true }
+      action_preview: { type: string, optional: true }
+      prompts_analysis: { type: json, optional: true }
+
+  /matchmaking/updates:
+    name: matchmakingStream
+    description: "Matchmaking queue updates"
+    type: websocket
+    auth: required
+    chunks:
+      event_type: { type: enum, values: [queue_position, match_found, queue_timeout] }
+      position: { type: int, optional: true }
+      estimated_wait: { type: int, optional: true }
+      match_id: { type: uuid, optional: true }
+
+# =============================================================================
+# EVENTS - Game state changes
+# =============================================================================
+
+events:
+  match.created:
+    description: "A new match has been created"
+    payload:
+      match_id: uuid
+      mode: string
+      created_by: uuid
+    channels: [websocket, redis-pubsub]
+
+  match.player_joined:
+    description: "A player joined a match"
+    payload:
+      match_id: uuid
+      player_id: uuid
+      player_count: int
+      max_players: int
+    channels: [websocket]
+
+  match.started:
+    description: "Match has started"
+    payload:
+      match_id: uuid
+      player_ids: json
+      arena_config: json
+    channels: [websocket, redis-pubsub]
+
+  round.started:
+    description: "A new round has started"
+    payload:
+      match_id: uuid
+      round_number: int
+      arena_state: json
+      time_limit: int
+    channels: [websocket]
+
+  round.prompt_submitted:
+    description: "A player submitted their prompt"
+    payload:
+      match_id: uuid
+      round_id: uuid
+      player_id: uuid
+      all_submitted: bool
+    channels: [websocket]
+
+  round.execution_complete:
+    description: "The AI has executed and round resolved"
+    payload:
+      match_id: uuid
+      round_id: uuid
+      round_winner_id: uuid
+      prompts_revealed: json
+      executor_reasoning: string
+      executor_action: string
+      new_arena_state: json
+    channels: [websocket]
+
+  match.ended:
+    description: "Match has concluded"
+    payload:
+      match_id: uuid
+      winner_id: uuid
+      final_scores: json
+      elo_changes: json
+      style_points_awarded: json
+    channels: [websocket, redis-pubsub]
+
+  player.banned:
+    description: "A player has been banned"
+    payload:
+      player_id: uuid
+      reason: string
+      duration_hours: int
+    channels: [redis-pubsub]
+
+# =============================================================================
+# JOBS - Background tasks
+# =============================================================================
+
+jobs:
+  matchmaking_cycle:
+    description: "Process matchmaking queue and create matches"
+    schedule: "*/5 * * * * *"  # Every 5 seconds
+    timeout: 10
+    retry:
+      max_attempts: 3
+      backoff: exponential
+
+  cleanup_abandoned_matches:
+    description: "Cancel matches with disconnected players"
+    schedule: "*/1 * * * *"  # Every minute
+    timeout: 60
+
+  cleanup_old_matches:
+    description: "Archive old completed matches"
+    schedule: "0 3 * * *"  # Daily at 3 AM
+    timeout: 600
+
+  analyze_prompt_patterns:
+    description: "ML analysis of successful prompts for strategy insights"
+    schedule: "0 4 * * *"  # Daily at 4 AM
+    timeout: 1800
+
+  update_player_streaks:
+    description: "Update win streaks and achievements"
+    schedule: "*/10 * * * *"  # Every 10 minutes
+    timeout: 120

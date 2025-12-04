@@ -1,0 +1,972 @@
+"""Serve command for starting Docker services and FastAPI with uvicorn."""
+
+import subprocess
+from pathlib import Path
+from typing import Optional
+
+import typer
+from rich.console import Console
+from rich.table import Table
+
+from schnitzel.utils.logging import get_logger
+
+console = Console()
+logger = get_logger(__name__)
+
+# Shutdown timeout in seconds
+SHUTDOWN_TIMEOUT = 10
+
+# Track running service processes
+_running_processes: dict[str, subprocess.Popen] = {}
+
+
+def _is_quiet_mode() -> bool:
+    """Check if quiet mode is enabled via CLI.
+
+    Returns:
+        bool: True if quiet mode is enabled
+    """
+    from schnitzel.cli import is_quiet_mode
+    return is_quiet_mode()
+
+
+def _check_docker_installed() -> bool:
+    """Check if Docker is installed and running.
+
+    Returns:
+        bool: True if Docker is available, False otherwise
+    """
+    try:
+        result = subprocess.run(
+            ["docker", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def _check_docker_compose_installed() -> bool:
+    """Check if Docker Compose is installed.
+
+    Returns:
+        bool: True if Docker Compose is available, False otherwise
+    """
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "version"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def _is_docker_running() -> bool:
+    """Check if Docker daemon is running.
+
+    Returns:
+        bool: True if Docker daemon is running, False otherwise
+    """
+    try:
+        result = subprocess.run(
+            ["docker", "info"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError):
+        return False
+
+
+def _check_flutter_installed() -> bool:
+    """Check if Flutter is installed.
+
+    Returns:
+        bool: True if Flutter is available, False otherwise
+    """
+    try:
+        result = subprocess.run(
+            ["flutter", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def _find_flutter_app(project_dir: Path) -> Optional[Path]:
+    """Find Flutter app directory in the project.
+
+    Args:
+        project_dir: Path to the project directory
+
+    Returns:
+        Optional[Path]: Path to Flutter app directory or None if not found
+    """
+    flutter_app = project_dir / "packages" / "app"
+    if flutter_app.exists():
+        pubspec = flutter_app / "pubspec.yaml"
+        if pubspec.exists():
+            return flutter_app
+
+    return None
+
+
+def _start_flutter_server(
+    flutter_app_dir: Path,
+    device: str = "chrome"
+) -> Optional[subprocess.Popen]:
+    """Start Flutter development server.
+
+    Args:
+        flutter_app_dir: Path to Flutter app directory
+        device: Device to run on (default: "chrome" for web)
+
+    Returns:
+        Optional[subprocess.Popen]: Process handle or None if failed
+    """
+    try:
+        if not _is_quiet_mode():
+            console.print("\n[bold blue]Starting Flutter dev server...[/bold blue]")
+            console.print(f"  App directory: {flutter_app_dir}")
+            console.print(f"  Device: {device}")
+            console.print()
+
+        cmd = ["flutter", "run", "-d", device]
+
+        process = subprocess.Popen(
+            cmd,
+            cwd=flutter_app_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+
+        if not _is_quiet_mode():
+            console.print("[green]✓ Flutter dev server started[/green]")
+
+        return process
+
+    except FileNotFoundError:
+        console.print("[yellow]Warning: Flutter command not found[/yellow]")
+        return None
+    except Exception as e:
+        console.print(f"[yellow]Warning: Could not start Flutter server:[/yellow] {e}")
+        return None
+
+
+def _start_docker_services(project_dir: Path) -> bool:
+    """Start Docker services using docker compose up -d.
+
+    Args:
+        project_dir: Path to the project directory containing docker-compose.yaml
+
+    Returns:
+        bool: True if services started successfully, False otherwise
+    """
+    docker_compose_file = project_dir / "docker-compose.yaml"
+
+    # Also check for docker-compose.yml
+    if not docker_compose_file.exists():
+        docker_compose_file = project_dir / "docker-compose.yml"
+
+    if not docker_compose_file.exists():
+        console.print(f"[red]Error: docker-compose.yaml not found in {project_dir}[/red]")
+        return False
+
+    try:
+        # Start all services with docker compose up -d
+        result = subprocess.run(
+            ["docker", "compose", "up", "-d"],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+
+        if result.returncode != 0:
+            console.print("[red]Error starting Docker services:[/red]")
+            console.print(result.stderr)
+            return False
+
+        if not _is_quiet_mode():
+            console.print("[green]✓ Docker services started[/green]")
+
+        return True
+
+    except subprocess.TimeoutExpired:
+        console.print("[red]Error: Docker compose timed out[/red]")
+        return False
+    except Exception as e:
+        console.print(f"[red]Error starting Docker services:[/red] {e}")
+        return False
+
+
+def _stream_service_logs(
+    project_dir: Path,
+    services: list[str] | None = None,
+    follow: bool = True,
+    tail: int = 100,
+) -> subprocess.Popen | None:
+    """Stream Docker service logs to console.
+
+    Args:
+        project_dir: Path to the project directory
+        services: List of service names to stream (None for all)
+        follow: Whether to follow logs in real-time
+        tail: Number of lines to show from end of log
+
+    Returns:
+        Popen process handle if streaming started, None otherwise
+    """
+    try:
+        cmd = ["docker", "compose", "logs"]
+
+        if follow:
+            cmd.append("-f")
+
+        cmd.extend(["--tail", str(tail)])
+
+        if services:
+            cmd.extend(services)
+
+        process = subprocess.Popen(
+            cmd,
+            cwd=project_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+
+        return process
+
+    except Exception as e:
+        if not _is_quiet_mode():
+            console.print(f"[yellow]Warning: Could not stream logs:[/yellow] {e}")
+        return None
+
+
+def _display_service_logs(
+    project_dir: Path,
+    services: list[str] | None = None,
+    lines: int = 50,
+) -> None:
+    """Display recent service logs.
+
+    Args:
+        project_dir: Path to the project directory
+        services: List of service names (None for all)
+        lines: Number of lines to show
+    """
+    try:
+        cmd = ["docker", "compose", "logs", "--tail", str(lines)]
+
+        if services:
+            cmd.extend(services)
+
+        result = subprocess.run(
+            cmd,
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode == 0 and result.stdout:
+            console.print("\n[bold blue]Service Logs:[/bold blue]")
+            console.print(result.stdout)
+        elif result.stderr:
+            console.print(f"[yellow]Log warning:[/yellow] {result.stderr}")
+
+    except subprocess.TimeoutExpired:
+        console.print("[yellow]Warning: Timeout retrieving logs[/yellow]")
+    except Exception as e:
+        console.print(f"[yellow]Warning: Could not retrieve logs:[/yellow] {e}")
+
+
+def check_prerequisites(project_dir: Path) -> dict:
+    """Check all prerequisites for running the serve command.
+
+    Args:
+        project_dir: Path to the project directory
+
+    Returns:
+        dict: Dictionary with:
+            - 'passed': bool - True if all required checks pass
+            - 'checks': list - List of check results with status
+            - 'warnings': list - List of warning messages
+            - 'errors': list - List of error messages
+    """
+    result = {
+        'passed': True,
+        'checks': [],
+        'warnings': [],
+        'errors': [],
+    }
+
+    # Check Docker installed
+    docker_installed = _check_docker_installed()
+    result['checks'].append({
+        'name': 'Docker installed',
+        'passed': docker_installed,
+        'required': True,
+    })
+    if not docker_installed:
+        result['passed'] = False
+        result['errors'].append("Docker is not installed. Install from https://docs.docker.com/get-docker/")
+
+    # Check Docker Compose installed
+    compose_installed = _check_docker_compose_installed()
+    result['checks'].append({
+        'name': 'Docker Compose installed',
+        'passed': compose_installed,
+        'required': True,
+    })
+    if not compose_installed:
+        result['passed'] = False
+        result['errors'].append("Docker Compose is not installed")
+
+    # Check Docker daemon running
+    docker_running = _is_docker_running()
+    result['checks'].append({
+        'name': 'Docker daemon running',
+        'passed': docker_running,
+        'required': True,
+    })
+    if not docker_running:
+        result['passed'] = False
+        result['errors'].append("Docker daemon is not running. Start Docker Desktop or the daemon")
+
+    # Check docker-compose.yaml exists
+    docker_compose_yaml = project_dir / "docker-compose.yaml"
+    docker_compose_yml = project_dir / "docker-compose.yml"
+    compose_file_exists = docker_compose_yaml.exists() or docker_compose_yml.exists()
+    result['checks'].append({
+        'name': 'docker-compose.yaml exists',
+        'passed': compose_file_exists,
+        'required': True,
+    })
+    if not compose_file_exists:
+        result['passed'] = False
+        result['errors'].append(f"docker-compose.yaml not found in {project_dir}")
+
+    # Check Flutter installed (optional)
+    flutter_installed = _check_flutter_installed()
+    result['checks'].append({
+        'name': 'Flutter installed',
+        'passed': flutter_installed,
+        'required': False,
+    })
+    if not flutter_installed:
+        result['warnings'].append("Flutter is not installed. Frontend will not be started")
+
+    # Check uvicorn available (optional but recommended)
+    try:
+        import uvicorn
+        uvicorn_available = True
+    except ImportError:
+        uvicorn_available = False
+    result['checks'].append({
+        'name': 'uvicorn available',
+        'passed': uvicorn_available,
+        'required': False,
+    })
+    if not uvicorn_available:
+        result['warnings'].append("uvicorn not found in Python environment")
+
+    return result
+
+
+def _wait_for_services(project_dir: Path) -> bool:
+    """Wait for Docker services to be healthy.
+
+    Args:
+        project_dir: Path to the project directory
+
+    Returns:
+        bool: True if services are healthy, False otherwise
+    """
+    import time
+
+    max_attempts = 30
+    attempt = 0
+
+    if not _is_quiet_mode():
+        console.print("[dim]Waiting for services to be healthy...[/dim]")
+
+    while attempt < max_attempts:
+        try:
+            # Check PostgreSQL health
+            result = subprocess.run(
+                ["docker", "compose", "ps", "--status", "running", "--filter", "health=healthy"],
+                cwd=project_dir,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            # Check if both db and redis are healthy
+            if "db" in result.stdout and "redis" in result.stdout:
+                if not _is_quiet_mode():
+                    console.print("[green]✓ All services are healthy[/green]")
+                return True
+
+            attempt += 1
+            time.sleep(1)
+
+        except (subprocess.TimeoutExpired, Exception):
+            attempt += 1
+            time.sleep(1)
+
+    console.print("[yellow]Warning: Services took longer than expected to become healthy[/yellow]")
+    return True  # Continue anyway
+
+
+def _validate_project_structure(project_dir: Path) -> dict:
+    """Validate that the project has the expected Schnitzel structure.
+
+    Args:
+        project_dir: Path to the project directory
+
+    Returns:
+        dict: Dictionary with structure info:
+            - 'has_docker_compose': bool
+            - 'has_backend': bool
+            - 'has_frontend': bool
+            - 'has_schema': bool
+            - 'has_schnitzel_dir': bool
+            - 'backend_path': Optional[Path]
+            - 'frontend_path': Optional[Path]
+            - 'warnings': List[str]
+    """
+    info = {
+        'has_docker_compose': False,
+        'has_backend': False,
+        'has_frontend': False,
+        'has_schema': False,
+        'has_schnitzel_dir': False,
+        'backend_path': None,
+        'frontend_path': None,
+        'warnings': []
+    }
+
+    # Check for docker-compose file (required)
+    docker_compose_yaml = project_dir / "docker-compose.yaml"
+    docker_compose_yml = project_dir / "docker-compose.yml"
+    info['has_docker_compose'] = docker_compose_yaml.exists() or docker_compose_yml.exists()
+
+    # Check for backend structure
+    backend_locations = [
+        project_dir / "backend" / "app" / "main.py",
+        project_dir / "backend" / "app" / "__init__.py",
+        project_dir / "backend" / "main.py",
+    ]
+
+    for backend_path in backend_locations:
+        if backend_path.exists():
+            info['has_backend'] = True
+            if backend_path.name == "main.py":
+                info['backend_path'] = backend_path.parent
+            else:
+                info['backend_path'] = backend_path
+            break
+
+    # Check for pyproject.toml in backend
+    if info['has_backend']:
+        backend_root = project_dir / "backend" / "app"
+        if not backend_root.exists():
+            backend_root = project_dir / "backend"
+        pyproject = backend_root / "pyproject.toml"
+        if not pyproject.exists():
+            info['warnings'].append("Backend directory exists but pyproject.toml not found")
+
+    # Check for Flutter frontend
+    packages_dir = project_dir / "packages" / "app"
+    if packages_dir.exists():
+        pubspec = packages_dir / "pubspec.yaml"
+        if pubspec.exists():
+            info['has_frontend'] = True
+            info['frontend_path'] = packages_dir
+        else:
+            info['warnings'].append("packages/app directory exists but pubspec.yaml not found")
+
+    # Check for schema file (standard convention)
+    schema_file = project_dir / "schema.schnitzel.yaml"
+    info['has_schema'] = schema_file.exists()
+
+    # Check for .schnitzel directory (optional, for future use)
+    schnitzel_dir = project_dir / ".schnitzel"
+    info['has_schnitzel_dir'] = schnitzel_dir.exists()
+
+    return info
+
+
+def get_service_status(project_dir: Optional[Path] = None) -> dict:
+    """Get the current status of all services.
+
+    Args:
+        project_dir: Path to the project directory (default: current directory)
+
+    Returns:
+        dict: Dictionary with service status information:
+            - 'services': dict of service name -> status info
+            - 'all_running': bool - True if all services are running
+            - 'docker_running': bool - True if Docker is running
+    """
+    if project_dir is None:
+        project_dir = Path.cwd()
+
+    result = {
+        'services': {},
+        'all_running': False,
+        'docker_running': _is_docker_running(),
+    }
+
+    if not result['docker_running']:
+        return result
+
+    try:
+        # Get Docker compose service status
+        ps_result = subprocess.run(
+            ["docker", "compose", "ps", "--format", "json"],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
+        if ps_result.returncode == 0 and ps_result.stdout.strip():
+            import json
+            # Each line is a JSON object
+            for line in ps_result.stdout.strip().split('\n'):
+                if line:
+                    try:
+                        service_info = json.loads(line)
+                        service_name = service_info.get('Service', service_info.get('Name', 'unknown'))
+                        result['services'][service_name] = {
+                            'running': service_info.get('State', '').lower() == 'running',
+                            'status': service_info.get('State', 'unknown'),
+                            'health': service_info.get('Health', 'unknown'),
+                            'ports': service_info.get('Ports', ''),
+                        }
+                    except json.JSONDecodeError:
+                        pass
+
+        # Check if all services are running
+        if result['services']:
+            result['all_running'] = all(
+                svc.get('running', False) for svc in result['services'].values()
+            )
+
+    except (subprocess.TimeoutExpired, Exception) as e:
+        logger.debug(f"Error getting service status: {e}")
+
+    return result
+
+
+def display_service_status(project_dir: Optional[Path] = None) -> None:
+    """Display the current status of all services in a formatted table.
+
+    Args:
+        project_dir: Path to the project directory (default: current directory)
+    """
+    if project_dir is None:
+        project_dir = Path.cwd()
+
+    status = get_service_status(project_dir)
+
+    if not status['docker_running']:
+        console.print("[red]Docker is not running[/red]")
+        return
+
+    table = Table(title="Service Status", show_header=True, header_style="bold magenta")
+    table.add_column("Service", style="cyan")
+    table.add_column("Status", style="green")
+    table.add_column("Health", style="yellow")
+    table.add_column("Ports", style="blue")
+
+    for service_name, service_info in status['services'].items():
+        status_icon = "✓" if service_info['running'] else "✗"
+        status_style = "green" if service_info['running'] else "red"
+        table.add_row(
+            service_name,
+            f"[{status_style}]{status_icon} {service_info['status']}[/{status_style}]",
+            service_info['health'],
+            service_info['ports'],
+        )
+
+    console.print(table)
+
+    if status['all_running']:
+        console.print("\n[green]All services are running[/green]")
+    else:
+        console.print("\n[yellow]Some services are not running[/yellow]")
+
+
+def stop_services(project_dir: Optional[Path] = None, timeout: int = SHUTDOWN_TIMEOUT) -> bool:
+    """Stop all Docker services.
+
+    Args:
+        project_dir: Path to the project directory (default: current directory)
+        timeout: Timeout in seconds to wait for services to stop
+
+    Returns:
+        bool: True if services stopped successfully
+    """
+    if project_dir is None:
+        project_dir = Path.cwd()
+
+    if not _is_quiet_mode():
+        console.print("[blue]Stopping Docker services...[/blue]")
+
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "down"],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+
+        if result.returncode == 0:
+            if not _is_quiet_mode():
+                console.print("[green]✓ Docker services stopped[/green]")
+            return True
+        else:
+            console.print(f"[red]Error stopping services:[/red] {result.stderr}")
+            return False
+
+    except subprocess.TimeoutExpired:
+        console.print("[yellow]Warning: Timeout waiting for services to stop[/yellow]")
+        return False
+    except Exception as e:
+        console.print(f"[red]Error stopping services:[/red] {e}")
+        return False
+
+
+def graceful_shutdown(project_dir: Optional[Path] = None, timeout: int = SHUTDOWN_TIMEOUT) -> None:
+    """Perform graceful shutdown of all services.
+
+    This function:
+    1. Stops any running Flutter processes
+    2. Waits for existing connections to complete (up to timeout)
+    3. Stops Docker services
+
+    Args:
+        project_dir: Path to the project directory (default: current directory)
+        timeout: Timeout in seconds to wait for shutdown
+    """
+    if project_dir is None:
+        project_dir = Path.cwd()
+
+    if not _is_quiet_mode():
+        console.print("\n[yellow]Initiating graceful shutdown...[/yellow]")
+
+    # Stop tracked processes (Flutter, uvicorn, etc.)
+    for process_name, process in list(_running_processes.items()):
+        try:
+            if process.poll() is None:  # Process is still running
+                if not _is_quiet_mode():
+                    console.print(f"[dim]Stopping {process_name}...[/dim]")
+                process.terminate()
+                try:
+                    process.wait(timeout=timeout // 2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=2)
+        except Exception as e:
+            logger.debug(f"Error stopping {process_name}: {e}")
+        finally:
+            _running_processes.pop(process_name, None)
+
+    # Stop Docker services
+    stop_services(project_dir, timeout=timeout)
+
+    if not _is_quiet_mode():
+        console.print("[green]✓ Shutdown complete[/green]")
+
+
+def cleanup_resources(project_dir: Optional[Path] = None) -> None:
+    """Clean up any resources used by the serve command.
+
+    This is called during shutdown to ensure all resources are properly released.
+
+    Args:
+        project_dir: Path to the project directory (default: current directory)
+    """
+    if project_dir is None:
+        project_dir = Path.cwd()
+
+    # Stop any running processes
+    for process_name, process in list(_running_processes.items()):
+        try:
+            if process.poll() is None:
+                process.terminate()
+                process.wait(timeout=5)
+        except Exception:
+            try:
+                process.kill()
+            except Exception:
+                pass
+        finally:
+            _running_processes.pop(process_name, None)
+
+
+def _find_backend_app_module(project_dir: Path) -> Optional[str]:
+    """Find the FastAPI app module path.
+
+    Args:
+        project_dir: Path to the project directory
+
+    Returns:
+        Optional[str]: Module path like "backend.app.main:app" or None if not found
+    """
+    # Check common locations for FastAPI app
+    possible_locations = [
+        project_dir / "backend" / "app" / "main.py",
+        project_dir / "backend" / "app" / "__init__.py",
+        project_dir / "backend" / "main.py",
+    ]
+
+    for location in possible_locations:
+        if location.exists():
+            # Read the file to check if it has a FastAPI app
+            content = location.read_text()
+            if "FastAPI(" in content or "app = " in content:
+                # Construct the module path
+                relative_path = location.relative_to(project_dir)
+                parts = list(relative_path.parts[:-1]) + [relative_path.stem]
+                module_path = ".".join(parts)
+                return f"{module_path}:app"
+
+    # Default to standard location even if file doesn't exist yet
+    return "backend.app.main:app"
+
+
+def _start_uvicorn(
+    project_dir: Path,
+    port: int = 8000,
+    host: str = "0.0.0.0",
+    reload: bool = True
+) -> int:
+    """Start uvicorn server with the FastAPI app.
+
+    Args:
+        project_dir: Path to the project directory
+        port: Port to run the server on
+        host: Host to bind to
+        reload: Enable hot reload
+
+    Returns:
+        int: Exit code from uvicorn
+    """
+    # Find the FastAPI app module
+    app_module = _find_backend_app_module(project_dir)
+
+    if not _is_quiet_mode():
+        console.print("\n[bold blue]Starting FastAPI server...[/bold blue]")
+        console.print(f"  Module: {app_module}")
+        console.print(f"  Host: {host}")
+        console.print(f"  Port: {port}")
+        console.print(f"  Hot reload: {'enabled' if reload else 'disabled'}")
+        console.print()
+
+    # Build uvicorn command
+    cmd = [
+        "uvicorn",
+        app_module,
+        "--host", host,
+        "--port", str(port),
+    ]
+
+    if reload:
+        cmd.append("--reload")
+
+    try:
+        # Run uvicorn - this will block until Ctrl+C
+        result = subprocess.run(
+            cmd,
+            cwd=project_dir,
+        )
+        return result.returncode
+
+    except KeyboardInterrupt:
+        if not _is_quiet_mode():
+            console.print("\n[yellow]Shutting down server...[/yellow]")
+        return 0
+    except Exception as e:
+        console.print(f"[red]Error starting uvicorn:[/red] {e}")
+        return 1
+
+
+def serve_command(
+    port: int = typer.Option(
+        8000,
+        "--port",
+        "-p",
+        help="Port to run the FastAPI server on"
+    ),
+    host: str = typer.Option(
+        "0.0.0.0",
+        "--host",
+        "-h",
+        help="Host to bind the server to"
+    ),
+    no_reload: bool = typer.Option(
+        False,
+        "--no-reload",
+        help="Disable hot reload"
+    ),
+    backend_only: bool = typer.Option(
+        False,
+        "--backend-only",
+        help="Start only backend services (skip Flutter)"
+    ),
+    frontend_port: Optional[int] = typer.Option(
+        None,
+        "--frontend-port",
+        help="Port to run the Flutter frontend on (when not using --backend-only)"
+    ),
+) -> None:
+    """Start Docker services, FastAPI backend, and Flutter frontend.
+
+    This command will:
+    1. Start Docker services (PostgreSQL, Redis)
+    2. Wait for services to be healthy
+    3. Start FastAPI backend with uvicorn
+    4. Start Flutter dev server (unless --backend-only is specified)
+
+    Args:
+        port: Port to run the FastAPI server on (default: 8000)
+        host: Host to bind the server to (default: 0.0.0.0)
+        no_reload: Disable hot reload (default: False)
+        backend_only: Start only backend services, skip Flutter (default: False)
+        frontend_port: Port to run the Flutter frontend on (optional, for future use)
+    """
+    project_dir = Path.cwd()
+
+    if not _is_quiet_mode():
+        console.print("\n[bold blue]Starting Schnitzel services...[/bold blue]")
+        console.print(f"Project directory: {project_dir}")
+        if backend_only:
+            console.print("[dim]Mode: Backend only (Flutter will be skipped)[/dim]")
+        console.print()
+
+    # Validate project structure
+    structure_info = _validate_project_structure(project_dir)
+
+    # Display structure detection results
+    if not _is_quiet_mode():
+        console.print("[blue]Detected project structure:[/blue]")
+        console.print(f"  Docker Compose: {'✓' if structure_info['has_docker_compose'] else '✗'}")
+        console.print(f"  Backend: {'✓' if structure_info['has_backend'] else '✗'}")
+        console.print(f"  Frontend: {'✓' if structure_info['has_frontend'] else '✗'}")
+        console.print(f"  Schema: {'✓' if structure_info['has_schema'] else '-'}")
+        console.print()
+
+    # Show warnings if any
+    if structure_info['warnings'] and not _is_quiet_mode():
+        for warning in structure_info['warnings']:
+            console.print(f"[yellow]Warning:[/yellow] {warning}")
+        console.print()
+
+    # Show info about frontend port if specified
+    if frontend_port is not None and not _is_quiet_mode():
+        console.print(f"[dim]Note: --frontend-port {frontend_port} specified (reserved for future Flutter integration)[/dim]")
+        console.print()
+
+    # Check prerequisites
+    if not _check_docker_installed():
+        console.print("[red]Error: Docker is not installed[/red]")
+        console.print("[dim]Install Docker: https://docs.docker.com/get-docker/[/dim]")
+        raise typer.Exit(code=1)
+
+    if not _check_docker_compose_installed():
+        console.print("[red]Error: Docker Compose is not installed[/red]")
+        console.print("[dim]Docker Compose is typically included with Docker Desktop[/dim]")
+        raise typer.Exit(code=1)
+
+    if not _is_docker_running():
+        console.print("[red]Error: Docker daemon is not running[/red]")
+        console.print("[dim]Start Docker Desktop or the Docker daemon[/dim]")
+        raise typer.Exit(code=1)
+
+    # Check Flutter if frontend exists and not backend-only mode
+    flutter_process = None
+    if structure_info['has_frontend'] and not backend_only:
+        if not _check_flutter_installed():
+            console.print("[yellow]Warning: Flutter is not installed[/yellow]")
+            console.print("[dim]Flutter frontend will not be started[/dim]")
+            console.print("[dim]Install Flutter: https://docs.flutter.dev/get-started/install[/dim]")
+            console.print()
+        else:
+            if not _is_quiet_mode():
+                console.print("[green]✓ Flutter is installed[/green]")
+
+    # Start Docker services
+    if not _is_quiet_mode():
+        console.print("[blue]Starting Docker services (PostgreSQL, Redis)...[/blue]")
+
+    if not _start_docker_services(project_dir):
+        console.print("[red]Failed to start Docker services[/red]")
+        raise typer.Exit(code=1)
+
+    # Wait for services to be healthy
+    if not _wait_for_services(project_dir):
+        console.print("[yellow]Warning: Could not verify service health[/yellow]")
+        console.print("[dim]Continuing anyway...[/dim]")
+
+    # Start Flutter dev server if applicable
+    if structure_info['has_frontend'] and not backend_only and _check_flutter_installed():
+        flutter_app_dir = structure_info['frontend_path']
+        if flutter_app_dir:
+            flutter_process = _start_flutter_server(flutter_app_dir)
+
+    # Display service status
+    if not _is_quiet_mode():
+        mode_title = "Service Status (Backend Only)" if backend_only else "Service Status"
+        table = Table(title=mode_title, show_header=True, header_style="bold magenta")
+        table.add_column("Service", style="cyan")
+        table.add_column("Status", style="green")
+        table.add_column("Port", style="yellow")
+
+        table.add_row("PostgreSQL", "✓ Running", "5432")
+        table.add_row("Redis", "✓ Running", "6379")
+        table.add_row("FastAPI", "Starting...", str(port))
+
+        if not backend_only and structure_info['has_frontend']:
+            if flutter_process:
+                table.add_row("Flutter", "✓ Running", "auto")
+            elif not _check_flutter_installed():
+                table.add_row("Flutter", "✗ Not installed", "-")
+            else:
+                table.add_row("Flutter", "✗ Failed to start", "-")
+
+        console.print(table)
+        console.print()
+
+    # Start uvicorn with FastAPI - this will block
+    try:
+        reload = not no_reload
+        exit_code = _start_uvicorn(project_dir, port=port, host=host, reload=reload)
+
+        if exit_code != 0:
+            raise typer.Exit(code=exit_code)
+
+    finally:
+        # Clean up Flutter process if it was started
+        if flutter_process:
+            try:
+                flutter_process.terminate()
+                flutter_process.wait(timeout=5)
+            except Exception:
+                pass

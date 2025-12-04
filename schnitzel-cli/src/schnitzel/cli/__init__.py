@@ -4,7 +4,6 @@ import typer
 from pathlib import Path
 from rich.console import Console
 
-from schnitzel.schema import SchemaParser
 from schnitzel.utils.logging import set_verbose, get_logger
 
 app = typer.Typer(
@@ -62,40 +61,9 @@ def main_callback(
     set_quiet_mode(quiet)
 
 
-@app.command()
-def validate(
-    schema_path: Path = typer.Argument(
-        ...,
-        help="Path to the Schnitzel schema YAML file",
-        exists=True,
-    )
-) -> None:
-    """Validate a Schnitzel schema file."""
-    try:
-        if not is_quiet_mode():
-            console.print(f"[blue]Validating schema:[/blue] {schema_path}")
-
-        parser = SchemaParser()
-        schema = parser.parse(schema_path)
-
-        if not is_quiet_mode():
-            console.print(f"[green]✓ Schema is valid![/green]")
-            console.print(f"  Models: {len(schema.models)}")
-
-            if schema.models:
-                console.print("\n  Models defined:")
-                for model_name, model in schema.models.items():
-                    field_count = len(model.fields)
-                    console.print(f"    - {model_name} ({field_count} fields)")
-        else:
-            # In quiet mode, just print success indicator
-            console.print("OK")
-
-    except Exception as e:
-        # Always show errors, even in quiet mode
-        console.print(f"[red]✗ Schema validation failed:[/red]")
-        console.print(f"  {e}")
-        raise typer.Exit(code=1)
+# Import and register validate command
+from schnitzel.cli.commands.validate import validate_command
+app.command(name="validate")(validate_command)
 
 
 @app.command()
@@ -112,6 +80,14 @@ app.command(name="init")(init_command)
 # Import and register generate command
 from schnitzel.cli.commands.generate import generate_command
 app.command(name="generate")(generate_command)
+
+# Import and register migrate command group
+from schnitzel.cli.commands.migrate import migrate_command
+app.add_typer(migrate_command(), name="migrate")
+
+# Import and register serve command
+from schnitzel.cli.commands.serve import serve_command
+app.command(name="serve")(serve_command)
 
 # Export both app and main
 __all__ = ["app", "main"]

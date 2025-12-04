@@ -1,0 +1,2587 @@
+[
+  {
+    "id": "api_001",
+    "category": "functional",
+    "priority": "P0",
+    "description": "SQLAlchemy ORM generator creates basic model with primary key",
+    "steps": [
+      "Create schema with single model: User with id (uuid) and name (string)",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/orm.py exists",
+      "Check that User class inherits from SQLAlchemy Base",
+      "Verify id field is mapped to UUID primary key",
+      "Verify name field is mapped to String column",
+      "Run pyright on generated orm.py - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_002",
+    "category": "functional",
+    "priority": "P0",
+    "description": "SQLAlchemy ORM generator maps all basic field types correctly",
+    "steps": [
+      "Create schema with model containing: string, int, float, bool, datetime, uuid fields",
+      "Run schnitzel generate --target python",
+      "Verify String → sa.String",
+      "Verify int → sa.Integer",
+      "Verify float → sa.Float",
+      "Verify bool → sa.Boolean",
+      "Verify datetime → sa.DateTime",
+      "Verify uuid → sa.UUID",
+      "Verify all columns have correct nullable=True/False based on optional flag",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_003",
+    "category": "functional",
+    "priority": "P0",
+    "description": "SQLAlchemy ORM generator creates foreign key relationships",
+    "steps": [
+      "Create schema: User model and Post model with user_id referencing User",
+      "Run schnitzel generate --target python",
+      "Verify Post.user_id has ForeignKey('users.id')",
+      "Verify relationship() is defined on both sides",
+      "Verify User.posts is relationship with back_populates",
+      "Verify Post.user is relationship with back_populates",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_004",
+    "category": "functional",
+    "priority": "P1",
+    "description": "SQLAlchemy ORM generator creates indexes on fields marked with index: true",
+    "steps": [
+      "Create schema with User model, email field with index: true",
+      "Run schnitzel generate --target python",
+      "Verify email column has index=True parameter",
+      "Check generated SQL includes CREATE INDEX statement",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_005",
+    "category": "functional",
+    "priority": "P1",
+    "description": "SQLAlchemy ORM generator creates unique constraints",
+    "steps": [
+      "Create schema with User model, email field with unique: true",
+      "Run schnitzel generate --target python",
+      "Verify email column has unique=True parameter",
+      "Check generated SQL includes UNIQUE constraint",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_006",
+    "category": "functional",
+    "priority": "P1",
+    "description": "SQLAlchemy ORM generator handles nullable fields correctly",
+    "steps": [
+      "Create schema with required and optional fields",
+      "Run schnitzel generate --target python",
+      "Verify required fields have nullable=False",
+      "Verify optional fields have nullable=True",
+      "Verify optional fields with defaults have default value set",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_007",
+    "category": "functional",
+    "priority": "P1",
+    "description": "SQLAlchemy ORM generator creates table with correct naming",
+    "steps": [
+      "Create schema with User model (PascalCase)",
+      "Run schnitzel generate --target python",
+      "Verify __tablename__ = 'users' (snake_case, pluralized)",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_008",
+    "category": "functional",
+    "priority": "P2",
+    "description": "SQLAlchemy ORM generator handles many-to-many relationships",
+    "steps": [
+      "Create schema: User and Role with many-to-many relationship",
+      "Run schnitzel generate --target python",
+      "Verify association table is created (user_roles)",
+      "Verify User.roles uses secondary parameter",
+      "Verify Role.users uses secondary parameter",
+      "Verify association table has composite primary key",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_009",
+    "category": "functional",
+    "priority": "P2",
+    "description": "SQLAlchemy ORM generator adds timestamps (created_at, updated_at)",
+    "steps": [
+      "Create schema with User model, timestamps: true",
+      "Run schnitzel generate --target python",
+      "Verify created_at field exists with server_default=sa.func.now()",
+      "Verify updated_at field exists with onupdate=sa.func.now()",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_010",
+    "category": "functional",
+    "priority": "P1",
+    "description": "SQLAlchemy ORM generator handles enum types",
+    "steps": [
+      "Create schema with enum: UserRole [user, admin, moderator]",
+      "Create User model with role field of type UserRole",
+      "Run schnitzel generate --target python",
+      "Verify Python Enum class is generated for UserRole",
+      "Verify role column uses sa.Enum(UserRole)",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_011",
+    "category": "functional",
+    "priority": "P0",
+    "description": "FastAPI route generator creates basic GET endpoint",
+    "steps": [
+      "Create schema with endpoint: GET /users/{id} returning User",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/routes.py exists",
+      "Verify @router.get('/users/{id}') decorator is present",
+      "Verify path parameter id: UUID is in function signature",
+      "Verify return type is User from Pydantic models",
+      "Verify operation_id is set from endpoint name",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_012",
+    "category": "functional",
+    "priority": "P0",
+    "description": "FastAPI route generator creates POST endpoint with request body",
+    "steps": [
+      "Create schema with endpoint: POST /users with body: CreateUserRequest",
+      "Run schnitzel generate --target python",
+      "Verify @router.post('/users') decorator is present",
+      "Verify request body parameter uses Pydantic model",
+      "Verify return type is correct",
+      "Verify status_code is set (201 for create)",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_013",
+    "category": "functional",
+    "priority": "P0",
+    "description": "FastAPI route generator handles query parameters",
+    "steps": [
+      "Create schema with endpoint: GET /users with query params: page (int), limit (int, default=20)",
+      "Run schnitzel generate --target python",
+      "Verify page: int parameter in function signature",
+      "Verify limit: int = 20 parameter with default",
+      "Verify Query() is used for validation",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_014",
+    "category": "functional",
+    "priority": "P0",
+    "description": "FastAPI route generator adds auth dependency for protected endpoints",
+    "steps": [
+      "Create schema with endpoint marked auth: required",
+      "Run schnitzel generate --target python",
+      "Verify current_user: User = Depends(get_current_user) in function signature",
+      "Verify import from backend.app.auth",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_015",
+    "category": "functional",
+    "priority": "P1",
+    "description": "FastAPI route generator adds role checking for restricted endpoints",
+    "steps": [
+      "Create schema with endpoint marked roles: [admin]",
+      "Run schnitzel generate --target python",
+      "Verify _: None = Depends(require_roles(['admin'])) in function signature",
+      "Verify import from backend.app.auth",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_016",
+    "category": "functional",
+    "priority": "P0",
+    "description": "FastAPI route generator creates PUT endpoint for updates",
+    "steps": [
+      "Create schema with endpoint: PUT /users/{id} with body: UpdateUserRequest",
+      "Run schnitzel generate --target python",
+      "Verify @router.put('/users/{id}') decorator",
+      "Verify both path parameter and request body",
+      "Verify return type is User",
+      "Run pyright - no errors"
+    ],
+    "passes": true
+  },
+  {
+    "id": "api_017",
+    "category": "functional",
+    "priority": "P0",
+    "description": "FastAPI route generator creates DELETE endpoint",
+    "steps": [
+      "Create schema with endpoint: DELETE /users/{id}",
+      "Run schnitzel generate --target python",
+      "Verify @router.delete('/users/{id}') decorator",
+      "Verify status_code=204",
+      "Verify return type is None or status only",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_018",
+    "category": "functional",
+    "priority": "P1",
+    "description": "FastAPI route generator handles list responses",
+    "steps": [
+      "Create schema with endpoint: GET /users returning List[User]",
+      "Run schnitzel generate --target python",
+      "Verify return type is list[User]",
+      "Verify proper typing imports",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_019",
+    "category": "functional",
+    "priority": "P1",
+    "description": "FastAPI route generator handles paginated responses",
+    "steps": [
+      "Create schema with endpoint returning PaginatedResponse[User]",
+      "Run schnitzel generate --target python",
+      "Verify return type uses generic PaginatedResponse",
+      "Verify PaginatedResponse model is imported",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_020",
+    "category": "functional",
+    "priority": "P2",
+    "description": "FastAPI route generator groups routes by resource",
+    "steps": [
+      "Create schema with multiple endpoints for Users and Posts",
+      "Run schnitzel generate --target python",
+      "Verify routes are organized by APIRouter instances",
+      "Verify tags are set for OpenAPI grouping",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_021",
+    "category": "functional",
+    "priority": "P1",
+    "description": "FastAPI route generator includes OpenAPI metadata",
+    "steps": [
+      "Create schema with endpoint including description and summary",
+      "Run schnitzel generate --target python",
+      "Verify summary parameter in route decorator",
+      "Verify description parameter in route decorator",
+      "Verify operation_id is set",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_022",
+    "category": "functional",
+    "priority": "P2",
+    "description": "FastAPI route generator handles response models with status codes",
+    "steps": [
+      "Create schema with endpoint specifying multiple response codes (200, 404)",
+      "Run schnitzel generate --target python",
+      "Verify responses parameter in decorator with status codes",
+      "Verify response_model is set",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_023",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart API client generator creates basic GET method",
+    "steps": [
+      "Create schema with endpoint: GET /users/{id}",
+      "Run schnitzel generate --target dart",
+      "Verify packages/shared/lib/generated/api_client.dart exists",
+      "Verify getUser(String id) method exists",
+      "Verify method returns Future<User>",
+      "Verify Dio.get() is called with correct path interpolation",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_024",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart API client generator creates POST method with request body",
+    "steps": [
+      "Create schema with endpoint: POST /users with CreateUserRequest",
+      "Run schnitzel generate --target dart",
+      "Verify createUser(CreateUserRequest request) method exists",
+      "Verify method returns Future<User>",
+      "Verify Dio.post() is called with data: request.toJson()",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_025",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart API client generator handles query parameters",
+    "steps": [
+      "Create schema with endpoint: GET /users?page=1&limit=20",
+      "Run schnitzel generate --target dart",
+      "Verify method has page and limit parameters",
+      "Verify queryParameters map is built correctly",
+      "Verify optional parameters have default values",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_026",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart API client generator deserializes response to Freezed models",
+    "steps": [
+      "Create schema with endpoint returning User",
+      "Run schnitzel generate --target dart",
+      "Verify response is deserialized: User.fromJson(response.data)",
+      "Verify import of generated Freezed models",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_027",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart API client generator handles list responses",
+    "steps": [
+      "Create schema with endpoint: GET /users returning List[User]",
+      "Run schnitzel generate --target dart",
+      "Verify method returns Future<List<User>>",
+      "Verify response.data is mapped to User.fromJson",
+      "Verify proper list casting",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_028",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Dart API client generator adds auth token interceptor",
+    "steps": [
+      "Create schema with protected endpoint",
+      "Run schnitzel generate --target dart",
+      "Verify ApiClient constructor sets up Dio with interceptor",
+      "Verify AuthInterceptor adds Bearer token to headers",
+      "Verify token is read from secure storage",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_029",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Dart API client generator handles typed error responses",
+    "steps": [
+      "Create schema with error models defined",
+      "Run schnitzel generate --target dart",
+      "Verify DioException is caught in try-catch",
+      "Verify error response is deserialized to ErrorResponse model",
+      "Verify typed exceptions are thrown (ApiException, ValidationException)",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_030",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart API client generator creates PUT method",
+    "steps": [
+      "Create schema with endpoint: PUT /users/{id}",
+      "Run schnitzel generate --target dart",
+      "Verify updateUser(String id, UpdateUserRequest request) method",
+      "Verify Dio.put() is called with path interpolation and body",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_031",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart API client generator creates DELETE method",
+    "steps": [
+      "Create schema with endpoint: DELETE /users/{id}",
+      "Run schnitzel generate --target dart",
+      "Verify deleteUser(String id) method",
+      "Verify method returns Future<void>",
+      "Verify Dio.delete() is called",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_032",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Dart API client generator handles path parameter interpolation",
+    "steps": [
+      "Create schema with endpoint: GET /users/{userId}/posts/{postId}",
+      "Run schnitzel generate --target dart",
+      "Verify method has userId and postId parameters",
+      "Verify path is built with string interpolation: '/users/$userId/posts/$postId'",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_033",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Dart API client generator uses base URL from config",
+    "steps": [
+      "Create schema with base_url configuration",
+      "Run schnitzel generate --target dart",
+      "Verify ApiClient constructor accepts baseUrl parameter",
+      "Verify Dio instance is initialized with baseUrl",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_034",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Dart API client generator adds request/response logging",
+    "steps": [
+      "Run schnitzel generate --target dart",
+      "Verify LogInterceptor is added to Dio",
+      "Verify logging is conditional based on debug mode",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_035",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Dart API client generator handles multipart file uploads",
+    "steps": [
+      "Create schema with endpoint accepting multipart/form-data",
+      "Run schnitzel generate --target dart",
+      "Verify method accepts File parameter",
+      "Verify FormData is created with MultipartFile",
+      "Verify Content-Type header is set",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_036",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Database migration generator creates initial migration",
+    "steps": [
+      "Create schema with User model",
+      "Run schnitzel migrate diff --name 'create_users_table'",
+      "Verify .schnitzel/migrations/ directory is created",
+      "Verify Alembic migration file is generated with timestamp",
+      "Verify upgrade() function contains CREATE TABLE statement",
+      "Verify downgrade() function contains DROP TABLE statement",
+      "Run pyright on migration file - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_037",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Database migration generator detects added columns",
+    "steps": [
+      "Create initial schema with User model (id, name)",
+      "Generate migration and apply",
+      "Add email field to User model",
+      "Run schnitzel migrate diff --name 'add_email_to_users'",
+      "Verify new migration file is created",
+      "Verify upgrade() contains ALTER TABLE ADD COLUMN",
+      "Verify downgrade() contains ALTER TABLE DROP COLUMN",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_038",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Database migration generator detects removed columns",
+    "steps": [
+      "Create schema with User model (id, name, email)",
+      "Generate migration and apply",
+      "Remove email field",
+      "Run schnitzel migrate diff --name 'remove_email_from_users'",
+      "Verify upgrade() contains ALTER TABLE DROP COLUMN",
+      "Verify downgrade() contains ALTER TABLE ADD COLUMN",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_039",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Database migration generator detects column type changes",
+    "steps": [
+      "Create schema with User model, age: int",
+      "Generate migration and apply",
+      "Change age to string",
+      "Run schnitzel migrate diff --name 'change_age_type'",
+      "Verify upgrade() contains ALTER COLUMN TYPE",
+      "Verify downgrade() reverses the change",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_040",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Database migration generator creates indexes",
+    "steps": [
+      "Create schema with User model, email field with index: true",
+      "Run schnitzel migrate diff --name 'add_email_index'",
+      "Verify upgrade() contains CREATE INDEX",
+      "Verify index name follows convention (ix_users_email)",
+      "Verify downgrade() contains DROP INDEX",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_041",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Database migration generator creates foreign keys",
+    "steps": [
+      "Create schema with User and Post models, Post.user_id references User.id",
+      "Run schnitzel migrate diff --name 'add_foreign_keys'",
+      "Verify upgrade() contains ALTER TABLE ADD CONSTRAINT FOREIGN KEY",
+      "Verify on_delete behavior is set correctly",
+      "Verify downgrade() contains DROP CONSTRAINT",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_042",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Database migration generator handles unique constraints",
+    "steps": [
+      "Create schema with User model, email field with unique: true",
+      "Run schnitzel migrate diff --name 'add_unique_email'",
+      "Verify upgrade() contains ALTER TABLE ADD CONSTRAINT UNIQUE",
+      "Verify downgrade() contains DROP CONSTRAINT",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_043",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Migrate command applies pending migrations",
+    "steps": [
+      "Create schema and generate migration",
+      "Run schnitzel migrate up",
+      "Verify migration is applied to database",
+      "Query alembic_version table - migration ID is recorded",
+      "Verify tables exist in database"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_044",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Migrate command rolls back migrations",
+    "steps": [
+      "Apply a migration",
+      "Run schnitzel migrate down",
+      "Verify tables are dropped",
+      "Query alembic_version table - version is rolled back"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_045",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Migrate command shows migration status",
+    "steps": [
+      "Generate multiple migrations, apply some",
+      "Run schnitzel migrate status",
+      "Verify output shows applied migrations with checkmarks",
+      "Verify output shows pending migrations",
+      "Verify current version is highlighted"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_046",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Migrate command validates migrations before applying",
+    "steps": [
+      "Create migration with syntax error",
+      "Run schnitzel migrate up",
+      "Verify error is caught before applying",
+      "Verify helpful error message is displayed",
+      "Verify database is not modified"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_047",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Migrate command supports dry-run mode",
+    "steps": [
+      "Generate migration",
+      "Run schnitzel migrate up --dry-run",
+      "Verify SQL statements are printed",
+      "Verify database is not modified",
+      "Verify clear indication of dry-run mode"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_048",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Serve command starts Docker services",
+    "steps": [
+      "Run schnitzel serve",
+      "Verify docker compose up -d is executed",
+      "Verify PostgreSQL container is running",
+      "Verify Redis container is running",
+      "Verify health checks pass",
+      "Verify Rich status display shows service status"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_049",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Serve command starts FastAPI with uvicorn",
+    "steps": [
+      "Run schnitzel serve",
+      "Verify uvicorn is started with hot reload",
+      "Verify backend runs on specified port (default 8000)",
+      "Verify /docs endpoint is accessible",
+      "Verify /health endpoint responds"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_050",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Serve command starts Flutter dev server",
+    "steps": [
+      "Run schnitzel serve",
+      "Verify flutter run is executed",
+      "Verify Flutter app is accessible",
+      "Verify hot reload is enabled",
+      "Verify proxy configuration for API calls"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_051",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Serve command supports backend-only mode",
+    "steps": [
+      "Run schnitzel serve --backend-only",
+      "Verify Docker services are started",
+      "Verify FastAPI is started",
+      "Verify Flutter server is NOT started",
+      "Verify status display reflects backend-only mode"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_052",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Serve command allows custom port configuration",
+    "steps": [
+      "Run schnitzel serve --port 9000",
+      "Verify uvicorn starts on port 9000",
+      "Verify API is accessible at http://localhost:9000",
+      "Verify OpenAPI docs at http://localhost:9000/docs"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_053",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Serve command displays live service status",
+    "steps": [
+      "Run schnitzel serve",
+      "Verify Rich live display shows service statuses",
+      "Verify status updates when services start/stop",
+      "Verify color coding (green=running, red=stopped)",
+      "Verify service URLs are displayed"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_054",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Serve command handles graceful shutdown",
+    "steps": [
+      "Run schnitzel serve",
+      "Press Ctrl+C",
+      "Verify all services are stopped gracefully",
+      "Verify Docker containers are stopped",
+      "Verify processes are terminated",
+      "Verify cleanup message is displayed"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_055",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Validate command checks schema syntax",
+    "steps": [
+      "Create schema with syntax errors (invalid YAML)",
+      "Run schnitzel validate",
+      "Verify error is detected",
+      "Verify error message includes line number",
+      "Verify exit code is non-zero"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_056",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Validate command checks naming conventions",
+    "steps": [
+      "Create schema with model named 'user_profile' (should be UserProfile)",
+      "Run schnitzel validate",
+      "Verify naming convention violation is reported",
+      "Verify suggestion for correct name is provided",
+      "Verify exit code is non-zero"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_057",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Validate command detects breaking changes",
+    "steps": [
+      "Create initial schema, take snapshot",
+      "Remove a field from a model",
+      "Run schnitzel validate --breaking",
+      "Verify breaking change is detected (field removal)",
+      "Verify detailed report of breaking changes",
+      "Verify exit code is non-zero"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_058",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Validate command allows non-breaking changes",
+    "steps": [
+      "Create initial schema, take snapshot",
+      "Add optional field to model",
+      "Run schnitzel validate --breaking",
+      "Verify change is accepted as non-breaking",
+      "Verify success message",
+      "Verify exit code is zero"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_059",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Validate command checks security requirements",
+    "steps": [
+      "Create schema with mutation endpoint without auth",
+      "Run schnitzel validate --strict",
+      "Verify security warning is issued",
+      "Verify suggestion to add auth: required",
+      "Verify exit code is non-zero in strict mode"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_060",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Validate command verifies foreign key references",
+    "steps": [
+      "Create schema with Post.user_id referencing non-existent model",
+      "Run schnitzel validate",
+      "Verify reference error is detected",
+      "Verify error message names the missing model",
+      "Verify exit code is non-zero"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_061",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Validate command checks enum value consistency",
+    "steps": [
+      "Create schema with enum UserRole, model field with invalid enum value",
+      "Run schnitzel validate",
+      "Verify enum validation error is detected",
+      "Verify valid values are suggested",
+      "Verify exit code is non-zero"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_062",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Validate command produces formatted validation report",
+    "steps": [
+      "Create schema with multiple validation issues",
+      "Run schnitzel validate",
+      "Verify Rich formatted output with tables",
+      "Verify issues are grouped by severity (error, warning, info)",
+      "Verify summary statistics at end"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_063",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Full generation pipeline produces working API",
+    "steps": [
+      "Create FoodieAI schema with User, Recipe models and CRUD endpoints",
+      "Run schnitzel generate",
+      "Verify ORM models are generated",
+      "Verify FastAPI routes are generated",
+      "Verify Dart API client is generated",
+      "Run schnitzel migrate up",
+      "Run schnitzel serve --backend-only",
+      "Make HTTP request to POST /users",
+      "Verify user is created in database",
+      "Make HTTP request to GET /users/{id}",
+      "Verify user data is returned",
+      "Verify all generated code passes type checking"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_064",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Dart client successfully calls generated API",
+    "steps": [
+      "Generate API from schema",
+      "Start backend with schnitzel serve --backend-only",
+      "Run Flutter test using generated API client",
+      "Verify ApiClient.createUser() makes HTTP POST",
+      "Verify response is deserialized to User model",
+      "Verify ApiClient.getUser() returns correct data",
+      "Verify no runtime errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_065",
+    "category": "functional",
+    "priority": "P1",
+    "description": "SQLAlchemy ORM generator handles composite primary keys",
+    "steps": [
+      "Create schema with association table using composite PK",
+      "Run schnitzel generate --target python",
+      "Verify __table_args__ includes PrimaryKeyConstraint",
+      "Verify both columns are marked as primary_key=True",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_066",
+    "category": "functional",
+    "priority": "P2",
+    "description": "SQLAlchemy ORM generator adds check constraints",
+    "steps": [
+      "Create schema with field having validation: min > 0",
+      "Run schnitzel generate --target python",
+      "Verify CheckConstraint is added to __table_args__",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_067",
+    "category": "functional",
+    "priority": "P1",
+    "description": "SQLAlchemy ORM generator handles JSON/JSONB columns",
+    "steps": [
+      "Create schema with metadata field of type json",
+      "Run schnitzel generate --target python",
+      "Verify column type is sa.JSON or sa.dialects.postgresql.JSONB",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_068",
+    "category": "functional",
+    "priority": "P1",
+    "description": "SQLAlchemy ORM generator handles array columns",
+    "steps": [
+      "Create schema with tags field as array of strings",
+      "Run schnitzel generate --target python",
+      "Verify column type is sa.ARRAY(sa.String)",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_069",
+    "category": "functional",
+    "priority": "P2",
+    "description": "SQLAlchemy ORM generator adds column comments",
+    "steps": [
+      "Create schema with field including description",
+      "Run schnitzel generate --target python",
+      "Verify Column has comment parameter with description",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_070",
+    "category": "functional",
+    "priority": "P1",
+    "description": "SQLAlchemy ORM generator handles self-referential relationships",
+    "steps": [
+      "Create schema with Category model referencing itself (parent_id)",
+      "Run schnitzel generate --target python",
+      "Verify relationship with remote_side parameter",
+      "Verify back_populates is correctly set",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_071",
+    "category": "functional",
+    "priority": "P1",
+    "description": "FastAPI route generator handles nested path parameters",
+    "steps": [
+      "Create endpoint: GET /users/{userId}/posts/{postId}/comments/{commentId}",
+      "Run schnitzel generate --target python",
+      "Verify all path parameters are in function signature",
+      "Verify correct order of parameters",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_072",
+    "category": "functional",
+    "priority": "P1",
+    "description": "FastAPI route generator handles optional query parameters",
+    "steps": [
+      "Create endpoint with optional query params",
+      "Run schnitzel generate --target python",
+      "Verify parameters have Optional[T] type annotation",
+      "Verify default=None is set",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_073",
+    "category": "functional",
+    "priority": "P2",
+    "description": "FastAPI route generator adds request validation",
+    "steps": [
+      "Create endpoint with body constraints (min/max length, pattern)",
+      "Run schnitzel generate --target python",
+      "Verify Pydantic model has Field() validators",
+      "Verify validation works at runtime",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_074",
+    "category": "functional",
+    "priority": "P1",
+    "description": "FastAPI route generator handles file upload endpoints",
+    "steps": [
+      "Create endpoint accepting multipart file upload",
+      "Run schnitzel generate --target python",
+      "Verify UploadFile parameter in signature",
+      "Verify import from fastapi",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_075",
+    "category": "functional",
+    "priority": "P2",
+    "description": "FastAPI route generator adds rate limiting decorators",
+    "steps": [
+      "Create endpoint with rate_limit: 10/minute annotation",
+      "Run schnitzel generate --target python",
+      "Verify rate limit decorator is applied",
+      "Verify import from rate limiting middleware",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_076",
+    "category": "functional",
+    "priority": "P1",
+    "description": "FastAPI route generator handles background tasks",
+    "steps": [
+      "Create endpoint that triggers background job",
+      "Run schnitzel generate --target python",
+      "Verify BackgroundTasks parameter in signature",
+      "Verify background_tasks.add_task() call in implementation",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_077",
+    "category": "functional",
+    "priority": "P2",
+    "description": "FastAPI route generator handles WebSocket endpoints",
+    "steps": [
+      "Create WebSocket endpoint in schema",
+      "Run schnitzel generate --target python",
+      "Verify @router.websocket() decorator",
+      "Verify WebSocket parameter in signature",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_078",
+    "category": "functional",
+    "priority": "P1",
+    "description": "FastAPI route generator adds response headers",
+    "steps": [
+      "Create endpoint with custom response headers",
+      "Run schnitzel generate --target python",
+      "Verify Response parameter in signature",
+      "Verify response.headers[...] = ... calls",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_079",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Dart API client generator handles timeout configuration",
+    "steps": [
+      "Create schema with timeout settings",
+      "Run schnitzel generate --target dart",
+      "Verify Dio BaseOptions includes connectTimeout, receiveTimeout",
+      "Verify timeouts are configurable",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_080",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Dart API client generator handles retry logic",
+    "steps": [
+      "Generate Dart API client",
+      "Verify RetryInterceptor is configured",
+      "Verify retry attempts and backoff strategy",
+      "Verify idempotent requests are retried",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_081",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Dart API client generator handles request cancellation",
+    "steps": [
+      "Generate Dart API client",
+      "Verify CancelToken support is added",
+      "Verify methods accept optional CancelToken parameter",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_082",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Dart API client generator handles null safety correctly",
+    "steps": [
+      "Create schema with optional fields",
+      "Run schnitzel generate --target dart",
+      "Verify nullable types use Type? syntax",
+      "Verify non-nullable types don't have ?",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_083",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Dart API client generator adds progress callbacks for uploads",
+    "steps": [
+      "Generate Dart API client with file upload",
+      "Verify onSendProgress callback parameter",
+      "Verify callback is passed to Dio.post()",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_084",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Dart API client generator handles custom headers",
+    "steps": [
+      "Create endpoint requiring custom headers",
+      "Run schnitzel generate --target dart",
+      "Verify Options with headers parameter",
+      "Verify headers are merged with auth headers",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_085",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Dart API client generator supports mocking for tests",
+    "steps": [
+      "Generate Dart API client",
+      "Verify class is not final (can be extended)",
+      "Verify methods are virtual (can be overridden)",
+      "Create mock class extending ApiClient",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_086",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Database migration generator handles renamed tables",
+    "steps": [
+      "Create schema with User model",
+      "Generate and apply migration",
+      "Rename User to Account in schema",
+      "Run schnitzel migrate diff --name 'rename_user_to_account'",
+      "Verify upgrade() contains ALTER TABLE RENAME",
+      "Verify downgrade() reverses the rename",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_087",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Database migration generator handles renamed columns",
+    "steps": [
+      "Create schema with User model, name field",
+      "Generate and apply migration",
+      "Rename name to full_name",
+      "Run schnitzel migrate diff --name 'rename_name_column'",
+      "Verify upgrade() contains ALTER TABLE RENAME COLUMN",
+      "Verify downgrade() reverses the rename",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_088",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Database migration generator handles data migrations",
+    "steps": [
+      "Create schema and initial migration",
+      "Create data migration to populate default values",
+      "Run schnitzel migrate diff --name 'populate_defaults'",
+      "Verify upgrade() contains INSERT or UPDATE statements",
+      "Verify downgrade() removes the data",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_089",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Database migration generator handles nullable changes",
+    "steps": [
+      "Create schema with nullable field",
+      "Generate and apply migration",
+      "Change field to non-nullable (add default)",
+      "Run schnitzel migrate diff --name 'make_email_required'",
+      "Verify upgrade() contains ALTER COLUMN SET NOT NULL",
+      "Verify downgrade() contains ALTER COLUMN DROP NOT NULL",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_090",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Database migration generator handles default value changes",
+    "steps": [
+      "Create schema with field having default value",
+      "Generate and apply migration",
+      "Change default value",
+      "Run schnitzel migrate diff --name 'update_default_role'",
+      "Verify upgrade() contains ALTER COLUMN SET DEFAULT",
+      "Verify downgrade() restores old default",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_091",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Migrate command handles migration conflicts",
+    "steps": [
+      "Create two parallel branches with different migrations",
+      "Try to merge branches",
+      "Run schnitzel migrate status",
+      "Verify conflict detection",
+      "Verify helpful error message with resolution steps"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_092",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Migrate command supports migration squashing",
+    "steps": [
+      "Create multiple sequential migrations",
+      "Run schnitzel migrate squash --from <first> --to <last>",
+      "Verify single migration file is created",
+      "Verify old migrations are marked as squashed",
+      "Apply squashed migration - verify same result"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_093",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Migrate command validates SQL syntax before execution",
+    "steps": [
+      "Create migration with invalid SQL",
+      "Run schnitzel migrate up",
+      "Verify SQL validation catches error",
+      "Verify helpful error message",
+      "Verify database is not modified"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_094",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Migrate command creates backup before destructive operations",
+    "steps": [
+      "Run schnitzel migrate down",
+      "Verify backup is created in .schnitzel/backups/",
+      "Verify backup includes timestamp",
+      "Verify backup contains full schema dump"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_095",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Serve command checks prerequisites before starting",
+    "steps": [
+      "Run schnitzel serve",
+      "Verify Docker is installed and running",
+      "Verify required ports are available",
+      "If prerequisites fail, display helpful error message",
+      "Do not start services if prerequisites fail"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_096",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Serve command generates self-signed SSL certificate for HTTPS",
+    "steps": [
+      "Run schnitzel serve --https",
+      "Verify SSL certificate is generated",
+      "Verify uvicorn is started with SSL",
+      "Verify API is accessible at https://localhost",
+      "Verify certificate warning is displayed"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_097",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Serve command supports custom environment variables",
+    "steps": [
+      "Create .env file with DATABASE_URL override",
+      "Run schnitzel serve",
+      "Verify environment variables are loaded",
+      "Verify services use custom configuration",
+      "Verify .env values override defaults"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_098",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Serve command displays service logs",
+    "steps": [
+      "Run schnitzel serve",
+      "Verify logs from all services are displayed",
+      "Verify logs are color-coded by service",
+      "Verify log level filtering works",
+      "Verify logs update in real-time"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_099",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Serve command supports service-specific commands",
+    "steps": [
+      "Run schnitzel serve",
+      "While running, type 'r' to restart backend",
+      "Verify backend restarts without stopping other services",
+      "Type 'd' to view Docker logs",
+      "Type 'q' to quit all services"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_100",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Validate command checks for unused models",
+    "steps": [
+      "Create schema with model not referenced in any endpoint",
+      "Run schnitzel validate",
+      "Verify warning about unused model",
+      "Verify suggestion to remove or use the model"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_101",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Validate command checks for missing response types",
+    "steps": [
+      "Create endpoint without specifying response type",
+      "Run schnitzel validate --strict",
+      "Verify error about missing response type",
+      "Verify suggestion to add returns annotation"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_102",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Validate command checks API versioning consistency",
+    "steps": [
+      "Create schema with mixed API versions (/v1/users and /v2/users)",
+      "Run schnitzel validate",
+      "Verify versioning is consistent",
+      "Warn if some endpoints lack version prefix"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_103",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Validate command checks for potential N+1 query issues",
+    "steps": [
+      "Create schema with relationships but no eager loading hints",
+      "Run schnitzel validate --strict",
+      "Verify warning about potential N+1 queries",
+      "Verify suggestion to add joinedload hints"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_104",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Validate command produces JSON output for CI/CD",
+    "steps": [
+      "Create schema with validation issues",
+      "Run schnitzel validate --format json",
+      "Verify output is valid JSON",
+      "Verify JSON includes all validation results",
+      "Verify JSON is parseable by automated tools"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_105",
+    "category": "style",
+    "priority": "P1",
+    "description": "Generated SQLAlchemy ORM code follows PEP 8",
+    "steps": [
+      "Generate ORM models",
+      "Run ruff check on generated code",
+      "Verify no PEP 8 violations",
+      "Verify consistent formatting (2 blank lines between classes)"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_106",
+    "category": "style",
+    "priority": "P1",
+    "description": "Generated SQLAlchemy ORM includes type hints",
+    "steps": [
+      "Generate ORM models",
+      "Verify all columns have type annotations",
+      "Verify relationships have type annotations",
+      "Run pyright - no type errors",
+      "Verify from __future__ import annotations is used"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_107",
+    "category": "style",
+    "priority": "P2",
+    "description": "Generated SQLAlchemy ORM includes docstrings",
+    "steps": [
+      "Generate ORM models",
+      "Verify each model class has docstring",
+      "Verify docstring describes the model",
+      "Verify docstring follows Google style"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_108",
+    "category": "style",
+    "priority": "P1",
+    "description": "Generated SQLAlchemy ORM uses consistent column ordering",
+    "steps": [
+      "Generate ORM models",
+      "Verify id/primary key is first",
+      "Verify foreign keys are grouped",
+      "Verify timestamps are last",
+      "Verify alphabetical ordering within groups"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_109",
+    "category": "style",
+    "priority": "P1",
+    "description": "Generated FastAPI routes follow RESTful conventions",
+    "steps": [
+      "Generate FastAPI routes",
+      "Verify URL paths use kebab-case",
+      "Verify resource names are plural (/users not /user)",
+      "Verify HTTP methods match semantics (GET for read, POST for create)",
+      "Verify status codes are appropriate (201 for create, 204 for delete)"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_110",
+    "category": "style",
+    "priority": "P1",
+    "description": "Generated FastAPI routes have consistent parameter ordering",
+    "steps": [
+      "Generate FastAPI routes with multiple parameters",
+      "Verify order: path params, query params, body, dependencies",
+      "Verify consistency across all endpoints",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_111",
+    "category": "style",
+    "priority": "P2",
+    "description": "Generated FastAPI routes include docstrings",
+    "steps": [
+      "Generate FastAPI routes",
+      "Verify each route function has docstring",
+      "Verify docstring includes Args and Returns sections",
+      "Verify docstring describes endpoint purpose"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_112",
+    "category": "style",
+    "priority": "P1",
+    "description": "Generated FastAPI routes use consistent error responses",
+    "steps": [
+      "Generate FastAPI routes",
+      "Verify 404 responses return consistent structure",
+      "Verify 400 responses include validation details",
+      "Verify error response models are imported"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_113",
+    "category": "style",
+    "priority": "P1",
+    "description": "Generated Dart API client follows Dart style guide",
+    "steps": [
+      "Generate Dart API client",
+      "Run dart format on generated code",
+      "Verify no formatting changes needed",
+      "Verify 2-space indentation",
+      "Verify trailing commas in parameter lists"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_114",
+    "category": "style",
+    "priority": "P1",
+    "description": "Generated Dart API client uses consistent naming",
+    "steps": [
+      "Generate Dart API client",
+      "Verify method names are camelCase",
+      "Verify class name is PascalCase (ApiClient)",
+      "Verify private members start with underscore",
+      "Run dart analyze - no style warnings"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_115",
+    "category": "style",
+    "priority": "P2",
+    "description": "Generated Dart API client includes documentation comments",
+    "steps": [
+      "Generate Dart API client",
+      "Verify /// doc comments on public methods",
+      "Verify doc comments describe parameters",
+      "Verify doc comments include example usage",
+      "Verify dartdoc generates clean output"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_116",
+    "category": "style",
+    "priority": "P1",
+    "description": "Generated Dart API client has consistent error handling",
+    "steps": [
+      "Generate Dart API client",
+      "Verify all methods have try-catch blocks",
+      "Verify exceptions are rethrown with context",
+      "Verify error messages are user-friendly"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_117",
+    "category": "style",
+    "priority": "P2",
+    "description": "Generated migration files follow Alembic conventions",
+    "steps": [
+      "Generate migration",
+      "Verify filename format: {timestamp}_{name}.py",
+      "Verify revision and down_revision are set",
+      "Verify imports are organized",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_118",
+    "category": "style",
+    "priority": "P1",
+    "description": "Generated migration files include descriptive comments",
+    "steps": [
+      "Generate migration",
+      "Verify comment at top explains the migration",
+      "Verify complex operations have inline comments",
+      "Verify both upgrade() and downgrade() are commented"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_119",
+    "category": "style",
+    "priority": "P1",
+    "description": "Serve command output uses consistent color scheme",
+    "steps": [
+      "Run schnitzel serve",
+      "Verify service status uses green for running, red for stopped",
+      "Verify URLs are highlighted in blue",
+      "Verify errors are displayed in red",
+      "Verify overall output is visually organized"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_120",
+    "category": "style",
+    "priority": "P2",
+    "description": "Serve command displays ASCII art banner",
+    "steps": [
+      "Run schnitzel serve",
+      "Verify Schnitzel ASCII art banner is displayed",
+      "Verify version number is shown",
+      "Verify banner is visually appealing"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_121",
+    "category": "style",
+    "priority": "P1",
+    "description": "Validate command output is well-formatted",
+    "steps": [
+      "Run schnitzel validate with issues",
+      "Verify Rich tables are used for issue lists",
+      "Verify severity is color-coded",
+      "Verify summary box at end is clear",
+      "Verify output is easy to read and scan"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_122",
+    "category": "style",
+    "priority": "P1",
+    "description": "Migrate command output shows progress indicators",
+    "steps": [
+      "Run schnitzel migrate up with multiple migrations",
+      "Verify progress bar is displayed",
+      "Verify each migration shows status (applying, applied, failed)",
+      "Verify final summary is clear"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_123",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Templates directory includes all required Jinja2 templates",
+    "steps": [
+      "Verify schnitzel-cli/src/schnitzel/templates/python/routes.py.j2 exists",
+      "Verify schnitzel-cli/src/schnitzel/templates/python/orm.py.j2 exists",
+      "Verify schnitzel-cli/src/schnitzel/templates/dart/api_client.dart.j2 exists",
+      "Verify schnitzel-cli/src/schnitzel/templates/infra/alembic_migration.py.j2 exists",
+      "Verify all templates have proper Jinja2 syntax"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_124",
+    "category": "functional",
+    "priority": "P0",
+    "description": "ORM template correctly iterates over models",
+    "steps": [
+      "Create schema with multiple models",
+      "Generate ORM code",
+      "Verify all models are included in output",
+      "Verify models are in correct order (no forward reference issues)",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_125",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Routes template correctly iterates over endpoints",
+    "steps": [
+      "Create schema with multiple endpoints",
+      "Generate routes code",
+      "Verify all endpoints are included",
+      "Verify endpoints are grouped by router",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_126",
+    "category": "functional",
+    "priority": "P0",
+    "description": "API client template correctly iterates over endpoints",
+    "steps": [
+      "Create schema with multiple endpoints",
+      "Generate Dart API client",
+      "Verify all endpoints become methods",
+      "Verify methods are properly formatted",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_127",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Templates handle edge case: empty schema",
+    "steps": [
+      "Create schema with no models or endpoints",
+      "Generate code",
+      "Verify no errors are thrown",
+      "Verify empty but valid code is generated",
+      "Verify generated code compiles"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_128",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Templates handle edge case: single model",
+    "steps": [
+      "Create schema with exactly one model",
+      "Generate code",
+      "Verify code is generated correctly",
+      "Verify no issues with singular vs plural logic",
+      "Run type checking - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_129",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Templates handle special characters in names",
+    "steps": [
+      "Create schema with model name containing underscore: User_Profile",
+      "Generate code",
+      "Verify name is sanitized to UserProfile",
+      "Verify generated code is valid",
+      "Run type checking - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_130",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Templates include generation metadata in header",
+    "steps": [
+      "Generate any code",
+      "Verify file includes header comment with generation timestamp",
+      "Verify header includes Schnitzel version",
+      "Verify header includes 'DO NOT EDIT' warning"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_131",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Generator commands update CLI registration",
+    "steps": [
+      "Verify schnitzel-cli/src/schnitzel/cli.py includes serve command",
+      "Verify schnitzel-cli/src/schnitzel/cli.py includes validate command",
+      "Verify schnitzel-cli/src/schnitzel/cli.py includes migrate command",
+      "Run schnitzel --help - verify all commands are listed"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_132",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Serve command integrates with existing project structure",
+    "steps": [
+      "Initialize project with schnitzel init",
+      "Generate code",
+      "Run schnitzel serve",
+      "Verify backend/app/generated/ files are loaded",
+      "Verify backend/app/main.py imports generated routes",
+      "Verify API endpoints are accessible"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_133",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Generated routes integrate with FastAPI app",
+    "steps": [
+      "Generate routes from schema",
+      "Verify backend/app/main.py includes route registration",
+      "Run uvicorn backend.app.main:app",
+      "Visit /docs - verify all endpoints appear in OpenAPI docs",
+      "Test endpoint - verify it responds"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_134",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Generated ORM models integrate with database",
+    "steps": [
+      "Generate ORM models from schema",
+      "Run migrations to create tables",
+      "Write Python script to create and query model instances",
+      "Verify CRUD operations work",
+      "Verify relationships work",
+      "Verify no SQLAlchemy errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_135",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Generated Dart client integrates with Flutter app",
+    "steps": [
+      "Generate Dart API client",
+      "Import client in Flutter app",
+      "Instantiate ApiClient with base URL",
+      "Call API method from UI",
+      "Verify response is received and deserialized",
+      "Verify no runtime errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_136",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Alembic configuration is created automatically",
+    "steps": [
+      "Initialize project with schnitzel init",
+      "Verify .schnitzel/alembic.ini is created",
+      "Verify .schnitzel/alembic/ directory structure exists",
+      "Verify env.py is configured with correct database URL",
+      "Run alembic current - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_137",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Migrations are stored in version-controlled directory",
+    "steps": [
+      "Generate migration",
+      "Verify migration file is in .schnitzel/migrations/versions/",
+      "Verify directory is git-tracked",
+      "Verify .gitignore doesn't exclude migrations"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_138",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Generate command supports --target flag for selective generation",
+    "steps": [
+      "Run schnitzel generate --target python",
+      "Verify only Python code is generated (ORM, routes)",
+      "Verify Dart code is not generated",
+      "Run schnitzel generate --target dart",
+      "Verify only Dart code is generated (API client)",
+      "Verify Python code is not regenerated"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_139",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Generate command detects schema changes and regenerates",
+    "steps": [
+      "Generate code from schema",
+      "Modify schema (add field)",
+      "Run schnitzel generate",
+      "Verify generated code includes new field",
+      "Verify no manual edits are overwritten (if any guards exist)"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_140",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Generate command supports watch mode for continuous generation",
+    "steps": [
+      "Run schnitzel generate --watch",
+      "Modify schema file",
+      "Verify code is automatically regenerated",
+      "Verify console shows regeneration message",
+      "Stop watch mode with Ctrl+C"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_141",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Error messages include helpful suggestions",
+    "steps": [
+      "Run command with invalid schema",
+      "Verify error message is clear and specific",
+      "Verify error message includes line number",
+      "Verify error message suggests how to fix",
+      "Verify no stack traces in user-facing errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_142",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Commands respect --verbose flag for detailed output",
+    "steps": [
+      "Run schnitzel generate --verbose",
+      "Verify detailed logs are shown",
+      "Verify internal steps are logged",
+      "Run without --verbose",
+      "Verify output is concise",
+      "Verify only important info is shown"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_143",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Commands support --dry-run for preview",
+    "steps": [
+      "Run schnitzel generate --dry-run",
+      "Verify list of files that would be generated",
+      "Verify no files are actually written",
+      "Verify diff preview is shown"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_144",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: API contract matches between Python and Dart",
+    "steps": [
+      "Generate Python routes and Dart client from same schema",
+      "Compare endpoint paths - verify match",
+      "Compare request/response types - verify match",
+      "Compare parameter names - verify match",
+      "Make API call from Dart client to Python backend - verify success"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_145",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Database schema matches ORM models",
+    "steps": [
+      "Generate ORM models from schema",
+      "Generate and apply migrations",
+      "Inspect database schema",
+      "Verify all tables exist",
+      "Verify all columns exist with correct types",
+      "Verify all constraints exist (FK, unique, etc.)"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_146",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: End-to-end CRUD operations work",
+    "steps": [
+      "Generate full stack from FoodieAI schema",
+      "Start backend with schnitzel serve --backend-only",
+      "Use Dart client to create a user (POST /users)",
+      "Verify user is in database",
+      "Use Dart client to fetch user (GET /users/{id})",
+      "Verify response matches created data",
+      "Use Dart client to update user (PUT /users/{id})",
+      "Verify update is persisted in database",
+      "Use Dart client to delete user (DELETE /users/{id})",
+      "Verify user is removed from database"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_147",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Integration test: Auth flow works end-to-end",
+    "steps": [
+      "Generate API with protected endpoints",
+      "Start backend",
+      "Use Dart client to call protected endpoint without token - verify 401",
+      "Use Dart client to login and get token",
+      "Use Dart client to call protected endpoint with token - verify success",
+      "Verify token is automatically added by interceptor"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_148",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Integration test: Validation errors are properly returned",
+    "steps": [
+      "Generate API with validated request body",
+      "Use Dart client to send invalid data (missing required field)",
+      "Verify 422 Validation Error is returned",
+      "Verify error response includes field details",
+      "Verify Dart client deserializes error to ValidationException"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_149",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Integration test: Relationships are properly loaded",
+    "steps": [
+      "Generate API with User and Post models (1-to-many)",
+      "Create user and multiple posts",
+      "Fetch user with posts included",
+      "Verify posts are loaded (not N+1 query)",
+      "Verify relationship data is correct"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_150",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Integration test: Pagination works correctly",
+    "steps": [
+      "Generate API with paginated list endpoint",
+      "Create 25 users",
+      "Fetch users with limit=10, page=1",
+      "Verify 10 results are returned",
+      "Verify total count is 25",
+      "Fetch page 2",
+      "Verify next 10 results are returned",
+      "Fetch page 3",
+      "Verify final 5 results are returned"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_151",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Performance test: Code generation completes in reasonable time",
+    "steps": [
+      "Create schema with 50 models and 200 endpoints",
+      "Measure time for schnitzel generate",
+      "Verify generation completes in under 10 seconds",
+      "Verify all code is generated correctly"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_152",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Performance test: Generated API handles concurrent requests",
+    "steps": [
+      "Generate and start API",
+      "Make 100 concurrent requests to GET endpoint",
+      "Verify all requests succeed",
+      "Verify no database connection errors",
+      "Verify reasonable response times (<500ms)"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_153",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Unit test: Routes generator handles missing optional fields",
+    "steps": [
+      "Create endpoint with optional query parameter",
+      "Generate routes",
+      "Verify parameter has default value",
+      "Verify parameter is Optional[T]",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_154",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Unit test: ORM generator handles circular references",
+    "steps": [
+      "Create schema with User and Profile models referencing each other",
+      "Generate ORM code",
+      "Verify forward references are used",
+      "Verify from __future__ import annotations",
+      "Run pyright - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_155",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Unit test: Dart client generator escapes reserved keywords",
+    "steps": [
+      "Create endpoint with parameter named 'class' or 'import'",
+      "Generate Dart client",
+      "Verify parameter is renamed or escaped",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_156",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Unit test: Migration generator detects no changes correctly",
+    "steps": [
+      "Generate and apply migration",
+      "Run schnitzel migrate diff without schema changes",
+      "Verify empty migration is detected",
+      "Verify message: 'No schema changes detected'",
+      "Verify no migration file is created"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_157",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Documentation: README includes API generation examples",
+    "steps": [
+      "Open README.md",
+      "Verify section on API generation exists",
+      "Verify examples show schema → routes generation",
+      "Verify examples show schema → API client generation",
+      "Verify examples show migration workflow"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_158",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Documentation: API reference docs are generated",
+    "steps": [
+      "Run documentation generator",
+      "Verify API reference for all commands",
+      "Verify command options are documented",
+      "Verify examples for each command",
+      "Verify docs are accessible via browser"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_159",
+    "category": "functional",
+    "priority": "P1",
+    "description": "CLI help text is clear and comprehensive",
+    "steps": [
+      "Run schnitzel serve --help",
+      "Verify all options are documented",
+      "Verify examples are provided",
+      "Verify default values are shown",
+      "Run schnitzel migrate --help",
+      "Verify subcommands are listed with descriptions"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_160",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Error handling: Graceful failure on network issues",
+    "steps": [
+      "Run schnitzel serve with Docker not running",
+      "Verify clear error message about Docker",
+      "Verify no stack trace in user output",
+      "Verify suggestion to start Docker"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_161",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Error handling: Graceful failure on port conflicts",
+    "steps": [
+      "Start service on port 8000",
+      "Run schnitzel serve --port 8000",
+      "Verify port conflict error is detected",
+      "Verify suggestion to use different port",
+      "Verify --port option is mentioned"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_162",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Error handling: Validate database connection before migration",
+    "steps": [
+      "Stop database",
+      "Run schnitzel migrate up",
+      "Verify connection error is caught",
+      "Verify helpful error message",
+      "Verify suggestion to start database"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_163",
+    "category": "style",
+    "priority": "P2",
+    "description": "Code generation includes helpful comments in generated files",
+    "steps": [
+      "Generate any code",
+      "Verify generated file has header with instructions",
+      "Verify complex sections have explanatory comments",
+      "Verify comments explain why, not just what"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_164",
+    "category": "style",
+    "priority": "P1",
+    "description": "Generated code follows zero-tolerance policy",
+    "steps": [
+      "Generate all code (Python, Dart, SQL)",
+      "Run type checkers (pyright, dart analyze)",
+      "Verify zero errors",
+      "Verify zero warnings",
+      "Search for TODO comments - verify none exist",
+      "Verify all implementations are complete"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_165",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Generators module structure is properly organized",
+    "steps": [
+      "Verify schnitzel-cli/src/schnitzel/generators/python/routes.py exists",
+      "Verify schnitzel-cli/src/schnitzel/generators/python/orm.py exists",
+      "Verify schnitzel-cli/src/schnitzel/generators/dart/api_client.py exists",
+      "Verify schnitzel-cli/src/schnitzel/generators/infra/migrations.py exists",
+      "Verify each generator has proper imports",
+      "Verify generators/__init__.py exports all generators"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_166",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Commands module structure is properly organized",
+    "steps": [
+      "Verify schnitzel-cli/src/schnitzel/commands/serve.py exists",
+      "Verify schnitzel-cli/src/schnitzel/commands/validate.py exists",
+      "Verify schnitzel-cli/src/schnitzel/commands/migrate.py exists",
+      "Verify each command has proper Typer decorator",
+      "Verify commands/__init__.py exports all commands",
+      "Verify commands are registered in cli.py"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_167",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Type mapping between languages is comprehensive",
+    "steps": [
+      "Create schema with all supported types",
+      "Generate Python, Dart, and SQL code",
+      "Verify string → str → String → VARCHAR",
+      "Verify int → int → int → INTEGER",
+      "Verify float → float → double → FLOAT",
+      "Verify bool → bool → bool → BOOLEAN",
+      "Verify datetime → datetime → DateTime → TIMESTAMP",
+      "Verify uuid → UUID → String → UUID",
+      "Verify all mappings are consistent and correct"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_168",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Generated code includes proper imports",
+    "steps": [
+      "Generate all code",
+      "Verify Python code imports from typing (List, Optional, etc.)",
+      "Verify Python code imports SQLAlchemy components",
+      "Verify Python code imports FastAPI components",
+      "Verify Dart code imports Dio, Freezed models",
+      "Verify all imports are used (no unused imports)"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_169",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Generated API supports CORS for development",
+    "steps": [
+      "Generate FastAPI application",
+      "Start backend with schnitzel serve",
+      "Make cross-origin request from Flutter web app",
+      "Verify CORS headers are present",
+      "Verify request succeeds",
+      "Verify CORS middleware is configured in main.py"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_170",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Generated API includes health check endpoint",
+    "steps": [
+      "Generate FastAPI application",
+      "Start backend",
+      "Make request to GET /health",
+      "Verify 200 response",
+      "Verify response includes service status",
+      "Verify database connection is checked"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_171",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Generated API includes metrics endpoint",
+    "steps": [
+      "Generate FastAPI application with metrics enabled",
+      "Start backend",
+      "Make request to GET /metrics",
+      "Verify Prometheus-compatible metrics are returned",
+      "Verify request count, latency metrics exist"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_172",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Dart API client supports response caching",
+    "steps": [
+      "Generate Dart client with caching enabled",
+      "Make GET request",
+      "Verify response is cached",
+      "Make same GET request again",
+      "Verify cached response is returned",
+      "Verify no network request is made"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_173",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Dart API client supports offline mode",
+    "steps": [
+      "Generate Dart client with offline support",
+      "Make requests while online - verify success",
+      "Simulate offline mode",
+      "Make request - verify queued for retry",
+      "Go back online",
+      "Verify queued request is sent"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_174",
+    "category": "functional",
+    "priority": "P1",
+    "description": "FastAPI routes support filtering with query parameters",
+    "steps": [
+      "Create endpoint: GET /users with filters (name, email, role)",
+      "Generate routes",
+      "Verify filter parameters are in signature",
+      "Implement filtering logic in route handler",
+      "Test with multiple filters - verify correct results"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_175",
+    "category": "functional",
+    "priority": "P1",
+    "description": "FastAPI routes support sorting with query parameters",
+    "steps": [
+      "Create endpoint: GET /users with sort parameter",
+      "Generate routes",
+      "Verify sort parameter (sort_by, order)",
+      "Implement sorting logic",
+      "Test ascending and descending - verify correct order"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_176",
+    "category": "functional",
+    "priority": "P0",
+    "description": "All module tests can be run with pytest",
+    "steps": [
+      "Run pytest schnitzel-cli/tests/integration/test_api_generation.py",
+      "Verify all API generation tests pass",
+      "Run pytest schnitzel-cli/tests/integration/test_migrations.py",
+      "Verify all migration tests pass",
+      "Run pytest on entire test suite",
+      "Verify no test failures"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_177",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Test coverage includes all major code paths",
+    "steps": [
+      "Run pytest with coverage",
+      "Verify generators/python/routes.py has >80% coverage",
+      "Verify generators/python/orm.py has >80% coverage",
+      "Verify generators/dart/api_client.py has >80% coverage",
+      "Verify commands/ have >80% coverage",
+      "Generate coverage report"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_178",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Continuous Integration: Tests run on push",
+    "steps": [
+      "Verify .github/workflows/ includes CI config",
+      "Push code to trigger CI",
+      "Verify pytest runs automatically",
+      "Verify type checking runs (pyright, dart analyze)",
+      "Verify linting runs (ruff, dart format)",
+      "Verify all checks pass"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_179",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Module can be installed and used standalone",
+    "steps": [
+      "Clone repository",
+      "Run uv pip install -e schnitzel-cli",
+      "Verify schnitzel command is available",
+      "Run schnitzel --version",
+      "Run schnitzel init test-project",
+      "Verify project is created successfully"
+    ],
+    "passes": false
+  },
+  {
+    "id": "api_180",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Module integrates with module_00_foundation",
+    "steps": [
+      "Verify this module uses schema parser from module_00",
+      "Verify this module uses schema validator from module_00",
+      "Verify this module uses Pydantic models from module_00 generator",
+      "Verify this module uses Freezed models from module_00 generator",
+      "Verify no duplication of foundation functionality"
+    ],
+    "passes": false
+  }
+]

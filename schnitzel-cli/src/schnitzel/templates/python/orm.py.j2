@@ -1,0 +1,51 @@
+"""Generated SQLAlchemy ORM models from Schnitzel schema."""
+
+from __future__ import annotations
+
+{% if needs_datetime %}
+from datetime import datetime
+{% endif %}
+{% if needs_uuid %}
+import uuid
+{% endif %}
+{% if needs_any %}
+from typing import Any
+{% endif %}
+
+import sqlalchemy as sa
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column{% if needs_relationship %}, relationship{% endif %}
+
+
+class Base(DeclarativeBase):
+    """SQLAlchemy declarative base class."""
+    pass
+
+
+{% for model in models %}
+class {{ model.name }}(Base):
+    __tablename__ = "{{ model.table_name }}"
+    {% if model.description %}
+
+    """{{ model.description }}"""
+    {% endif %}
+
+    {% for field in model.fields %}
+    {{ field.name }}: Mapped[{{ field.type_hint }}] = mapped_column({{ field.column_def }})
+    {% endfor %}
+    {% if model.foreign_keys %}
+
+    {% for fk in model.foreign_keys %}
+    {{ fk.name }}: Mapped[{{ fk.type_hint }}] = mapped_column({{ fk.column_def }})
+    {% endfor %}
+    {% endif %}
+    {% if model.relationships %}
+
+    {% for rel in model.relationships %}
+    {{ rel.name }}: Mapped[{{ rel.type_hint }}] = relationship({{ rel.options }})
+    {% endfor %}
+    {% endif %}
+
+{% if not loop.last %}
+
+{% endif %}
+{% endfor %}

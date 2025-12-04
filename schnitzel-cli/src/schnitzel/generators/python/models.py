@@ -64,11 +64,23 @@ class PythonModelGenerator:
         # Track if we need forward references
         self.needs_future_annotations = self._has_relationships(schema)
 
+        # Check if any endpoints use pagination
+        needs_pagination_model = self._check_pagination_needed(schema)
+
         # Generate model classes first to determine what we need to import
         model_code_sections = []
         for model_name, model in schema.models.items():
             model_code = self._generate_model(model)
             model_code_sections.append(model_code)
+
+        # Add PaginatedResponse utility model if needed
+        if needs_pagination_model:
+            pagination_model = self._generate_paginated_response_model()
+            model_code_sections.append(pagination_model)
+            # PaginatedResponse needs Generic and TypeVar
+            self.imports.add("from typing import Generic, TypeVar")
+            # Need Field for pagination metadata
+            self.needs_field_import = True
 
         # Collect additional imports based on field types
         self._collect_type_imports(schema)
@@ -379,3 +391,64 @@ class PythonModelGenerator:
 
         if needs_literal:
             self.imports.add("from typing import Literal")
+
+    def _check_pagination_needed(self, schema: SchnitzelSchema) -> bool:
+        """Check if any endpoint has pagination enabled.
+
+        Returns True if pagination: true is set on any endpoint,
+        or if any response type is PaginatedResponse<T>.
+        """
+        if not schema.endpoints:
+            return False
+
+        for path, methods in schema.endpoints.items():
+            if not isinstance(methods, dict):
+                continue
+
+            for method_name, endpoint_def in methods.items():
+                if method_name == "params":
+                    continue
+
+                if not isinstance(endpoint_def, dict):
+                    continue
+
+                # Check if pagination is explicitly enabled
+                if endpoint_def.get("pagination", False):
+                    return True
+
+                # Check if response type is PaginatedResponse<T>
+                if "response" in endpoint_def:
+                    responses = endpoint_def["response"]
+                    for status_code, response_def in responses.items():
+                        if isinstance(response_def, dict) and "type" in response_def:
+                            response_type = response_def["type"]
+                            if "PaginatedResponse<" in response_type:
+                                return True
+
+        return False
+
+    def _generate_paginated_response_model(self) -> str:
+        """Generate the PaginatedResponse generic model for paginated endpoints.
+
+        Returns a Pydantic model that wraps paginated results with metadata:
+        - items: List[T] - The actual items
+        - total: int - Total number of items across all pages
+        - page: int - Current page number (1-indexed)
+        - per_page: int - Items per page
+        - pages: int - Total number of pages
+        """
+        return """# Generic type variable for PaginatedResponse
+T = TypeVar('T')
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    \"\"\"Generic paginated response wrapper.
+
+    Provides pagination metadata along with the actual items.
+    \"\"\"
+
+    items: list[T] = Field(description="Items for the current page")
+    total: int = Field(ge=0, description="Total number of items across all pages")
+    page: int = Field(ge=1, description="Current page number (1-indexed)")
+    per_page: int = Field(ge=1, description="Number of items per page")
+    pages: int = Field(ge=0, description="Total number of pages")"""
