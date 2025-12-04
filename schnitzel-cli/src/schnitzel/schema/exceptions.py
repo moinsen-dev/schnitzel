@@ -88,3 +88,29 @@ class CircularImportError(SchemaError):
 class ValidationError(SchemaError):
     """Raised when schema validation fails."""
     pass
+
+
+class VersionError(SchemaError):
+    """Raised when schema version is incompatible or invalid."""
+
+    def __init__(self, message: str, schema_version: str | None = None, supported_versions: list[str] | None = None):
+        """Initialize version error with details about version mismatch.
+
+        Args:
+            message: Human-readable error description
+            schema_version: The schema version found in the file
+            supported_versions: List of supported version strings
+        """
+        self.schema_version = schema_version
+        self.supported_versions = supported_versions
+
+        error_parts = [f"Schema version error: {message}"]
+
+        if schema_version:
+            error_parts.append(f"\n  Found version: {schema_version}")
+
+        if supported_versions:
+            error_parts.append(f"\n  Supported versions: {', '.join(supported_versions)}")
+            error_parts.append("\n  Tip: Update your schema to use a compatible version.")
+
+        super().__init__("".join(error_parts))

@@ -7,13 +7,67 @@ import yaml
 from pydantic import ValidationError as PydanticValidationError
 
 from .models import SchnitzelSchema
-from .exceptions import YAMLParseError, CircularImportError, ImportError as SchnitzelImportError, ValidationError
+from .exceptions import YAMLParseError, CircularImportError, ImportError as SchnitzelImportError, ValidationError, VersionError
 
 
 class DuplicateModelError(Exception):
     """Raised when duplicate model names are found."""
 
     pass
+
+
+class DuplicateFieldError(Exception):
+    """Raised when duplicate field names are found in a model."""
+
+    pass
+
+
+class DuplicateKeyDetector(yaml.SafeLoader):
+    """
+    Custom YAML loader that detects duplicate keys.
+
+    This loader extends PyYAML's SafeLoader to detect when the same key
+    appears multiple times in a mapping (dictionary). This is useful for
+    detecting duplicate field names in model definitions.
+    """
+
+    def construct_mapping(self, node, deep=False):
+        """
+        Construct a mapping (dict) while detecting duplicate keys.
+
+        Args:
+            node: YAML node to construct mapping from
+            deep: Whether to perform deep construction
+
+        Returns:
+            Constructed mapping
+
+        Raises:
+            yaml.constructor.ConstructorError: If duplicate keys are found
+        """
+        if not isinstance(node, yaml.MappingNode):
+            raise yaml.constructor.ConstructorError(
+                None, None,
+                f"expected a mapping node, but found {node.id}",
+                node.start_mark
+            )
+
+        mapping = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+
+            # Check if key already exists
+            if key in mapping:
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping", node.start_mark,
+                    f"found duplicate key: {key!r}",
+                    key_node.start_mark
+                )
+
+            value = self.construct_object(value_node, deep=deep)
+            mapping[key] = value
+
+        return mapping
 
 
 class SchemaParser:
@@ -24,6 +78,7 @@ class SchemaParser:
     """
 
     MAX_IMPORT_DEPTH = 10  # Maximum import nesting depth to prevent infinite recursion
+    SUPPORTED_VERSIONS = ["1.0", "1.0.0"]  # Supported schema versions (F113)
 
     def __init__(self) -> None:
         """Initialize the schema parser."""
@@ -46,6 +101,7 @@ class SchemaParser:
             DuplicateModelError: If duplicate model names exist
             FileNotFoundError: If schema file or imports don't exist
             ValidationError: If schema validation fails
+            VersionError: If schema version is incompatible (F113)
         """
         schema_path = Path(schema_path).resolve()
 
@@ -55,6 +111,9 @@ class SchemaParser:
 
         # Load and merge all imports
         yaml_data = self._load_with_imports(schema_path)
+
+        # Validate schema version (F113)
+        self._validate_version(yaml_data, schema_path)
 
         # Validate and return schema
         try:
@@ -325,9 +384,10 @@ class SchemaParser:
                 filename=file_path.name,
             ) from read_error
 
-        # Parse YAML with enhanced error handling
+        # Parse YAML with enhanced error handling and duplicate key detection
         try:
-            data = yaml.safe_load(file_content)
+            # Use custom loader that detects duplicate keys
+            data = yaml.load(file_content, Loader=DuplicateKeyDetector)
 
             if data is None:
                 return {}
@@ -339,6 +399,52 @@ class SchemaParser:
                 )
 
             return data
+
+        except yaml.constructor.ConstructorError as e:
+            # Handle duplicate key errors with enhanced context
+            if "duplicate key" in str(e):
+                # Extract the duplicate key name from the error message
+                error_msg = str(e)
+                line_num = None
+                line_content = None
+
+                # Get line number if available
+                if hasattr(e, 'problem_mark') and e.problem_mark:
+                    line_num = e.problem_mark.line + 1  # YAML uses 0-indexed lines
+                    if line_num <= len(file_lines):
+                        line_content = file_lines[line_num - 1].strip()
+
+                # Build detailed error message
+                message_parts = [f"Duplicate key found in {file_path.name}"]
+
+                if line_num:
+                    message_parts.append(f"Line {line_num}")
+
+                    if line_content:
+                        message_parts.append(f"Content: {line_content}")
+
+                # Extract duplicate key name from error message
+                if "found duplicate key:" in error_msg:
+                    key_start = error_msg.find("found duplicate key:") + len("found duplicate key:")
+                    key_part = error_msg[key_start:].strip()
+                    message_parts.append(f"\nError: {key_part}")
+
+                message_parts.append("\nEach field name must be unique within a model.")
+                message_parts.append("Tip: Check for field names that appear multiple times.")
+
+                raise YAMLParseError(
+                    message="\n".join(message_parts),
+                    filename=file_path.name,
+                    line=line_num,
+                    column=None,
+                    line_content=line_content,
+                ) from e
+
+            # Re-raise other constructor errors
+            raise YAMLParseError(
+                message=str(e),
+                filename=file_path.name,
+            ) from e
 
         except yaml.YAMLError as e:
             # Extract error details from PyYAML exception
@@ -370,3 +476,47 @@ class SchemaParser:
                 line_content=line_content,
                 filename=file_path.name,
             ) from e
+
+    def _validate_version(self, yaml_data: dict[str, Any], schema_path: Path) -> None:
+        """
+        Validate schema version compatibility (F113).
+
+        Args:
+            yaml_data: Parsed YAML data
+            schema_path: Path to schema file for error reporting
+
+        Raises:
+            VersionError: If version is missing, invalid, or incompatible
+        """
+        # Check if version field exists (either 'schnitzel' or legacy 'version')
+        version = yaml_data.get("schnitzel") or yaml_data.get("version")
+
+        # Feature schemas don't require a version
+        if "feature" in yaml_data:
+            return
+
+        # Missing version
+        if not version:
+            raise VersionError(
+                f"Missing schema version in {schema_path.name}",
+                schema_version=None,
+                supported_versions=self.SUPPORTED_VERSIONS
+            )
+
+        # Normalize version string (convert numbers to strings)
+        version_str = str(version).strip()
+
+        # Check if version is supported
+        if version_str not in self.SUPPORTED_VERSIONS:
+            raise VersionError(
+                f"Incompatible schema version in {schema_path.name}",
+                schema_version=version_str,
+                supported_versions=self.SUPPORTED_VERSIONS
+            )
+
+        # Convert numeric version to string in yaml_data for Pydantic validation
+        if isinstance(version, (int, float)):
+            if "schnitzel" in yaml_data:
+                yaml_data["schnitzel"] = version_str
+            elif "version" in yaml_data:
+                yaml_data["version"] = version_str

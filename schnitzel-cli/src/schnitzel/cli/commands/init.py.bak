@@ -1,0 +1,436 @@
+"""Init command for scaffolding new Schnitzel projects."""
+
+from pathlib import Path
+import subprocess
+import typer
+from rich.console import Console
+
+console = Console()
+
+
+def _is_flutter_installed() -> bool:
+    """Check if Flutter is installed and available in PATH.
+
+    Returns:
+        bool: True if Flutter is installed, False otherwise
+    """
+    try:
+        result = subprocess.run(
+            ["flutter", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def _get_schema_template(template: str) -> str:
+    """Get the schema template content based on template type.
+
+    Args:
+        template: Template type ('minimal' or 'full')
+
+    Returns:
+        str: Schema template content
+    """
+    if template == "full":
+        return """schnitzel: 1.0.0
+
+models:
+  User:
+    description: A user in the system
+    fields:
+      id:
+        type: uuid
+        primary: true
+      name:
+        type: string
+      email:
+        type: string
+        unique: true
+      bio:
+        type: text
+        optional: true
+      is_active:
+        type: bool
+        default: true
+      created_at:
+        type: datetime
+        auto: create
+    relations:
+      posts:
+        type: hasMany
+        model: Post
+      comments:
+        type: hasMany
+        model: Comment
+
+  Post:
+    description: A blog post
+    fields:
+      id:
+        type: uuid
+        primary: true
+      title:
+        type: string
+      content:
+        type: text
+      author_id:
+        type: uuid
+      created_at:
+        type: datetime
+        auto: create
+    relations:
+      author:
+        type: belongsTo
+        model: User
+        foreign_key: author_id
+      comments:
+        type: hasMany
+        model: Comment
+
+  Comment:
+    description: A comment on a post
+    fields:
+      id:
+        type: uuid
+        primary: true
+      content:
+        type: text
+      author_id:
+        type: uuid
+      post_id:
+        type: uuid
+      created_at:
+        type: datetime
+        auto: create
+    relations:
+      author:
+        type: belongsTo
+        model: User
+        foreign_key: author_id
+      post:
+        type: belongsTo
+        model: Post
+        foreign_key: post_id
+"""
+    else:  # minimal (default)
+        return """# Schnitzel Schema Definition
+# Define your data models here
+
+version: "1.0"
+
+models: {}
+"""
+
+
+def _is_uv_installed() -> bool:
+    """Check if uv is installed and available in PATH.
+
+    Returns:
+        bool: True if uv is installed, False otherwise
+    """
+    try:
+        result = subprocess.run(
+            ["uv", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def _sanitize_dart_package_name(name: str) -> str:
+    """Sanitize a project name to be a valid Dart package name.
+
+    Dart package names must:
+    - Consist of lowercase words separated by underscores
+    - Use only basic Latin letters and Arabic digits
+    - Not start with a digit
+    - Not be a reserved word
+
+    Args:
+        name: Original project name
+
+    Returns:
+        str: Sanitized package name suitable for Dart
+    """
+    # Replace hyphens and spaces with underscores
+    sanitized = name.replace("-", "_").replace(" ", "_")
+
+    # Convert to lowercase
+    sanitized = sanitized.lower()
+
+    # Remove any characters that aren't alphanumeric or underscore
+    sanitized = "".join(c for c in sanitized if c.isalnum() or c == "_")
+
+    # Ensure it doesn't start with a digit
+    if sanitized and sanitized[0].isdigit():
+        sanitized = f"app_{sanitized}"
+
+    # If empty or just underscores, provide a default
+    if not sanitized or sanitized.strip("_") == "":
+        sanitized = "flutter_app"
+
+    return sanitized
+
+
+def _create_flutter_app(packages_dir: Path, project_name: str) -> bool:
+    """Create Flutter app in packages/app directory.
+
+    Args:
+        packages_dir: Path to packages/app directory
+        project_name: Base name for the Flutter project
+
+    Returns:
+        bool: True if Flutter app was created successfully, False otherwise
+    """
+    try:
+        console.print("[blue]Creating Flutter app...[/blue]")
+
+        # Sanitize project name for Dart package naming rules
+        dart_package_name = _sanitize_dart_package_name(project_name)
+
+        # Run flutter create in the parent directory (packages/)
+        # This will create the app in packages/app/
+        result = subprocess.run(
+            [
+                "flutter", "create",
+                str(packages_dir),
+                "--project-name", f"{dart_package_name}_app"
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120  # Flutter create can take some time
+        )
+
+        if result.returncode == 0:
+            console.print("[green]✓ Flutter app created successfully[/green]")
+            return True
+        else:
+            console.print(f"[yellow]Warning: Flutter create failed:[/yellow] {result.stderr}")
+            return False
+
+    except subprocess.TimeoutExpired:
+        console.print("[yellow]Warning: Flutter create timed out[/yellow]")
+        return False
+    except Exception as e:
+        console.print(f"[yellow]Warning: Failed to create Flutter app:[/yellow] {e}")
+        return False
+
+
+def _create_backend_app(backend_dir: Path) -> bool:
+    """Create Python backend app using uv init.
+
+    Args:
+        backend_dir: Path to backend/app directory
+
+    Returns:
+        bool: True if backend app was created successfully, False otherwise
+    """
+    try:
+        console.print("[blue]Creating Python backend with uv...[/blue]")
+
+        # Run uv init in the backend/app directory
+        result = subprocess.run(
+            ["uv", "init", str(backend_dir)],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+
+        if result.returncode == 0:
+            console.print("[green]✓ Python backend initialized successfully[/green]")
+            return True
+        else:
+            console.print(f"[yellow]Warning: uv init failed:[/yellow] {result.stderr}")
+            return False
+
+    except subprocess.TimeoutExpired:
+        console.print("[yellow]Warning: uv init timed out[/yellow]")
+        return False
+    except Exception as e:
+        console.print(f"[yellow]Warning: Failed to initialize backend:[/yellow] {e}")
+        return False
+
+
+def init_command(
+    project_name: str = typer.Argument(
+        ...,
+        help="Name of the project to create"
+    ),
+    with_flutter: bool = typer.Option(
+        False,
+        "--with-flutter",
+        help="Create Flutter app in packages/app using flutter create"
+    ),
+    with_backend: bool = typer.Option(
+        False,
+        "--with-backend",
+        help="Initialize Python backend with uv init"
+    ),
+    template: str = typer.Option(
+        "minimal",
+        "--template",
+        "-t",
+        help="Template to use for schema.schnitzel.yaml (choices: minimal, full)"
+    )
+) -> None:
+    """Initialize a new Schnitzel project with directory structure.
+
+    Creates a new project directory with the following structure:
+    - schema.schnitzel.yaml: Schema definition file
+    - packages/app/: Flutter application directory (placeholder)
+    - backend/app/: FastAPI backend directory (placeholder)
+    - docker-compose.yaml: Docker compose configuration
+
+    Args:
+        project_name: Name of the project to create
+        with_flutter: Whether to create a Flutter app using flutter create
+        with_backend: Whether to initialize Python backend using uv init
+        template: Template to use for schema.schnitzel.yaml (minimal or full)
+    """
+    # Validate template choice
+    if template not in ["minimal", "full"]:
+        console.print(f"[red]Error: Invalid template '{template}'. Choose 'minimal' or 'full'[/red]")
+        raise typer.Exit(code=1)
+
+    # Create project root directory
+    project_path = Path.cwd() / project_name
+
+    if project_path.exists():
+        console.print(f"[red]Error: Directory '{project_name}' already exists[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        console.print(f"\n[bold blue]Creating project: {project_name}[/bold blue]")
+        if template == "full":
+            console.print(f"[dim]Using full template with example models[/dim]")
+        console.print()  # Empty line for better formatting
+
+        # Create project directory
+        project_path.mkdir(parents=True, exist_ok=False)
+
+        # Create packages/app directory (Flutter placeholder or actual Flutter app)
+        packages_dir = project_path / "packages" / "app"
+
+        # Handle Flutter app creation if --with-flutter flag is set
+        flutter_app_created = False
+        if with_flutter:
+            # Check if Flutter is installed
+            if not _is_flutter_installed():
+                console.print("  [yellow]✗ Flutter not installed - creating empty packages/app/[/yellow]")
+                packages_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                # Create Flutter app (this will create packages/app/)
+                flutter_app_created = _create_flutter_app(packages_dir, project_name)
+                if not flutter_app_created:
+                    # Fallback: create empty directory if Flutter create failed
+                    console.print("  [yellow]✗ Flutter create failed - creating empty packages/app/[/yellow]")
+                    packages_dir.mkdir(parents=True, exist_ok=True)
+                else:
+                    console.print("  [green]✓ Created packages/app/ (Flutter app)[/green]")
+        else:
+            # No --with-flutter flag: create empty directory
+            packages_dir.mkdir(parents=True, exist_ok=True)
+            console.print("  [green]✓ Created packages/app/[/green]")
+
+        # Create backend/app directory (FastAPI placeholder or actual uv project)
+        backend_dir = project_path / "backend" / "app"
+
+        # Handle backend creation if --with-backend flag is set
+        backend_app_created = False
+        if with_backend:
+            # Check if uv is installed
+            if not _is_uv_installed():
+                console.print("  [yellow]✗ uv not installed - creating empty backend/app/[/yellow]")
+                backend_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                # Create parent directory first
+                backend_dir.parent.mkdir(parents=True, exist_ok=True)
+                # Create backend app using uv init
+                backend_app_created = _create_backend_app(backend_dir)
+                if not backend_app_created:
+                    # Fallback: create empty directory if uv init failed
+                    console.print("  [yellow]✗ uv init failed - creating empty backend/app/[/yellow]")
+                    backend_dir.mkdir(parents=True, exist_ok=True)
+                else:
+                    console.print("  [green]✓ Created backend/app/ (Python project)[/green]")
+        else:
+            # No --with-backend flag: create empty directory
+            backend_dir.mkdir(parents=True, exist_ok=True)
+            console.print("  [green]✓ Created backend/app/[/green]")
+
+        # Create schema.schnitzel.yaml using selected template
+        schema_file = project_path / "schema.schnitzel.yaml"
+        schema_content = _get_schema_template(template)
+        schema_file.write_text(schema_content)
+        console.print("  [green]✓ Created schema.schnitzel.yaml[/green]")
+
+        # Create docker-compose.yaml
+        docker_compose_file = project_path / "docker-compose.yaml"
+        docker_compose_content = """version: '3.8'
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: schnitzel
+      POSTGRES_PASSWORD: schnitzel
+      POSTGRES_DB: schnitzel
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U schnitzel"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://schnitzel:schnitzel@db:5432/schnitzel
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+volumes:
+  postgres_data:
+"""
+        docker_compose_file.write_text(docker_compose_content)
+        console.print("  [green]✓ Created docker-compose.yaml[/green]")
+
+        # Create placeholder README files
+        # Only create packages README if Flutter app wasn't created (Flutter creates its own README)
+        if not flutter_app_created:
+            packages_readme = packages_dir / "README.md"
+            packages_readme.write_text("# Flutter App\n\nFlutter application will be generated here.\n")
+
+        # Only create backend README if backend wasn't initialized with uv (uv creates its own files)
+        if not backend_app_created:
+            backend_readme = backend_dir / "README.md"
+            backend_readme.write_text("# FastAPI Backend\n\nFastAPI backend will be generated here.\n")
+
+        console.print(f"\n[bold green]✓ Project created successfully![/bold green]")
+        console.print(f"\n  [bold]Next steps:[/bold]")
+        console.print(f"    1. cd {project_name}")
+        console.print(f"    2. Edit schema.schnitzel.yaml")
+        console.print(f"    3. Run: schnitzel generate")
+
+    except Exception as e:
+        console.print(f"[red]Error creating project:[/red] {e}")
+        # Clean up on failure
+        if project_path.exists():
+            import shutil
+            shutil.rmtree(project_path)
+        raise typer.Exit(code=1)

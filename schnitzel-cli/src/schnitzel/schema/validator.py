@@ -43,6 +43,7 @@ class SchemaValidator:
     # Supported field types
     SUPPORTED_TYPES: Set[str] = {
         "string",
+        "text",  # Alias for string (long text)
         "uuid",
         "int",
         "float",
@@ -87,6 +88,10 @@ class SchemaValidator:
         """
         errors: List[str] = []
         unique_fields: Dict[str, List[str]] = {}
+
+        # Check for duplicate model names
+        duplicate_errors = self._check_duplicate_model_names(schema)
+        errors.extend(duplicate_errors)
 
         # Validate all models and collect unique fields
         for model_name, model in schema.models.items():
@@ -191,6 +196,11 @@ class SchemaValidator:
         # Validate min/max constraints for numeric fields
         constraint_errors = self._validate_numeric_constraints(field, field_name, model_name)
         errors.extend(constraint_errors)
+
+        # Validate index constraint
+        index_error = self._validate_index_constraint(field, field_name, model_name)
+        if index_error:
+            errors.append(index_error)
 
         return errors
 
@@ -428,6 +438,84 @@ class SchemaValidator:
                     f"Minimum value ({field.min}) cannot be greater than maximum value ({field.max})",
                     f"Ensure min <= max"
                 ]
+                errors.append("\n".join(error_parts))
+
+        return errors
+
+    def _validate_index_constraint(
+        self, field: FieldDefinition, field_name: str, model_name: str
+    ) -> str | None:
+        """
+        Validate index constraint for a field.
+
+        The index constraint validates that index: true is a boolean value.
+        This is automatically handled by Pydantic, but we ensure the field
+        exists and is properly typed.
+
+        Args:
+            field: The field to validate
+            field_name: Name of the field
+            model_name: Name of the containing model
+
+        Returns:
+            Error message if invalid, None if valid
+        """
+        # Validate that index is a boolean (Pydantic handles this, but we document it)
+        if not isinstance(field.index, bool):
+            error_parts = [
+                f"Invalid index value for field '{field_name}' in model '{model_name}'",
+                f"Index must be a boolean value (true or false)",
+                f"Got: {type(field.index).__name__}"
+            ]
+            return "\n".join(error_parts)
+
+        return None
+
+    def _check_duplicate_model_names(self, schema: SchnitzelSchema) -> List[str]:
+        """
+        Check for duplicate model names in the schema.
+
+        This checks if the same model name appears multiple times across
+        different dictionary keys in schema.models. For example:
+        - models["User"] has name="User" (OK)
+        - models["Account"] has name="User" (DUPLICATE!)
+
+        Args:
+            schema: The schema to check for duplicate model names
+
+        Returns:
+            List of error messages for duplicate model names (empty if none)
+        """
+        errors: List[str] = []
+
+        # Track which model names we've seen and where
+        # model_name -> list of dictionary keys where it appears
+        name_to_keys: Dict[str, List[str]] = {}
+
+        # Scan all models
+        for dict_key, model in schema.models.items():
+            model_name = model.name
+
+            if model_name not in name_to_keys:
+                name_to_keys[model_name] = []
+
+            name_to_keys[model_name].append(dict_key)
+
+        # Report duplicates
+        for model_name, dict_keys in name_to_keys.items():
+            if len(dict_keys) > 1:
+                # Found a duplicate!
+                keys_str = "', '".join(dict_keys)
+                error_parts = []
+                error_parts.append(
+                    f"Duplicate model name '{model_name}' found in schema"
+                )
+                error_parts.append(
+                    f"Model '{model_name}' is defined multiple times at keys: '{keys_str}'"
+                )
+                error_parts.append(
+                    "Each model must have a unique name"
+                )
                 errors.append("\n".join(error_parts))
 
         return errors

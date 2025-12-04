@@ -1,0 +1,10 @@
+imports:
+  - a.yaml
+
+models:
+  Post:
+    fields:
+      id:
+        type: uuid
+      title:
+        type: string

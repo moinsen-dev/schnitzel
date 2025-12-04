@@ -1,0 +1,421 @@
+"""Generate command for Schnitzel CLI - parses and validates schema before generation."""
+
+from pathlib import Path
+from datetime import datetime
+import signal
+import sys
+import typer
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from watchfiles import watch
+
+from schnitzel.schema import SchemaParser, SchemaValidator
+from schnitzel.schema.exceptions import (
+    YAMLParseError,
+    ValidationError,
+    CircularImportError,
+    SchemaError,
+)
+from schnitzel.generators.python.models import PythonModelGenerator
+from schnitzel.generators.dart.models import DartModelGenerator
+
+console = Console()
+
+# Global flag for graceful shutdown
+_shutdown_requested = False
+
+
+def _signal_handler(signum: int, frame: object) -> None:
+    """Handle Ctrl+C gracefully in watch mode."""
+    global _shutdown_requested
+    _shutdown_requested = True
+    console.print("\n[yellow]Stopping watch mode...[/yellow]")
+    sys.exit(0)
+
+
+def _generate_python(schema, output_dir: Path, schema_path: Path, force: bool) -> None:
+    """Generate Python Pydantic models.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+    """
+    console.print("[blue]Generating Python models...[/blue]")
+
+    # Determine output path: output_dir/backend/app
+    python_output_dir = output_dir / "backend" / "app"
+
+    # Check if models.py already exists
+    models_file = python_output_dir / "models.py"
+    if models_file.exists() and not force:
+        console.print(f"[yellow]Warning: {models_file} already exists. Use --force to overwrite.[/yellow]")
+        return
+
+    # Generate Python models
+    generator = PythonModelGenerator()
+    output_file = generator.generate_to_file(schema, python_output_dir, schema_source=schema_path.name)
+
+    model_count = len(schema.models)
+    console.print(f"[green]✓ Generated backend/app/models.py[/green] ({model_count} models)")
+
+
+def _generate_dart(schema, output_dir: Path, schema_path: Path, force: bool) -> None:
+    """Generate Dart Freezed models.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+    """
+    console.print("[blue]Generating Dart models...[/blue]")
+
+    # Determine output path: output_dir/packages/app/lib/models
+    dart_output_dir = output_dir / "packages" / "app" / "lib" / "models"
+
+    # Check if models.dart already exists
+    models_file = dart_output_dir / "models.dart"
+    if models_file.exists() and not force:
+        console.print(f"[yellow]Warning: {models_file} already exists. Use --force to overwrite.[/yellow]")
+        return
+
+    # Generate Dart models
+    generator = DartModelGenerator()
+    output_file = generator.generate_to_file(schema, dart_output_dir, schema_source=schema_path.name)
+
+    console.print(f"[green]✓ Generated Dart models:[/green] {output_file}")
+
+
+def _generate_docker(schema_path: Path, output_dir: Path, force: bool) -> None:
+    """Generate Docker Compose file.
+
+    Args:
+        schema_path: Path to the schema file (used to determine project root)
+        output_dir: Output directory for generated files
+        force: Whether to overwrite existing files
+    """
+    from schnitzel.generators.docker.compose import DockerComposeGenerator
+
+    console.print("[blue]Generating Docker Compose...[/blue]")
+
+    # Check if docker-compose.yaml already exists
+    docker_compose_file = output_dir / "docker-compose.yaml"
+    if docker_compose_file.exists() and not force:
+        console.print(f"[yellow]Warning: {docker_compose_file} already exists. Use --force to overwrite.[/yellow]")
+        return
+
+    # Generate docker-compose.yaml
+    generator = DockerComposeGenerator()
+    output_file = generator.generate_to_file(output_dir)
+
+    console.print(f"[green]✓ Generated docker-compose.yaml:[/green] {output_file}")
+
+
+def _run_generation(
+    schema_path: Path,
+    target: str,
+    output_path: Path,
+    force: bool,
+    show_progress: bool = True
+) -> bool:
+    """Run the generation process once.
+
+    Args:
+        schema_path: Path to the schema file
+        target: What to generate (all, python, dart, docker)
+        output_path: Output directory
+        force: Whether to overwrite existing files
+        show_progress: Whether to show progress bars
+
+    Returns:
+        True if generation succeeded, False otherwise
+    """
+    try:
+        # Check if schema file exists
+        if not schema_path.exists():
+            console.print(f"[red]Error: Schema file not found:[/red] {schema_path}")
+            console.print(f"  Please ensure the file exists")
+            return False
+
+        # Create progress display with spinner
+        if show_progress:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                console=console,
+                transient=True,
+            ) as progress:
+                # Parsing step
+                parse_task = progress.add_task(
+                    f"[cyan]Parsing schema: {schema_path.name}...",
+                    total=1
+                )
+
+                parser = SchemaParser()
+                schema = parser.parse(schema_path)
+
+                progress.update(parse_task, completed=1)
+                console.print(f"[green]✓ Schema parsed successfully[/green]")
+                console.print(f"  Models found: {len(schema.models)}")
+
+                # Validation step
+                validate_task = progress.add_task(
+                    "[cyan]Validating schema...",
+                    total=1
+                )
+
+                validator = SchemaValidator()
+                validation_result = validator.validate(schema)
+
+                progress.update(validate_task, completed=1)
+        else:
+            # No progress bars in watch mode after initial run
+            parser = SchemaParser()
+            schema = parser.parse(schema_path)
+            validator = SchemaValidator()
+            validation_result = validator.validate(schema)
+
+        if not validation_result.valid:
+            console.print(f"[red]✗ Schema validation failed:[/red]")
+            console.print()
+            for error in validation_result.errors:
+                console.print(f"  [red]Error:[/red]")
+                for line in error.split("\n"):
+                    console.print(f"    {line}")
+                console.print()
+            return False
+
+        if show_progress:
+            console.print(f"[green]✓ Schema validation passed[/green]")
+
+            # Display models
+            if schema.models:
+                console.print(f"\n[blue]Models validated:[/blue]")
+                for model_name, model in schema.models.items():
+                    field_count = len(model.fields)
+                    console.print(f"  - {model_name} ({field_count} fields)")
+
+            # Display unique fields if any
+            if validation_result.unique_fields:
+                console.print(f"\n[blue]Unique constraints:[/blue]")
+                for model_name, fields in validation_result.unique_fields.items():
+                    for field_name in fields:
+                        console.print(f"  - {model_name}.{field_name}")
+
+        # Validate target option - support both 'flutter' and 'dart'
+        valid_targets = ["all", "docker", "python", "dart", "flutter"]
+        if target not in valid_targets:
+            console.print(f"[red]Error: Invalid target '{target}'[/red]")
+            console.print(f"  Valid targets: {', '.join(valid_targets)}")
+            return False
+
+        # Normalize 'flutter' to 'dart' for consistency
+        if target == "flutter":
+            target = "dart"
+
+        # Generate based on target
+        if show_progress:
+            console.print()
+
+        # Count total generation steps for progress tracking
+        generation_steps = []
+        if target == "python":
+            generation_steps = ["python"]
+        elif target == "dart":
+            generation_steps = ["dart"]
+        elif target == "docker":
+            generation_steps = ["docker"]
+        elif target == "all":
+            generation_steps = ["python", "dart", "docker"]
+
+        # Show progress during generation
+        if show_progress:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                console=console,
+                transient=False,
+            ) as progress:
+                gen_task = progress.add_task(
+                    f"[cyan]Generating code ({len(generation_steps)} targets)...",
+                    total=len(generation_steps)
+                )
+
+                for idx, step in enumerate(generation_steps):
+                    progress.update(
+                        gen_task,
+                        description=f"[cyan]Generating {step}... ({idx + 1}/{len(generation_steps)})",
+                        completed=idx
+                    )
+
+                    if step == "python":
+                        _generate_python(schema, output_path, schema_path, force)
+                    elif step == "dart":
+                        _generate_dart(schema, output_path, schema_path, force)
+                    elif step == "docker":
+                        _generate_docker(schema_path, output_path, force)
+
+                    progress.update(gen_task, completed=idx + 1)
+
+            console.print(f"\n[green]✓ Generation complete![/green]")
+            console.print(f"  Processed {len(schema.models)} models across {len(generation_steps)} targets")
+        else:
+            # In watch mode, generate without progress bars
+            for step in generation_steps:
+                if step == "python":
+                    _generate_python(schema, output_path, schema_path, force)
+                elif step == "dart":
+                    _generate_dart(schema, output_path, schema_path, force)
+                elif step == "docker":
+                    _generate_docker(schema_path, output_path, force)
+
+        return True
+
+    except FileNotFoundError as e:
+        console.print(f"[red]✗ File not found:[/red]")
+        console.print(f"  {e}")
+        return False
+
+    except YAMLParseError as e:
+        console.print(f"[red]✗ YAML parsing failed:[/red]")
+        console.print(f"  {e}")
+        return False
+
+    except CircularImportError as e:
+        console.print(f"[red]✗ Circular import detected:[/red]")
+        console.print(f"  {e}")
+        return False
+
+    except ValidationError as e:
+        console.print(f"[red]✗ Schema validation failed:[/red]")
+        console.print(f"  {e}")
+        return False
+
+    except SchemaError as e:
+        console.print(f"[red]✗ Schema error:[/red]")
+        console.print(f"  {e}")
+        return False
+
+    except Exception as e:
+        console.print(f"[red]✗ Unexpected error:[/red]")
+        console.print(f"  {type(e).__name__}: {e}")
+        return False
+
+
+def generate_command(
+    schema_path: Path = typer.Argument(
+        "schema.schnitzel.yaml",
+        help="Path to the Schnitzel schema YAML file",
+    ),
+    target: str = typer.Option(
+        "all",
+        "--target",
+        "-t",
+        help="What to generate: all, python, flutter, docker",
+    ),
+    output_dir: str = typer.Option(
+        ".",
+        "--output",
+        "-o",
+        help="Output directory",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Overwrite existing files",
+    ),
+    watch_mode: bool = typer.Option(
+        False,
+        "--watch",
+        "-w",
+        help="Watch schema file for changes and regenerate automatically",
+    ),
+) -> None:
+    """
+    Generate code from a Schnitzel schema file.
+
+    This command:
+    1. Parses the schema file using SchemaParser
+    2. Validates the schema using SchemaValidator
+    3. Generates code based on the --target option
+    4. Reports validation errors if any
+    5. Returns exit code 1 if validation fails
+
+    With --watch mode:
+    - Monitors the schema file for changes
+    - Auto-regenerates when file changes are detected
+    - Shows timestamp for each regeneration
+    - Press Ctrl+C to exit watch mode gracefully
+
+    Args:
+        schema_path: Path to the schema file (default: schema.schnitzel.yaml)
+        target: What to generate (all, python, flutter, docker)
+        output_dir: Output directory (default: current directory)
+        force: Overwrite existing files without warning
+        watch_mode: Enable watch mode for automatic regeneration
+    """
+    # Convert output_dir string to Path
+    output_path = Path(output_dir)
+
+    if watch_mode:
+        # Set up signal handler for graceful shutdown
+        signal.signal(signal.SIGINT, _signal_handler)
+
+        console.print(f"[blue]Watch mode enabled[/blue]")
+        console.print(f"  Watching: {schema_path}")
+        console.print(f"  Press Ctrl+C to stop\n")
+
+        # Run initial generation
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        console.print(f"[cyan][{timestamp}] Initial generation...[/cyan]")
+        success = _run_generation(schema_path, target, output_path, force, show_progress=True)
+
+        if success:
+            console.print(f"\n[blue]Watching for changes...[/blue]\n")
+        else:
+            console.print(f"\n[yellow]Initial generation failed. Watching for changes...[/yellow]\n")
+
+        # Watch for changes
+        try:
+            # Watch the schema file's parent directory for changes to the specific file
+            watch_path = schema_path.parent if schema_path.parent.exists() else Path(".")
+
+            for changes in watch(watch_path):
+                # Check if the schema file was modified
+                schema_modified = False
+                for change_type, changed_path in changes:
+                    if Path(changed_path).resolve() == schema_path.resolve():
+                        schema_modified = True
+                        break
+
+                if not schema_modified:
+                    continue
+
+                # Regenerate on change
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                console.print(f"[cyan][{timestamp}] File change detected, regenerating...[/cyan]")
+
+                success = _run_generation(schema_path, target, output_path, force, show_progress=False)
+
+                if success:
+                    console.print(f"[green]✓ Regeneration complete[/green]\n")
+                else:
+                    console.print(f"[red]✗ Regeneration failed[/red]\n")
+
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Watch mode stopped[/yellow]")
+            sys.exit(0)
+
+    else:
+        # Normal mode - run once
+        success = _run_generation(schema_path, target, output_path, force, show_progress=True)
+
+        if not success:
+            raise typer.Exit(code=1)

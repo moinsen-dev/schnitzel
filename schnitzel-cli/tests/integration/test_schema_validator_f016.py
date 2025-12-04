@@ -293,8 +293,9 @@ def test_circular_dependency_with_hasmany():
 
 def test_self_referential_relationship():
     """
-    Test that self-referential relationships are detected.
-    A model that references itself (e.g., Employee -> Manager, where Manager is also Employee).
+    Test that self-referential relationships are allowed.
+    A model that references itself (e.g., Employee -> Manager, where Manager is also Employee)
+    is a valid and common pattern in database design.
     """
     schema = SchnitzelSchema(
         schnitzel="1.0.0",
@@ -319,16 +320,12 @@ def test_self_referential_relationship():
     validator = SchemaValidator()
     result = validator.validate(schema)
 
-    # Verify validation fails (self-reference is a cycle)
-    assert result.valid is False, "Validation should fail for self-referential relationship"
-    assert len(result.errors) > 0, "Should have at least one error"
-
-    error_text = "\n".join(result.errors)
-    assert "circular dependency" in error_text.lower(), "Error should mention circular dependency"
-    assert "Employee" in error_text, "Error should mention Employee model"
+    # Self-referential relationships are valid (e.g., tree structures, org charts)
+    assert result.valid is True, "Self-referential relationship should be allowed"
+    assert len(result.errors) == 0, "Should have no errors"
 
     print("\n" + "="*70)
-    print("Test passed: Self-referential relationship detected as circular")
+    print("Test passed: Self-referential relationship is allowed")
     print("="*70)
 
 

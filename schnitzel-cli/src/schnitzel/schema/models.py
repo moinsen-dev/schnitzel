@@ -12,8 +12,10 @@ class FieldDefinition(BaseModel):
     """Definition of a model field."""
 
     type: str
+    description: Optional[str] = None
     primary: bool = False
     unique: bool = False
+    index: bool = False  # Whether to create an index on this field
     optional: bool = False
     required: bool = False
     default: Optional[Any] = None
@@ -142,7 +144,13 @@ class SchnitzelSchema(BaseModel):
             return data
 
         models = data.get("models")
-        if models is None or not isinstance(models, dict):
+
+        # Handle None or missing models - convert to empty dict
+        if models is None:
+            data["models"] = {}
+            return data
+
+        if not isinstance(models, dict):
             return data
 
         # Convert dict definitions to Model instances
@@ -215,10 +223,19 @@ PYTHON_TYPE_MAP = {
 
 DART_TYPE_MAP = {
     "string": "String",
-    "uuid": "String",
+    "str": "String",
     "int": "int",
+    "integer": "int",
     "float": "double",
+    "double": "double",
     "bool": "bool",
+    "boolean": "bool",
     "datetime": "DateTime",
+    "date": "DateTime",
+    "uuid": "String",  # UUIDs are strings in Dart
+    "text": "String",
     "json": "Map<String, dynamic>",
+    "list": "List<dynamic>",
+    "vector": "List<double>",
+    "bytes": "List<int>",
 }

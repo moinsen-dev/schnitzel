@@ -1,0 +1,11 @@
+schnitzel: "1.0"
+imports:
+  - b.yaml
+
+models:
+  User:
+    fields:
+      id:
+        type: uuid
+      name:
+        type: string

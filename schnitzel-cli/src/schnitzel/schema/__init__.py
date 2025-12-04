@@ -9,6 +9,7 @@ from .exceptions import (
     ImportError,
     CircularImportError,
     ValidationError,
+    VersionError,
 )
 
 __all__ = [
@@ -23,4 +24,5 @@ __all__ = [
     "ImportError",
     "CircularImportError",
     "ValidationError",
+    "VersionError",
 ]
