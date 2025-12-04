@@ -354,11 +354,12 @@ class TestDartModelPartDirectives:
         print(code)
         print("=" * 80)
 
-        # Verify imports
+        # Verify imports - freezed_annotation provides @JsonKey, so json_annotation is not needed
         assert "import 'package:freezed_annotation/freezed_annotation.dart';" in code, \
             "Should import freezed_annotation"
-        assert "import 'package:json_annotation/json_annotation.dart';" in code, \
-            "Should import json_annotation"
+        # json_annotation is NOT needed when using freezed_annotation
+        assert "import 'package:json_annotation/json_annotation.dart';" not in code, \
+            "json_annotation is provided by freezed_annotation"
 
 
 class TestDartModelFieldTypes:
@@ -393,13 +394,14 @@ class TestDartModelFieldTypes:
         print(code)
         print("=" * 80)
 
-        # Verify type mappings
+        # Verify type mappings (snake_case fields converted to camelCase with @JsonKey)
         assert "required String id," in code, "uuid should map to String"
         assert "required String name," in code, "string should map to String"
         assert "required int age," in code, "int should map to int"
         assert "required double score," in code, "float should map to double"
         assert "required bool active," in code, "bool should map to bool"
-        assert "required DateTime created_at," in code, "datetime should map to DateTime"
+        # created_at becomes createdAt with @JsonKey
+        assert "@JsonKey(name: 'created_at') required DateTime createdAt," in code, "datetime should map to DateTime"
         assert "required Map<String, dynamic> metadata," in code, "json should map to Map<String, dynamic>"
         assert "required List<String> tags," in code, "list<string> should map to List<String>"
 
@@ -502,18 +504,19 @@ class TestDartModelOptionalFields:
         assert "required String name," in code
 
         # Optional fields should be nullable (Type?)
+        # snake_case fields converted to camelCase with @JsonKey
         assert "String? bio," in code
         assert "int? age," in code
         assert "double? score," in code
         assert "bool? verified," in code
-        assert "DateTime? last_login," in code
+        assert "@JsonKey(name: 'last_login') DateTime? lastLogin," in code
 
         # Optional fields should NOT have 'required' keyword
         assert "required String? bio" not in code
         assert "required int? age" not in code
         assert "required double? score" not in code
         assert "required bool? verified" not in code
-        assert "required DateTime? last_login" not in code
+        assert "required DateTime? lastLogin" not in code
 
     def test_optional_complex_types(self):
         """Test that optional complex types are nullable."""
@@ -597,7 +600,7 @@ class TestDartModelRelationships:
         assert "User? author," in code, "belongsTo should generate Model? field"
 
     def test_relationship_fields_with_json_key(self):
-        """Test that camelCase relationship fields get @JsonKey annotation."""
+        """Test that snake_case relationship fields get @JsonKey annotation when converted to camelCase."""
         schema = SchnitzelSchema(
             models={
                 "User": Model(
@@ -606,8 +609,8 @@ class TestDartModelRelationships:
                         "id": FieldDefinition(type="uuid", primary=True),
                     },
                     relations={
-                        "blogPosts": Relation(type="hasMany", model="Post"),
-                        "userProfile": Relation(type="hasOne", model="Profile"),
+                        "blog_posts": Relation(type="hasMany", model="Post"),
+                        "user_profile": Relation(type="hasOne", model="Profile"),
                     }
                 )
             }
@@ -622,11 +625,11 @@ class TestDartModelRelationships:
         print(code)
         print("=" * 80)
 
-        # camelCase relationship fields should get @JsonKey
-        assert "@JsonKey(name: 'blog_posts')" in code, "camelCase should get @JsonKey"
+        # snake_case relationship fields converted to camelCase with @JsonKey
+        assert "@JsonKey(name: 'blog_posts')" in code, "snake_case should get @JsonKey"
         assert "List<Post>? blogPosts," in code
 
-        assert "@JsonKey(name: 'user_profile')" in code, "camelCase should get @JsonKey"
+        assert "@JsonKey(name: 'user_profile')" in code, "snake_case should get @JsonKey"
         assert "Profile? userProfile," in code
 
 
@@ -668,20 +671,20 @@ class TestDartModelCompleteStructure:
         assert "factory Product.fromJson(Map<String, dynamic> json) => _$ProductFromJson(json);" in code, \
             "Needs fromJson for deserialization"
 
-        # Verify imports
+        # Verify imports - freezed_annotation provides @JsonKey, so json_annotation is not needed
         assert "import 'package:freezed_annotation/freezed_annotation.dart';" in code
-        assert "import 'package:json_annotation/json_annotation.dart';" in code
+        assert "import 'package:json_annotation/json_annotation.dart';" not in code
 
         # Verify part directives
         assert "part 'models.freezed.dart';" in code, "Needs freezed part for code generation"
         assert "part 'models.g.dart';" in code, "Needs g.dart part for JSON serialization"
 
-        # Verify all fields are present with correct types
+        # Verify all fields are present with correct types (snake_case converted to camelCase)
         assert "required String id," in code
         assert "required String name," in code
         assert "String? description," in code
         assert "required double price," in code
-        assert "@Default(true) bool in_stock," in code
+        assert "@JsonKey(name: 'in_stock') @Default(true) bool inStock," in code
         assert "List<String>? tags," in code
 
     def test_model_ready_for_freezed_code_generation(self):

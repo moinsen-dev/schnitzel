@@ -1,9 +1,10 @@
 """Integration tests for F037: Dart model generator handles snake_case to camelCase conversion.
 
 This feature ensures that:
-1. Field names keep their original format from schema (usually camelCase for Dart)
-2. @JsonKey(name: 'snake_case') is added when the JSON key differs from field name
-3. A helper converts camelCase to snake_case for JSON key generation
+1. Field names in schema (typically snake_case) are converted to Dart camelCase
+2. @JsonKey(name: 'snake_case') is added to map JSON snake_case to Dart camelCase
+3. Fields already in camelCase don't need @JsonKey
+4. Single-word fields don't need @JsonKey since they're the same
 """
 
 import pytest
@@ -14,11 +15,11 @@ from schnitzel.generators.dart.models import DartModelGenerator
 class TestDartSnakeCaseConversion:
     """Test Dart model generator snake_case to camelCase conversion feature (F037)."""
 
-    def test_camel_case_field_gets_json_key(self):
-        """Test that camelCase fields get @JsonKey annotation with snake_case name.
+    def test_camel_case_field_no_json_key_needed(self):
+        """Test that camelCase fields don't need @JsonKey when JSON key matches.
 
-        When a field is defined in camelCase (e.g., userId, createdAt), the generator
-        should add @JsonKey(name: 'snake_case_version') to map JSON snake_case to Dart camelCase.
+        When a field is defined in camelCase (e.g., userId, createdAt), and the JSON
+        also uses camelCase, no @JsonKey annotation is needed.
         """
         schema = SchnitzelSchema(
             models={
@@ -36,16 +37,23 @@ class TestDartSnakeCaseConversion:
         generator = DartModelGenerator()
         code = generator.generate(schema)
 
-        # Verify @JsonKey is added with correct snake_case names
-        assert "@JsonKey(name: 'user_id') required String userId," in code
-        assert "@JsonKey(name: 'created_at') DateTime? createdAt," in code
-        assert "@JsonKey(name: 'first_name') required String firstName," in code
+        # When fields are already camelCase (matching Dart convention),
+        # no @JsonKey is needed since JSON key = Dart field name
+        assert "required String userId," in code
+        assert "DateTime? createdAt," in code
+        assert "required String firstName," in code
 
-    def test_snake_case_field_no_json_key_needed(self):
-        """Test that snake_case fields do NOT get @JsonKey annotation.
+        # No @JsonKey needed when field names already match
+        assert "@JsonKey(name: 'userId')" not in code
+        assert "@JsonKey(name: 'createdAt')" not in code
+        assert "@JsonKey(name: 'firstName')" not in code
 
-        When a field is already in snake_case (e.g., user_id, created_at), no @JsonKey
-        annotation should be added since the Dart field name matches the JSON key.
+    def test_snake_case_field_converted_to_camel_case_with_json_key(self):
+        """Test that snake_case fields are converted to camelCase with @JsonKey.
+
+        When a field is in snake_case (e.g., user_id, created_at), the generator
+        should convert it to camelCase and add @JsonKey(name: 'snake_case') to
+        maintain JSON compatibility.
         """
         schema = SchnitzelSchema(
             models={
@@ -63,13 +71,10 @@ class TestDartSnakeCaseConversion:
         generator = DartModelGenerator()
         code = generator.generate(schema)
 
-        # Verify NO @JsonKey annotations are added
-        assert "@JsonKey" not in code
-
-        # Verify fields are present in the generated code
-        assert "required String user_id," in code
-        assert "DateTime? created_at," in code
-        assert "required String first_name," in code
+        # snake_case fields should be converted to camelCase with @JsonKey
+        assert "@JsonKey(name: 'user_id') required String userId," in code
+        assert "@JsonKey(name: 'created_at') DateTime? createdAt," in code
+        assert "@JsonKey(name: 'first_name') required String firstName," in code
 
     def test_single_word_field_no_json_key(self):
         """Test that single-word fields do NOT get @JsonKey annotation.
@@ -144,8 +149,33 @@ class TestDartSnakeCaseConversion:
         assert generator._to_snake_case("A") == "a"
         assert generator._to_snake_case("aB") == "a_b"
 
+    def test_to_camel_case_conversion(self):
+        """Test the _to_camel_case() helper method for various inputs.
+
+        The helper should correctly convert:
+        - snake_case to lowerCamelCase (user_id -> userId)
+        - Leave camelCase unchanged (userId -> userId)
+        - Leave single words unchanged (name -> name)
+        """
+        generator = DartModelGenerator()
+
+        # Test snake_case conversion
+        assert generator._to_camel_case("user_id") == "userId"
+        assert generator._to_camel_case("created_at") == "createdAt"
+        assert generator._to_camel_case("first_name") == "firstName"
+        assert generator._to_camel_case("is_active") == "isActive"
+
+        # Test camelCase remains unchanged
+        assert generator._to_camel_case("userId") == "userId"
+        assert generator._to_camel_case("createdAt") == "createdAt"
+
+        # Test single words remain unchanged
+        assert generator._to_camel_case("id") == "id"
+        assert generator._to_camel_case("name") == "name"
+        assert generator._to_camel_case("email") == "email"
+
     def test_complete_model_with_mixed_field_names(self):
-        """Test a complete model with a mix of camelCase, snake_case, and single-word fields.
+        """Test a complete model with a mix of snake_case and camelCase fields.
 
         This integration test verifies that the generator correctly handles a realistic
         model with various field naming patterns, applying @JsonKey only where needed.
@@ -155,15 +185,15 @@ class TestDartSnakeCaseConversion:
                 "UserProfile": Model(
                     name="UserProfile",
                     fields={
-                        # camelCase - needs @JsonKey
-                        "userId": FieldDefinition(type="string"),
-                        "createdAt": FieldDefinition(type="datetime", optional=True),
+                        # snake_case - needs @JsonKey and camelCase conversion
+                        "user_id": FieldDefinition(type="string"),
+                        "created_at": FieldDefinition(type="datetime", optional=True),
                         # single word - no @JsonKey needed
                         "name": FieldDefinition(type="string"),
-                        # snake_case - no @JsonKey needed
+                        # snake_case - needs @JsonKey and camelCase conversion
                         "user_role": FieldDefinition(type="string"),
-                        # camelCase - needs @JsonKey
-                        "isActive": FieldDefinition(type="boolean", default=True),
+                        # snake_case - needs @JsonKey and camelCase conversion
+                        "is_active": FieldDefinition(type="boolean", default=True),
                     }
                 )
             }
@@ -172,44 +202,44 @@ class TestDartSnakeCaseConversion:
         generator = DartModelGenerator()
         code = generator.generate(schema)
 
-        # Verify @JsonKey is present for camelCase fields
+        # Verify @JsonKey is present for snake_case fields (converted to camelCase)
         assert "@JsonKey(name: 'user_id')" in code
         assert "@JsonKey(name: 'created_at')" in code
+        assert "@JsonKey(name: 'user_role')" in code
         assert "@JsonKey(name: 'is_active')" in code
 
-        # Verify NO @JsonKey for single-word and snake_case fields
-        # Count total @JsonKey occurrences - should be exactly 3
+        # Count total @JsonKey occurrences - should be exactly 4
         json_key_count = code.count("@JsonKey")
-        assert json_key_count == 3, f"Expected 3 @JsonKey annotations, found {json_key_count}"
+        assert json_key_count == 4, f"Expected 4 @JsonKey annotations, found {json_key_count}"
 
-        # Verify field declarations
+        # Verify field declarations use camelCase
         assert "required String userId," in code
         assert "DateTime? createdAt," in code
         assert "required String name," in code
-        assert "required String user_role," in code
+        assert "required String userRole," in code
         assert "@Default(true) bool isActive," in code
 
     def test_needs_json_key_method(self):
         """Test the _needs_json_key() helper method.
 
-        This method should return True when a field name would convert to a different
-        snake_case version, and False when the field is already in snake_case or is
-        a single word.
+        This method should return True when the JSON field name differs from
+        the Dart field name (after camelCase conversion).
         """
         generator = DartModelGenerator()
 
-        # Fields that NEED @JsonKey (camelCase)
-        assert generator._needs_json_key("userId") is True
-        assert generator._needs_json_key("createdAt") is True
-        assert generator._needs_json_key("firstName") is True
-        assert generator._needs_json_key("isActive") is True
+        # snake_case fields need @JsonKey (JSON name != Dart camelCase name)
+        # _needs_json_key takes (field_name, dart_field_name) - we need to provide both
+        assert generator._needs_json_key("user_id", "userId") is True
+        assert generator._needs_json_key("created_at", "createdAt") is True
+        assert generator._needs_json_key("first_name", "firstName") is True
+        assert generator._needs_json_key("is_active", "isActive") is True
 
-        # Fields that DO NOT need @JsonKey (already snake_case or single word)
-        assert generator._needs_json_key("user_id") is False
-        assert generator._needs_json_key("created_at") is False
-        assert generator._needs_json_key("id") is False
-        assert generator._needs_json_key("name") is False
-        assert generator._needs_json_key("email") is False
+        # Fields where JSON key = Dart field name don't need @JsonKey
+        assert generator._needs_json_key("userId", "userId") is False
+        assert generator._needs_json_key("createdAt", "createdAt") is False
+        assert generator._needs_json_key("id", "id") is False
+        assert generator._needs_json_key("name", "name") is False
+        assert generator._needs_json_key("email", "email") is False
 
 
 if __name__ == "__main__":

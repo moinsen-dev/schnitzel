@@ -1,0 +1,8 @@
+name: my_blog_workspace
+description: Schnitzel project workspace
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+workspace:
+  - packages/app

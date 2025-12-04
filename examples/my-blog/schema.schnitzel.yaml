@@ -13,7 +13,7 @@ models:
         type: string
         unique: true
       bio:
-        type: string
+        type: text
         optional: true
       is_active:
         type: bool
@@ -38,7 +38,7 @@ models:
       title:
         type: string
       content:
-        type: string
+        type: text
       author_id:
         type: uuid
       created_at:
@@ -60,7 +60,7 @@ models:
         type: uuid
         primary: true
       content:
-        type: string
+        type: text
       author_id:
         type: uuid
       post_id:

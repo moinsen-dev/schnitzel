@@ -107,7 +107,7 @@ def test_mixed_required_and_optional_fields():
                     "id": FieldDefinition(type="string", optional=False),
                     "name": FieldDefinition(type="string", optional=False),
                     "email": FieldDefinition(type="string", optional=False),
-                    
+
                     # Optional fields
                     "bio": FieldDefinition(type="string", optional=True),
                     "age": FieldDefinition(type="int", optional=True),
@@ -132,9 +132,10 @@ def test_mixed_required_and_optional_fields():
     assert "required String email," in generated_code, "email should have 'required' keyword"
 
     # Verify optional fields have nullable type
+    # snake_case fields are converted to camelCase with @JsonKey
     assert "String? bio," in generated_code, "bio should have nullable type"
     assert "int? age," in generated_code, "age should have nullable type"
-    assert "String? avatar_url," in generated_code, "avatar_url should have nullable type"
+    assert "@JsonKey(name: 'avatar_url') String? avatarUrl," in generated_code, "avatar_url becomes avatarUrl with @JsonKey"
 
     # Verify structure
     assert "@freezed" in generated_code, "Should have @freezed annotation"
@@ -170,14 +171,15 @@ def test_all_optional_model():
     print("=" * 80)
 
     # Verify all fields have nullable type
+    # snake_case fields are converted to camelCase with @JsonKey
     assert "String? theme," in generated_code, "theme should be nullable"
-    assert "bool? notifications_enabled," in generated_code, "notifications_enabled should be nullable"
-    assert "int? max_results," in generated_code, "max_results should be nullable"
+    assert "@JsonKey(name: 'notifications_enabled') bool? notificationsEnabled," in generated_code, "notifications_enabled becomes notificationsEnabled"
+    assert "@JsonKey(name: 'max_results') int? maxResults," in generated_code, "max_results becomes maxResults"
     assert "String? language," in generated_code, "language should be nullable"
 
-    # Verify no 'required' keywords
+    # Verify no 'required' keywords for optional fields
     lines = generated_code.split('\n')
-    field_lines = [line for line in lines if any(field in line for field in ['theme', 'notifications_enabled', 'max_results', 'language'])]
+    field_lines = [line for line in lines if any(field in line for field in ['theme', 'notificationsEnabled', 'maxResults', 'language'])]
     for line in field_lines:
         if '?' in line:  # It's a field line
             assert 'required' not in line, f"All-optional model should not have 'required' keyword: {line}"
@@ -195,7 +197,7 @@ def test_various_dart_types_with_optional():
                     "id": FieldDefinition(type="uuid", optional=False),
                     "created_at": FieldDefinition(type="datetime", optional=False),
                     "active": FieldDefinition(type="bool", optional=False),
-                    
+
                     # Optional fields with various types
                     "score": FieldDefinition(type="float", optional=True),
                     "metadata": FieldDefinition(type="json", optional=True),
@@ -213,15 +215,15 @@ def test_various_dart_types_with_optional():
     print(generated_code)
     print("=" * 80)
 
-    # Verify required fields
+    # Verify required fields (snake_case converted to camelCase with @JsonKey)
     assert "required String id," in generated_code, "uuid maps to String and should be required"
-    assert "required DateTime created_at," in generated_code, "datetime should be required"
+    assert "@JsonKey(name: 'created_at') required DateTime createdAt," in generated_code, "datetime should be required with camelCase"
     assert "required bool active," in generated_code, "bool should be required"
 
-    # Verify optional fields
+    # Verify optional fields (snake_case converted to camelCase with @JsonKey)
     assert "double? score," in generated_code, "float should map to double? when optional"
     assert "Map<String, dynamic>? metadata," in generated_code, "json should be nullable when optional"
-    assert "DateTime? updated_at," in generated_code, "datetime should be nullable when optional"
+    assert "@JsonKey(name: 'updated_at') DateTime? updatedAt," in generated_code, "datetime should be nullable with camelCase"
 
 
 def test_list_types_with_optional():

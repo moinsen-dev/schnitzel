@@ -28,15 +28,15 @@ class TestDartJsonSerialization:
         # Check that fromJson factory is generated
         assert "factory User.fromJson(Map<String, dynamic> json) => _$UserFromJson(json);" in code
 
-    def test_json_key_annotation_for_snake_case(self):
-        """Test that @JsonKey annotation is added for fields that need snake_case serialization."""
+    def test_json_key_annotation_for_snake_case_fields(self):
+        """Test that @JsonKey annotation is added for snake_case fields (converted to camelCase)."""
         schema = SchnitzelSchema(
             models={
                 "User": Model(
                     name="User",
                     fields={
-                        "userId": FieldDefinition(type="string"),
-                        "createdAt": FieldDefinition(type="datetime", optional=True),
+                        "user_id": FieldDefinition(type="string"),
+                        "created_at": FieldDefinition(type="datetime", optional=True),
                     }
                 )
             }
@@ -45,12 +45,14 @@ class TestDartJsonSerialization:
         generator = DartModelGenerator()
         code = generator.generate(schema)
 
-        # Check that @JsonKey is generated for camelCase fields
+        # snake_case fields are converted to camelCase with @JsonKey
         assert "@JsonKey(name: 'user_id')" in code
         assert "@JsonKey(name: 'created_at')" in code
+        assert "String userId," in code
+        assert "DateTime? createdAt," in code
 
-    def test_imports_include_json_annotation(self):
-        """Test that json_annotation import is included."""
+    def test_imports_include_freezed_annotation(self):
+        """Test that freezed_annotation import is included (provides @JsonKey)."""
         schema = SchnitzelSchema(
             models={
                 "User": Model(
@@ -65,8 +67,10 @@ class TestDartJsonSerialization:
         generator = DartModelGenerator()
         code = generator.generate(schema)
 
-        # Check that json_annotation is imported
-        assert "import 'package:json_annotation/json_annotation.dart';" in code
+        # Check that freezed_annotation is imported (it provides @JsonKey, so json_annotation is not needed)
+        assert "import 'package:freezed_annotation/freezed_annotation.dart';" in code
+        # json_annotation is NOT needed when using freezed_annotation
+        assert "import 'package:json_annotation/json_annotation.dart';" not in code
 
     def test_part_directive_for_generated_file(self):
         """Test that part directives for .g.dart files are generated."""
@@ -89,15 +93,15 @@ class TestDartJsonSerialization:
         assert "part 'models.g.dart';" in code
         assert "part 'models.freezed.dart';" in code
 
-    def test_no_json_key_for_snake_case_fields(self):
-        """Test that @JsonKey is NOT added for fields already in snake_case."""
+    def test_no_json_key_for_camel_case_fields(self):
+        """Test that @JsonKey is NOT added for fields already in camelCase (JSON key matches Dart name)."""
         schema = SchnitzelSchema(
             models={
                 "User": Model(
                     name="User",
                     fields={
-                        "user_id": FieldDefinition(type="string"),
-                        "created_at": FieldDefinition(type="datetime", optional=True),
+                        "userId": FieldDefinition(type="string"),
+                        "createdAt": FieldDefinition(type="datetime", optional=True),
                     }
                 )
             }
@@ -106,9 +110,10 @@ class TestDartJsonSerialization:
         generator = DartModelGenerator()
         code = generator.generate(schema)
 
-        # Fields already in snake_case should NOT have @JsonKey
-        # We should NOT see @JsonKey for these fields
+        # Fields already in camelCase should NOT have @JsonKey since JSON key = Dart field name
         assert code.count("@JsonKey") == 0
+        assert "required String userId," in code
+        assert "DateTime? createdAt," in code
 
     def test_complete_model_structure(self):
         """Test complete model structure with all JSON serialization features."""
@@ -117,9 +122,9 @@ class TestDartJsonSerialization:
                 "User": Model(
                     name="User",
                     fields={
-                        "userId": FieldDefinition(type="string"),
+                        "user_id": FieldDefinition(type="string"),
                         "name": FieldDefinition(type="string"),
-                        "createdAt": FieldDefinition(type="datetime", optional=True),
+                        "created_at": FieldDefinition(type="datetime", optional=True),
                     }
                 )
             }
@@ -130,7 +135,6 @@ class TestDartJsonSerialization:
 
         # Check overall structure
         assert "import 'package:freezed_annotation/freezed_annotation.dart';" in code
-        assert "import 'package:json_annotation/json_annotation.dart';" in code
         assert "part 'models.freezed.dart';" in code
         assert "part 'models.g.dart';" in code
         assert "@freezed" in code
@@ -180,7 +184,7 @@ class TestDartJsonSerialization:
                         "id": FieldDefinition(type="string"),
                     },
                     relations={
-                        "createdBy": Relation(type="belongsTo", model="User"),
+                        "created_by": Relation(type="belongsTo", model="User"),
                     }
                 )
             }
@@ -189,8 +193,9 @@ class TestDartJsonSerialization:
         generator = DartModelGenerator()
         code = generator.generate(schema)
 
-        # Check that relationship field gets @JsonKey
+        # Check that relationship field gets @JsonKey (snake_case converted to camelCase)
         assert "@JsonKey(name: 'created_by')" in code
+        assert "User? createdBy," in code
 
     def test_freezed_annotation_present(self):
         """Test that @freezed annotation is present on models."""
@@ -218,8 +223,8 @@ class TestDartJsonSerialization:
                 "User": Model(
                     name="User",
                     fields={
-                        "userId": FieldDefinition(type="string"),  # required by default
-                        "userName": FieldDefinition(type="string"),  # required by default
+                        "user_id": FieldDefinition(type="string"),  # required by default
+                        "user_name": FieldDefinition(type="string"),  # required by default
                     }
                 )
             }
@@ -239,8 +244,8 @@ class TestDartJsonSerialization:
                 "User": Model(
                     name="User",
                     fields={
-                        "userId": FieldDefinition(type="string"),
-                        "middleName": FieldDefinition(type="string", optional=True),
+                        "user_id": FieldDefinition(type="string"),
+                        "middle_name": FieldDefinition(type="string", optional=True),
                     }
                 )
             }
@@ -270,14 +275,15 @@ class TestDartJsonSerialization:
         """Test the logic that determines if @JsonKey is needed."""
         generator = DartModelGenerator()
 
-        # These should need @JsonKey
-        assert generator._needs_json_key("userId") == True
-        assert generator._needs_json_key("createdAt") == True
+        # _needs_json_key takes (field_name, dart_field_name) and returns True if they differ
+        # snake_case fields converted to camelCase need @JsonKey
+        assert generator._needs_json_key("user_id", "userId") is True
+        assert generator._needs_json_key("created_at", "createdAt") is True
 
-        # These should NOT need @JsonKey
-        assert generator._needs_json_key("id") == False
-        assert generator._needs_json_key("user_id") == False
-        assert generator._needs_json_key("name") == False
+        # Fields where JSON key = Dart field name don't need @JsonKey
+        assert generator._needs_json_key("id", "id") is False
+        assert generator._needs_json_key("name", "name") is False
+        assert generator._needs_json_key("userId", "userId") is False
 
     def test_freezed_import_present(self):
         """Test that freezed_annotation import is present."""
@@ -308,7 +314,7 @@ class TestDartJsonSerialization:
                         "id": FieldDefinition(type="string"),
                     },
                     relations={
-                        "createdPosts": Relation(type="hasMany", model="Post"),
+                        "created_posts": Relation(type="hasMany", model="Post"),
                     }
                 )
             }
@@ -317,7 +323,7 @@ class TestDartJsonSerialization:
         generator = DartModelGenerator()
         code = generator.generate(schema)
 
-        # Check that hasMany relationship gets @JsonKey
+        # Check that hasMany relationship gets @JsonKey (snake_case converted to camelCase)
         assert "@JsonKey(name: 'created_posts') List<Post>? createdPosts," in code
 
     def test_model_with_no_fields_still_has_fromjson(self):

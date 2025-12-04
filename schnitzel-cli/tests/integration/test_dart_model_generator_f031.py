@@ -192,7 +192,9 @@ class TestDartTypeMapping:
         generator = DartModelGenerator()
         code = generator.generate(schema)
 
-        assert "required bool is_active" in code
+        # snake_case is_active becomes camelCase isActive with @JsonKey
+        assert "required bool isActive" in code
+        assert "@JsonKey(name: 'is_active')" in code
 
     def test_datetime_type_maps_to_datetime(self):
         """Test that datetime type maps to Dart DateTime."""
@@ -211,7 +213,9 @@ class TestDartTypeMapping:
         generator = DartModelGenerator()
         code = generator.generate(schema)
 
-        assert "required DateTime created_at" in code
+        # snake_case created_at becomes camelCase createdAt with @JsonKey
+        assert "required DateTime createdAt" in code
+        assert "@JsonKey(name: 'created_at')" in code
 
     def test_json_type_maps_to_map(self):
         """Test that json type maps to Dart Map<String, dynamic>."""
@@ -356,8 +360,9 @@ class TestDartDefaultValues:
         code = generator.generate(schema)
 
         # Verify lowercase true/false in @Default annotation (Dart convention)
-        assert "@Default(true) bool is_active" in code
-        assert "@Default(false) bool is_deleted" in code
+        # snake_case field names are converted to camelCase with @JsonKey
+        assert "@JsonKey(name: 'is_active') @Default(true) bool isActive" in code
+        assert "@JsonKey(name: 'is_deleted') @Default(false) bool isDeleted" in code
 
 
 class TestDartMultipleModels:
@@ -426,8 +431,8 @@ class TestDartEdgeCases:
         assert "const factory EmptyModel() = _EmptyModel;" in code
         assert "factory EmptyModel.fromJson(Map<String, dynamic> json) => _$EmptyModelFromJson(json);" in code
 
-    def test_snake_case_field_names(self):
-        """Test that snake_case field names don't need @JsonKey annotation."""
+    def test_snake_case_field_names_converted_to_camel_case(self):
+        """Test that snake_case field names are converted to camelCase with @JsonKey."""
         schema = SchnitzelSchema(
             schnitzel="1.0",
             models={
@@ -444,15 +449,15 @@ class TestDartEdgeCases:
         generator = DartModelGenerator()
         code = generator.generate(schema)
 
-        # Verify fields are included without @JsonKey (already in snake_case)
-        assert "String user_id" in code
-        assert "DateTime created_at" in code
-        # No @JsonKey needed since fields are already in snake_case
-        assert "@JsonKey(name: 'user_id')" not in code
-        assert "@JsonKey(name: 'created_at')" not in code
+        # Dart convention: use lowerCamelCase field names with @JsonKey for JSON mapping
+        assert "String userId" in code
+        assert "DateTime createdAt" in code
+        # @JsonKey maps Dart camelCase back to JSON snake_case
+        assert "@JsonKey(name: 'user_id')" in code
+        assert "@JsonKey(name: 'created_at')" in code
 
-    def test_camel_case_field_names_need_json_key(self):
-        """Test that camelCase field names get @JsonKey annotation."""
+    def test_camel_case_field_names_no_json_key_needed(self):
+        """Test that camelCase field names don't need @JsonKey when JSON and Dart match."""
         schema = SchnitzelSchema(
             schnitzel="1.0",
             models={
@@ -469,9 +474,9 @@ class TestDartEdgeCases:
         generator = DartModelGenerator()
         code = generator.generate(schema)
 
-        # Verify @JsonKey annotations for camelCase fields (convert to snake_case)
-        assert "@JsonKey(name: 'user_id')" in code
-        assert "@JsonKey(name: 'created_at')" in code
-        # Field names remain camelCase in Dart
+        # Field names are already camelCase, so no @JsonKey needed (JSON key = Dart field name)
         assert "String userId" in code
         assert "DateTime createdAt" in code
+        # No @JsonKey needed since the names already match
+        assert "@JsonKey(name: 'userId')" not in code
+        assert "@JsonKey(name: 'createdAt')" not in code

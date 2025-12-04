@@ -3,6 +3,7 @@
 from pathlib import Path
 from datetime import datetime
 import signal
+import subprocess
 import sys
 from typing import Optional
 import typer
@@ -60,6 +61,197 @@ def _cleanup_files(files: list[Path]) -> None:
                 console.print(f"[yellow]Cleaned up partial file:[/yellow] {file_path}")
             except Exception as cleanup_error:
                 console.print(f"[yellow]Warning: Could not clean up {file_path}:[/yellow] {cleanup_error}")
+
+
+def _is_flutter_installed() -> bool:
+    """Check if Flutter is installed and available in PATH."""
+    try:
+        result = subprocess.run(
+            ["flutter", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def _is_uv_installed() -> bool:
+    """Check if uv is installed and available in PATH."""
+    try:
+        result = subprocess.run(
+            ["uv", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def _run_flutter_setup(flutter_dir: Path, quiet: bool = False) -> bool:
+    """Run flutter pub get and build_runner in the Flutter package.
+
+    Args:
+        flutter_dir: Path to the Flutter package directory (packages/app)
+        quiet: If True, suppress output
+
+    Returns:
+        True if all setup commands succeeded, False otherwise
+    """
+    if not _is_flutter_installed():
+        if not quiet:
+            console.print("  [yellow]⚠ Flutter not installed - skipping Flutter setup[/yellow]")
+        return False
+
+    # Check if pubspec.yaml exists
+    pubspec_file = flutter_dir / "pubspec.yaml"
+    if not pubspec_file.exists():
+        if not quiet:
+            console.print(f"  [yellow]⚠ No pubspec.yaml found in {flutter_dir} - skipping Flutter setup[/yellow]")
+        return False
+
+    success = True
+
+    # Step 1: flutter pub get
+    if not quiet:
+        console.print("  [blue]Running flutter pub get...[/blue]")
+
+    try:
+        result = subprocess.run(
+            ["flutter", "pub", "get"],
+            cwd=flutter_dir,
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        if result.returncode == 0:
+            if not quiet:
+                console.print("  [green]✓ flutter pub get[/green]")
+        else:
+            if not quiet:
+                console.print(f"  [red]✗ flutter pub get failed[/red]")
+                if result.stderr:
+                    console.print(f"    [dim]{result.stderr.strip()[:200]}[/dim]")
+            success = False
+    except subprocess.TimeoutExpired:
+        if not quiet:
+            console.print("  [red]✗ flutter pub get timed out[/red]")
+        success = False
+    except Exception as e:
+        if not quiet:
+            console.print(f"  [red]✗ flutter pub get error: {e}[/red]")
+        success = False
+
+    # Step 2: dart run build_runner build (only if pub get succeeded)
+    if success:
+        if not quiet:
+            console.print("  [blue]Running build_runner...[/blue]")
+
+        try:
+            result = subprocess.run(
+                ["dart", "run", "build_runner", "build", "--delete-conflicting-outputs"],
+                cwd=flutter_dir,
+                capture_output=True,
+                text=True,
+                timeout=300  # build_runner can take a while
+            )
+            if result.returncode == 0:
+                if not quiet:
+                    console.print("  [green]✓ build_runner build[/green]")
+            else:
+                if not quiet:
+                    console.print(f"  [yellow]⚠ build_runner build failed (may need freezed dependencies)[/yellow]")
+                    if result.stderr:
+                        # Show first few lines of error
+                        error_lines = result.stderr.strip().split('\n')[:3]
+                        for line in error_lines:
+                            console.print(f"    [dim]{line[:100]}[/dim]")
+                # Don't mark as failure - build_runner may not be configured yet
+        except subprocess.TimeoutExpired:
+            if not quiet:
+                console.print("  [yellow]⚠ build_runner timed out[/yellow]")
+        except Exception as e:
+            if not quiet:
+                console.print(f"  [yellow]⚠ build_runner error: {e}[/yellow]")
+
+    return success
+
+
+def _run_python_setup(backend_dir: Path, quiet: bool = False) -> bool:
+    """Run uv sync in the Python backend.
+
+    Args:
+        backend_dir: Path to the Python backend directory (backend/app)
+        quiet: If True, suppress output
+
+    Returns:
+        True if setup succeeded, False otherwise
+    """
+    if not _is_uv_installed():
+        if not quiet:
+            console.print("  [yellow]⚠ uv not installed - skipping Python setup[/yellow]")
+        return False
+
+    # Check if pyproject.toml exists
+    pyproject_file = backend_dir / "pyproject.toml"
+    if not pyproject_file.exists():
+        if not quiet:
+            console.print(f"  [yellow]⚠ No pyproject.toml found in {backend_dir} - skipping Python setup[/yellow]")
+        return False
+
+    if not quiet:
+        console.print("  [blue]Running uv sync...[/blue]")
+
+    try:
+        result = subprocess.run(
+            ["uv", "sync"],
+            cwd=backend_dir,
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        if result.returncode == 0:
+            if not quiet:
+                console.print("  [green]✓ uv sync[/green]")
+            return True
+        else:
+            if not quiet:
+                console.print(f"  [yellow]⚠ uv sync failed[/yellow]")
+                if result.stderr:
+                    console.print(f"    [dim]{result.stderr.strip()[:200]}[/dim]")
+            return False
+    except subprocess.TimeoutExpired:
+        if not quiet:
+            console.print("  [yellow]⚠ uv sync timed out[/yellow]")
+        return False
+    except Exception as e:
+        if not quiet:
+            console.print(f"  [yellow]⚠ uv sync error: {e}[/yellow]")
+        return False
+
+
+def _run_post_generation_setup(output_path: Path, quiet: bool = False) -> None:
+    """Run post-generation setup commands for Flutter and Python.
+
+    Args:
+        output_path: Base output directory containing packages/ and backend/
+        quiet: If True, suppress output
+    """
+    if not quiet:
+        console.print("\n[blue]Running post-generation setup...[/blue]")
+
+    # Flutter setup
+    flutter_dir = output_path / "packages" / "app"
+    if flutter_dir.exists():
+        _run_flutter_setup(flutter_dir, quiet)
+
+    # Python setup
+    backend_dir = output_path / "backend" / "app"
+    if backend_dir.exists():
+        _run_python_setup(backend_dir, quiet)
 
 
 def _generate_python(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
@@ -563,6 +755,11 @@ def generate_command(
         "-w",
         help="Watch schema file for changes and regenerate automatically",
     ),
+    setup: bool = typer.Option(
+        True,
+        "--setup/--no-setup",
+        help="Run post-generation setup (flutter pub get, build_runner, uv sync)",
+    ),
 ) -> None:
     """
     Generate code from a Schnitzel schema file.
@@ -610,6 +807,9 @@ def generate_command(
         success = _run_generation(schema_path, target, output_path, force, dry_run, show_progress=True)
 
         if success:
+            # Run post-generation setup if enabled
+            if setup and not dry_run:
+                _run_post_generation_setup(output_path, quiet=_is_quiet_mode())
             console.print(f"\n[blue]Watching for changes...[/blue]\n")
         else:
             console.print(f"\n[yellow]Initial generation failed. Watching for changes...[/yellow]\n")
@@ -651,3 +851,7 @@ def generate_command(
 
         if not success:
             raise typer.Exit(code=1)
+
+        # Run post-generation setup if enabled and not dry-run
+        if setup and not dry_run:
+            _run_post_generation_setup(output_path, quiet=_is_quiet_mode())

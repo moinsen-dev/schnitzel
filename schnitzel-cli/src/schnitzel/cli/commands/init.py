@@ -166,13 +166,16 @@ def _sanitize_dart_package_name(name: str) -> str:
     - Not be a reserved word
 
     Args:
-        name: Original project name
+        name: Original project name (may contain path components)
 
     Returns:
         str: Sanitized package name suitable for Dart
     """
+    # Extract just the final component if it's a path
+    base_name = Path(name).name
+
     # Replace hyphens and spaces with underscores
-    sanitized = name.replace("-", "_").replace(" ", "_")
+    sanitized = base_name.replace("-", "_").replace(" ", "_")
 
     # Convert to lowercase
     sanitized = sanitized.lower()
@@ -191,6 +194,43 @@ def _sanitize_dart_package_name(name: str) -> str:
     return sanitized
 
 
+def _sanitize_python_package_name(name: str) -> str:
+    """Sanitize a project name to be a valid Python package name.
+
+    Python package names must:
+    - Use only lowercase letters, numbers, and underscores
+    - Not start with a number
+    - Follow PEP 503 naming conventions
+
+    Args:
+        name: Original project name (may contain path components)
+
+    Returns:
+        str: Sanitized package name suitable for Python
+    """
+    # Extract just the final component if it's a path
+    base_name = Path(name).name
+
+    # Replace hyphens and spaces with underscores
+    sanitized = base_name.replace("-", "_").replace(" ", "_")
+
+    # Convert to lowercase
+    sanitized = sanitized.lower()
+
+    # Remove any characters that aren't alphanumeric or underscore
+    sanitized = "".join(c for c in sanitized if c.isalnum() or c == "_")
+
+    # Ensure it doesn't start with a digit
+    if sanitized and sanitized[0].isdigit():
+        sanitized = f"app_{sanitized}"
+
+    # If empty or just underscores, provide a default
+    if not sanitized or sanitized.strip("_") == "":
+        sanitized = "backend_app"
+
+    return sanitized
+
+
 def _generate_pyproject_toml(project_name: str) -> str:
     """Generate pyproject.toml content for FastAPI backend.
 
@@ -200,10 +240,14 @@ def _generate_pyproject_toml(project_name: str) -> str:
     Returns:
         str: pyproject.toml content with FastAPI dependencies
     """
+    # Sanitize the project name to be a valid Python package name
+    sanitized_name = _sanitize_python_package_name(project_name)
+    # Use base name for description (human-readable)
+    display_name = Path(project_name).name
     return f"""[project]
-name = "{project_name}-backend"
+name = "{sanitized_name}-backend"
 version = "0.1.0"
-description = "FastAPI backend for {project_name}"
+description = "FastAPI backend for {display_name}"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.109.0",
@@ -248,34 +292,90 @@ workspace:
         console.print("[green]✓ Workspace pubspec.yaml created[/green]")
 
 
+def _run_flutter_pub_add(packages_dir: Path, packages: list[str], dev: bool = False) -> bool:
+    """Run flutter pub add to add dependencies.
+
+    Args:
+        packages_dir: Path to the Flutter package directory
+        packages: List of package names to add
+        dev: If True, add as dev dependencies
+
+    Returns:
+        bool: True if all packages were added successfully
+    """
+    if not packages:
+        return True
+
+    try:
+        cmd = ["flutter", "pub", "add"]
+        if dev:
+            cmd.append("--dev")
+        cmd.extend(packages)
+
+        result = subprocess.run(
+            cmd,
+            cwd=packages_dir,
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, Exception):
+        return False
+
+
 def _create_flutter_app(packages_dir: Path, project_name: str) -> bool:
-    """Create Flutter app in packages/app directory.
+    """Create Flutter package in packages/app directory with Freezed dependencies.
 
     Args:
         packages_dir: Path to packages/app directory
         project_name: Base name for the Flutter project
 
     Returns:
-        bool: True if Flutter app was created successfully, False otherwise
+        bool: True if Flutter package was created successfully, False otherwise
     """
     try:
         # Sanitize project name for Dart package naming rules
         dart_package_name = _sanitize_dart_package_name(project_name)
 
-        # Run flutter create in the parent directory (packages/)
-        # This will create the app in packages/app/
+        # Step 1: Run flutter create --template=package
         result = subprocess.run(
             [
                 "flutter", "create",
                 str(packages_dir),
+                "--template=package",
                 "--project-name", f"{dart_package_name}_app"
             ],
             capture_output=True,
             text=True,
-            timeout=120  # Flutter create can take some time
+            timeout=120
         )
 
-        return result.returncode == 0
+        if result.returncode != 0:
+            return False
+
+        # Step 2: Add runtime dependencies with flutter pub add
+        runtime_deps = [
+            "freezed_annotation",
+            "json_annotation",
+        ]
+        if not _is_quiet_mode():
+            console.print("  [dim]Adding Freezed dependencies...[/dim]")
+
+        if not _run_flutter_pub_add(packages_dir, runtime_deps, dev=False):
+            console.print("  [yellow]Warning: Could not add some runtime dependencies[/yellow]")
+
+        # Step 3: Add dev dependencies with flutter pub add --dev
+        dev_deps = [
+            "build_runner",
+            "freezed",
+            "json_serializable",
+        ]
+
+        if not _run_flutter_pub_add(packages_dir, dev_deps, dev=True):
+            console.print("  [yellow]Warning: Could not add some dev dependencies[/yellow]")
+
+        return True
 
     except subprocess.TimeoutExpired:
         return False
@@ -327,13 +427,13 @@ def init_command(
         help="Name of the project to create"
     ),
     with_flutter: bool = typer.Option(
-        False,
-        "--with-flutter",
-        help="Create Flutter app in packages/app using flutter create"
+        True,
+        "--with-flutter/--no-flutter",
+        help="Create Flutter package in packages/app using flutter create"
     ),
     with_backend: bool = typer.Option(
-        False,
-        "--with-backend",
+        True,
+        "--with-backend/--no-backend",
         help="Initialize Python backend with uv init"
     ),
     template: str = typer.Option(
@@ -404,28 +504,28 @@ def init_command(
         packages_dir = project_path / "packages" / "app"
         logger.debug(f"Packages directory: {packages_dir}")
 
-        # Handle Flutter app creation if --with-flutter flag is set
+        # Handle Flutter package creation
         flutter_app_created = False
         if with_flutter:
             # Check if Flutter is installed
             if not _is_flutter_installed():
-                if not _is_quiet_mode():
-                    console.print("  [yellow]✗ Flutter not installed - creating empty packages/app/[/yellow]")
-                packages_dir.mkdir(parents=True, exist_ok=True)
-            else:
-                # Create Flutter app (this will create packages/app/)
-                flutter_app_created = _create_flutter_app(packages_dir, project_name)
-                if not flutter_app_created:
-                    # Fallback: create empty directory if Flutter create failed
-                    if not _is_quiet_mode():
-                        console.print("  [yellow]✗ Flutter create failed - creating empty packages/app/[/yellow]")
-                    packages_dir.mkdir(parents=True, exist_ok=True)
-                else:
-                    if not _is_quiet_mode():
-                        console.print("  [green]✓ Created packages/app/ (Flutter app)[/green]")
-                    _create_workspace_pubspec(project_path, project_name)
+                console.print("[red]Error: Flutter is required but not installed[/red]")
+                console.print("[dim]Install Flutter: https://flutter.dev/docs/get-started/install[/dim]")
+                console.print("[dim]Or use --no-flutter to skip Flutter setup[/dim]")
+                raise typer.Exit(code=1)
+
+            # Create Flutter package (this will create packages/app/)
+            flutter_app_created = _create_flutter_app(packages_dir, project_name)
+            if not flutter_app_created:
+                console.print("[red]Error: flutter create --template=package failed[/red]")
+                console.print("[dim]Check Flutter installation with: flutter doctor[/dim]")
+                raise typer.Exit(code=1)
+
+            if not _is_quiet_mode():
+                console.print("  [green]✓ Created packages/app/ (Flutter package)[/green]")
+            _create_workspace_pubspec(project_path, project_name)
         else:
-            # No --with-flutter flag: create empty directory
+            # No Flutter: create empty directory placeholder
             packages_dir.mkdir(parents=True, exist_ok=True)
             if not _is_quiet_mode():
                 console.print("  [green]✓ Created packages/app/[/green]")
@@ -433,29 +533,29 @@ def init_command(
         # Create backend/app directory (FastAPI placeholder or actual uv project)
         backend_dir = project_path / "backend" / "app"
 
-        # Handle backend creation if --with-backend flag is set
+        # Handle backend creation
         backend_app_created = False
         if with_backend:
             # Check if uv is installed
             if not _is_uv_installed():
-                if not _is_quiet_mode():
-                    console.print("  [yellow]✗ uv not installed - creating empty backend/app/[/yellow]")
-                backend_dir.mkdir(parents=True, exist_ok=True)
-            else:
-                # Create parent directory first
-                backend_dir.parent.mkdir(parents=True, exist_ok=True)
-                # Create backend app using uv init
-                backend_app_created = _create_backend_app(backend_dir, project_name)
-                if not backend_app_created:
-                    # Fallback: create empty directory if uv init failed
-                    if not _is_quiet_mode():
-                        console.print("  [yellow]✗ uv init failed - creating empty backend/app/[/yellow]")
-                    backend_dir.mkdir(parents=True, exist_ok=True)
-                else:
-                    if not _is_quiet_mode():
-                        console.print("  [green]✓ Created backend/app/ (Python project)[/green]")
+                console.print("[red]Error: uv is required but not installed[/red]")
+                console.print("[dim]Install uv: https://github.com/astral-sh/uv[/dim]")
+                console.print("[dim]Or use --no-backend to skip backend setup[/dim]")
+                raise typer.Exit(code=1)
+
+            # Create parent directory first
+            backend_dir.parent.mkdir(parents=True, exist_ok=True)
+            # Create backend app using uv init
+            backend_app_created = _create_backend_app(backend_dir, project_name)
+            if not backend_app_created:
+                console.print("[red]Error: uv init failed[/red]")
+                console.print("[dim]Check uv installation with: uv --version[/dim]")
+                raise typer.Exit(code=1)
+
+            if not _is_quiet_mode():
+                console.print("  [green]✓ Created backend/app/ (Python project)[/green]")
         else:
-            # No --with-backend flag: create empty directory
+            # No backend: create empty directory placeholder
             backend_dir.mkdir(parents=True, exist_ok=True)
             if not _is_quiet_mode():
                 console.print("  [green]✓ Created backend/app/[/green]")

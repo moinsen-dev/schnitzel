@@ -213,12 +213,20 @@ class SchnitzelSchema(BaseModel):
 
 PYTHON_TYPE_MAP = {
     "string": "str",
+    "str": "str",
+    "text": "str",
     "uuid": "UUID",
     "int": "int",
+    "integer": "int",
     "float": "float",
+    "double": "float",
     "bool": "bool",
+    "boolean": "bool",
     "datetime": "datetime",
+    "date": "datetime",
     "json": "dict[str, Any]",
+    "vector": "list[float]",
+    "bytes": "bytes",
 }
 
 DART_TYPE_MAP = {
