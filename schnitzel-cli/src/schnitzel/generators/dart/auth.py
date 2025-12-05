@@ -37,6 +37,7 @@ class DartAuthClientGenerator:
         - auth_interceptor.dart: Dio interceptor with auto token refresh
         - auth_bloc.dart: BLoC for auth state management
         - oauth_handler.dart: OAuth flows (Google, Apple, Magic Link)
+        - user_model.dart: AuthUser model with roles, permissions, and helpers
 
         Args:
             schema: The Schnitzel schema to generate auth client from
@@ -69,6 +70,10 @@ class DartAuthClientGenerator:
         # Generate OAuth handler
         template = self.env.get_template("oauth_handler.dart.j2")
         files["oauth_handler.dart"] = template.render(auth_config=auth_config)
+
+        # Generate user model
+        template = self.env.get_template("user_model.dart.j2")
+        files["user_model.dart"] = template.render(auth_config=auth_config)
 
         return files
 

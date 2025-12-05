@@ -255,13 +255,25 @@ class AuthClient {
   }
 
   /// Logout and clear all tokens
+  ///
+  /// Steps:
+  /// 1. Get current access and refresh tokens
+  /// 2. Call backend logout endpoint with both tokens to revoke them
+  /// 3. Clear local token storage
+  /// 4. Reset in-memory token references
   Future<void> logout() async {
     try {
-      // Call logout endpoint if we have a token
+      // Get tokens before clearing
       final accessToken = await getAccessToken();
+      final refreshToken = await getRefreshToken();
+
+      // Call logout endpoint with refresh token to revoke it on server
       if (accessToken != null) {
         await _dio.post(
           '{{ auth_config.endpoints.logout }}',
+          data: {
+            'refresh_token': refreshToken,
+          },
           options: Options(
             headers: {
               'Authorization': 'Bearer $accessToken',
@@ -271,12 +283,22 @@ class AuthClient {
       }
     } catch (e) {
       // Ignore errors from logout endpoint
+      // Even if server logout fails, we still want to clear local tokens
       print('Logout endpoint error (ignored): $e');
     } finally {
       // Always clear local tokens
       await _tokenStorage.clearTokens();
       _currentAccessToken = null;
       _currentRefreshToken = null;
+{% if auth_config.has_google %}
+
+      // Sign out from OAuth providers
+      try {
+        await _oauthHandler.signOutGoogle();
+      } catch (e) {
+        print('Google sign-out error (ignored): $e');
+      }
+{% endif %}
     }
   }
 

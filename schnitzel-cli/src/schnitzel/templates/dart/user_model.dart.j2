@@ -1,0 +1,78 @@
+// User model with authentication fields
+
+import 'package:freezed_annotation/freezed_annotation.dart';
+
+part 'user_model.freezed.dart';
+part 'user_model.g.dart';
+
+/// Authentication user model with roles, permissions, and MFA support
+@freezed
+class AuthUser with _$AuthUser {
+  const AuthUser._();
+
+  const factory AuthUser({
+    required String id,
+    required String email,
+    @Default([]) List<String> roles,
+    @Default([]) List<String> permissions,
+    @Default(false) bool mfaEnabled,
+    String? name,
+    String? avatarUrl,
+    DateTime? emailVerifiedAt,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) = _AuthUser;
+
+  /// Create AuthUser from JSON
+  factory AuthUser.fromJson(Map<String, dynamic> json) => _$AuthUserFromJson(json);
+
+  /// Check if user has admin role
+  bool get isAdmin => roles.contains('admin') || roles.contains('administrator');
+
+  /// Check if user has a specific role
+  bool hasRole(String role) => roles.contains(role);
+
+  /// Check if user has a specific permission
+  bool hasPermission(String permission) => permissions.contains(permission);
+
+  /// Check if user has any of the specified roles
+  bool hasAnyRole(List<String> checkRoles) {
+    return checkRoles.any((role) => roles.contains(role));
+  }
+
+  /// Check if user has all of the specified roles
+  bool hasAllRoles(List<String> checkRoles) {
+    return checkRoles.every((role) => roles.contains(role));
+  }
+
+  /// Check if user has any of the specified permissions
+  bool hasAnyPermission(List<String> checkPermissions) {
+    return checkPermissions.any((permission) => permissions.contains(permission));
+  }
+
+  /// Check if user has all of the specified permissions
+  bool hasAllPermissions(List<String> checkPermissions) {
+    return checkPermissions.every((permission) => permissions.contains(permission));
+  }
+
+  /// Check if email is verified
+  bool get isEmailVerified => emailVerifiedAt != null;
+
+  /// Check if user account is active
+  bool get isActive => true; // Override this based on your business logic
+
+  /// Get user's display name (falls back to email if name is not set)
+  String get displayName => name ?? email;
+
+  /// Get user's initials for avatar placeholder
+  String get initials {
+    if (name != null && name!.isNotEmpty) {
+      final parts = name!.split(' ');
+      if (parts.length >= 2) {
+        return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+      }
+      return name![0].toUpperCase();
+    }
+    return email[0].toUpperCase();
+  }
+}

@@ -16,6 +16,8 @@ class AuthInterceptor extends Interceptor {
   final void Function()? onAuthenticationFailed;
 
   bool _isRefreshing = false;
+  int _refreshAttempts = 0;
+  static const int _maxRefreshAttempts = 3;
   final List<({RequestOptions options, ErrorInterceptorHandler handler})> _requestsQueue = [];
 
   AuthInterceptor({
@@ -56,13 +58,28 @@ class AuthInterceptor extends Interceptor {
     if (err.response?.statusCode == 401) {
       // Don't retry auth endpoints
       if (_isAuthEndpoint(err.requestOptions.path)) {
+        // If refresh endpoint returns 401, refresh token is expired
+        if (err.requestOptions.path.contains('refresh')) {
+          await _handleAuthenticationFailure();
+        }
+        return handler.next(err);
+      }
+
+      // Check if we've exceeded max refresh attempts (prevent infinite loops)
+      if (_refreshAttempts >= _maxRefreshAttempts) {
+        await _handleAuthenticationFailure();
+        _refreshAttempts = 0; // Reset for next session
         return handler.next(err);
       }
 
       // Try to refresh token
+      _refreshAttempts++;
       final refreshed = await _refreshToken();
 
       if (refreshed) {
+        // Reset attempt counter on success
+        _refreshAttempts = 0;
+
         // Retry the failed request with new token
         try {
           final accessToken = await _tokenStorage.getAccessToken();
@@ -75,10 +92,8 @@ class AuthInterceptor extends Interceptor {
           return handler.next(err);
         }
       } else {
-        // Token refresh failed - notify app to show login
-        if (onAuthenticationFailed != null) {
-          onAuthenticationFailed!();
-        }
+        // Token refresh failed - handle authentication failure
+        await _handleAuthenticationFailure();
         return handler.next(err);
       }
     }
@@ -131,11 +146,31 @@ class AuthInterceptor extends Interceptor {
       }
 
       return false;
+    } on DioException catch (e) {
+      // Check for refresh token expired scenarios
+      if (e.response?.statusCode == 401 || e.response?.statusCode == 403) {
+        print('Refresh token expired or invalid');
+        // Will trigger authentication failure handling
+        return false;
+      }
+      print('Token refresh error: $e');
+      return false;
     } catch (e) {
       print('Token refresh error: $e');
       return false;
     } finally {
       _isRefreshing = false;
+    }
+  }
+
+  /// Handle authentication failure by clearing tokens and notifying app
+  Future<void> _handleAuthenticationFailure() async {
+    // Clear all tokens
+    await _tokenStorage.clearTokens();
+
+    // Notify app to redirect to login
+    if (onAuthenticationFailed != null) {
+      onAuthenticationFailed!();
     }
   }
 
