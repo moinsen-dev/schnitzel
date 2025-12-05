@@ -119,6 +119,117 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 # =============================================================================
+# Environment Variable Validation
+# =============================================================================
+
+def validate_oauth_environment() -> None:
+    """Validate required OAuth environment variables at startup.
+
+    Checks for required environment variables based on enabled OAuth providers.
+    Raises SystemExit with clear error message if required variables are missing.
+
+    Required Variables (provider-specific):
+{% if oauth_config.has_google %}
+        - GOOGLE_CLIENT_ID (required for Google OAuth)
+        - GOOGLE_CLIENT_SECRET (required for Google OAuth)
+{% endif %}
+{% if oauth_config.has_apple %}
+        - APPLE_CLIENT_ID (required for Apple Sign In)
+        - APPLE_TEAM_ID (required for Apple Sign In)
+        - APPLE_KEY_ID (required for Apple Sign In)
+        - APPLE_PRIVATE_KEY (required for Apple Sign In)
+{% endif %}
+{% if oauth_config.has_magic_link %}
+        - MAGIC_LINK_SECRET (required for magic links)
+        - SMTP_HOST (required for sending magic link emails)
+        - SMTP_USER (required for SMTP authentication)
+        - SMTP_PASSWORD (required for SMTP authentication)
+{% endif %}
+
+    Usage:
+        Call this function during application startup:
+
+        >>> from .generated.auth.oauth import validate_oauth_environment
+        >>> validate_oauth_environment()
+    """
+    import sys
+    required_vars = []
+    missing_vars = []
+
+{% if oauth_config.has_google %}
+    # Google OAuth requirements
+    google_vars = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
+    required_vars.extend(google_vars)
+    for var in google_vars:
+        if not os.getenv(var):
+            missing_vars.append(var)
+{% endif %}
+
+{% if oauth_config.has_apple %}
+    # Apple Sign In requirements
+    apple_vars = ["APPLE_CLIENT_ID", "APPLE_TEAM_ID", "APPLE_KEY_ID", "APPLE_PRIVATE_KEY"]
+    required_vars.extend(apple_vars)
+    for var in apple_vars:
+        if not os.getenv(var):
+            missing_vars.append(var)
+{% endif %}
+
+{% if oauth_config.has_magic_link %}
+    # Magic link requirements
+    magic_vars = ["MAGIC_LINK_SECRET", "SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"]
+    required_vars.extend(magic_vars)
+    for var in magic_vars:
+        if not os.getenv(var):
+            missing_vars.append(var)
+{% endif %}
+
+    if missing_vars:
+        error_msg = [
+            "\n" + "=" * 70,
+            "OAUTH CONFIGURATION ERROR",
+            "=" * 70,
+            "\nMissing required environment variables for OAuth authentication:",
+            ""
+        ]
+        for var in missing_vars:
+            error_msg.append(f"  ✗ {var}")
+
+        error_msg.extend([
+            "\nRequired variables for configured providers:",
+            ""
+        ])
+        for var in required_vars:
+            status_symbol = "✓" if var not in missing_vars else "✗"
+            error_msg.append(f"  {status_symbol} {var}")
+
+        error_msg.extend([
+            "",
+            "Configured providers:",
+{% if oauth_config.has_google %}
+            "  - Google OAuth",
+{% endif %}
+{% if oauth_config.has_apple %}
+            "  - Apple Sign In",
+{% endif %}
+{% if oauth_config.has_magic_link %}
+            "  - Magic Link",
+{% endif %}
+            "",
+            "Please set these environment variables before starting the application.",
+            "=" * 70,
+            ""
+        ])
+
+        print("\n".join(error_msg), file=sys.stderr)
+        sys.exit(1)
+
+
+# Run validation on import (can be disabled by setting SKIP_OAUTH_VALIDATION=1)
+if not os.getenv("SKIP_OAUTH_VALIDATION"):
+    validate_oauth_environment()
+
+
+# =============================================================================
 # Pydantic Models
 # =============================================================================
 

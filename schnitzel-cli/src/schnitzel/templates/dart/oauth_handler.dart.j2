@@ -319,4 +319,200 @@ class OAuthHandler {
     }
   }
 {% endif %}
+
+  // =============================================================================
+  // Deep Linking for OAuth Callbacks (auth_127)
+  // =============================================================================
+
+  /// Handle deep link OAuth callback
+  ///
+  /// Processes OAuth callback from deep link (app link / universal link).
+  /// Extracts authorization code from the deep link URI and completes
+  /// the OAuth flow.
+  ///
+  /// Supports:
+  /// - App Links (Android)
+  /// - Universal Links (iOS)
+  /// - Custom URL schemes
+  ///
+  /// Expected deep link format:
+  /// - yourapp://auth/callback?code=AUTH_CODE&state=STATE
+  /// - https://yourapp.com/auth/callback?code=AUTH_CODE&state=STATE
+  ///
+  /// Args:
+  ///   uri: Deep link URI containing OAuth callback data
+  ///   provider: OAuth provider ('google', 'apple', 'github', etc.)
+  ///
+  /// Returns:
+  ///   AuthResult with tokens if successful, or error
+  ///
+  /// Example:
+  /// ```dart
+  /// // In your app's deep link handler:
+  /// final uri = Uri.parse('yourapp://auth/callback?code=xyz&state=abc');
+  /// final result = await oauthHandler.handleDeepLinkCallback(uri, 'google');
+  /// if (result.success) {
+  ///   // User authenticated successfully
+  ///   final accessToken = result.accessToken;
+  /// }
+  /// ```
+  Future<AuthResult> handleDeepLinkCallback(Uri uri, String provider) async {
+    try {
+      // Extract authorization code from query parameters
+      final code = uri.queryParameters['code'];
+      if (code == null || code.isEmpty) {
+        return AuthResult.failure('No authorization code in deep link');
+      }
+
+      // Extract state parameter (for CSRF validation)
+      final state = uri.queryParameters['state'];
+
+      // Check for error in callback
+      final error = uri.queryParameters['error'];
+      if (error != null) {
+        final errorDescription = uri.queryParameters['error_description'] ?? error;
+        return AuthResult.failure('OAuth error: $errorDescription');
+      }
+
+      // Route to appropriate provider handler based on provider name
+      switch (provider.toLowerCase()) {
+{% if auth_config.has_github %}
+        case 'github':
+          return await handleGitHubSignIn(code);
+{% endif %}
+{% if auth_config.has_discord %}
+        case 'discord':
+          return await handleDiscordSignIn(code);
+{% endif %}
+{% if auth_config.has_microsoft %}
+        case 'microsoft':
+          return await handleMicrosoftSignIn(code);
+{% endif %}
+{% if auth_config.has_google %}
+        case 'google':
+          // Google typically uses native SDK, but can support deep links
+          return await handleGoogleSignIn();
+{% endif %}
+{% if auth_config.has_apple %}
+        case 'apple':
+          // Apple typically uses native SDK, but can support deep links
+          return await handleAppleSignIn();
+{% endif %}
+        default:
+          return AuthResult.failure('Unsupported OAuth provider: $provider');
+      }
+    } catch (e) {
+      return AuthResult.failure('Deep link callback error: $e');
+    }
+  }
+
+  /// Parse deep link URI to extract OAuth callback data
+  ///
+  /// Extracts and validates OAuth callback parameters from a deep link URI.
+  ///
+  /// Returns a map with:
+  /// - code: Authorization code
+  /// - state: State parameter (for CSRF validation)
+  /// - error: Error code (if present)
+  /// - error_description: Error description (if present)
+  ///
+  /// Returns null if URI is invalid or missing required parameters.
+  Map<String, String>? parseOAuthDeepLink(Uri uri) {
+    try {
+      // Check if this is an OAuth callback deep link
+      // Expected paths: /auth/callback, /oauth/callback, etc.
+      if (!uri.path.contains('auth') && !uri.path.contains('oauth')) {
+        return null;
+      }
+
+      // Extract query parameters
+      final code = uri.queryParameters['code'];
+      final state = uri.queryParameters['state'];
+      final error = uri.queryParameters['error'];
+      final errorDescription = uri.queryParameters['error_description'];
+
+      // Must have either code or error
+      if (code == null && error == null) {
+        return null;
+      }
+
+      final result = <String, String>{};
+      if (code != null) result['code'] = code;
+      if (state != null) result['state'] = state;
+      if (error != null) result['error'] = error;
+      if (errorDescription != null) result['error_description'] = errorDescription;
+
+      return result;
+    } catch (e) {
+      print('Error parsing OAuth deep link: $e');
+      return null;
+    }
+  }
+
+  /// Extract provider name from deep link
+  ///
+  /// Attempts to determine the OAuth provider from the deep link URI.
+  ///
+  /// Checks:
+  /// - Query parameter 'provider'
+  /// - Path segments (e.g., /auth/google/callback)
+  /// - State parameter encoding
+  ///
+  /// Returns provider name (e.g., 'google', 'github') or null if not found.
+  String? extractProviderFromDeepLink(Uri uri) {
+    // Check query parameter
+    final providerParam = uri.queryParameters['provider'];
+    if (providerParam != null && providerParam.isNotEmpty) {
+      return providerParam.toLowerCase();
+    }
+
+    // Check path segments (e.g., /auth/google/callback)
+    final pathSegments = uri.pathSegments;
+    for (final segment in pathSegments) {
+      final lowerSegment = segment.toLowerCase();
+      if (lowerSegment == 'google' ||
+          lowerSegment == 'apple' ||
+          lowerSegment == 'github' ||
+          lowerSegment == 'microsoft' ||
+          lowerSegment == 'discord') {
+        return lowerSegment;
+      }
+    }
+
+    // Could not determine provider
+    return null;
+  }
+
+  /// Check if URI is an OAuth deep link callback
+  ///
+  /// Returns true if the URI appears to be an OAuth callback deep link.
+  bool isOAuthDeepLink(Uri uri) {
+    // Check if path contains auth/oauth keywords
+    final hasAuthPath = uri.path.contains('auth') || uri.path.contains('oauth');
+
+    // Check if has required OAuth parameters
+    final hasCode = uri.queryParameters.containsKey('code');
+    final hasError = uri.queryParameters.containsKey('error');
+
+    return hasAuthPath && (hasCode || hasError);
+  }
+
+  /// Handle deep link with automatic provider detection
+  ///
+  /// Convenience method that automatically detects the OAuth provider
+  /// from the deep link URI and handles the callback.
+  ///
+  /// Returns AuthResult or null if URI is not an OAuth callback.
+  Future<AuthResult?> handleDeepLinkAuto(Uri uri) async {
+    if (!isOAuthDeepLink(uri)) {
+      return null;
+    }
+
+    final provider = extractProviderFromDeepLink(uri);
+    if (provider == null) {
+      return AuthResult.failure('Could not determine OAuth provider from deep link');
+    }
+
+    return await handleDeepLinkCallback(uri, provider);
+  }
 }

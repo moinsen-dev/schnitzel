@@ -1,5 +1,7 @@
 """Generated JWT authentication utilities from Schnitzel schema."""
 
+import os
+import sys
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 {% if jwt_config.algorithm.startswith('RS') or jwt_config.algorithm.startswith('ES') %}
@@ -45,6 +47,142 @@ jwt_config = JWTConfig()
 
 # Security scheme for FastAPI dependency
 security = HTTPBearer()
+
+
+# =============================================================================
+# Environment Variable Validation
+# =============================================================================
+
+def validate_jwt_environment() -> None:
+    """Validate required JWT environment variables at startup.
+
+    Checks for required environment variables based on JWT algorithm configuration.
+    Raises SystemExit with clear error message if required variables are missing.
+
+    Required Variables:
+        - JWT_SECRET (required for HS256, HS384, HS512 algorithms)
+{% if jwt_config.algorithm.startswith('RS') or jwt_config.algorithm.startswith('ES') %}
+        - JWT_PRIVATE_KEY_PATH (required for {{ jwt_config.algorithm }} algorithm)
+        - JWT_PUBLIC_KEY_PATH (required for {{ jwt_config.algorithm }} algorithm)
+{% endif %}
+        - REDIS_URL (required for token revocation, optional otherwise)
+
+    Usage:
+        Call this function during application startup:
+
+        >>> # In main.py or app initialization
+        >>> from .generated.auth.jwt import validate_jwt_environment
+        >>> validate_jwt_environment()
+
+        Or use as a FastAPI lifespan event:
+
+        >>> from fastapi import FastAPI
+        >>> from contextlib import asynccontextmanager
+        >>>
+        >>> @asynccontextmanager
+        >>> async def lifespan(app: FastAPI):
+        >>>     validate_jwt_environment()
+        >>>     yield
+        >>>
+        >>> app = FastAPI(lifespan=lifespan)
+    """
+    required_vars = []
+    missing_vars = []
+
+{% if jwt_config.algorithm in ['HS256', 'HS384', 'HS512'] %}
+    # HS256/384/512 requires JWT_SECRET
+    required_vars.append("JWT_SECRET")
+    if not os.getenv("JWT_SECRET"):
+        missing_vars.append("JWT_SECRET")
+{% endif %}
+
+{% if jwt_config.algorithm.startswith('RS') or jwt_config.algorithm.startswith('ES') %}
+    # RS256/ES256 require key file paths
+    required_vars.extend(["JWT_PRIVATE_KEY_PATH", "JWT_PUBLIC_KEY_PATH"])
+    if not os.getenv("JWT_PRIVATE_KEY_PATH"):
+        missing_vars.append("JWT_PRIVATE_KEY_PATH")
+    if not os.getenv("JWT_PUBLIC_KEY_PATH"):
+        missing_vars.append("JWT_PUBLIC_KEY_PATH")
+{% endif %}
+
+    if missing_vars:
+        error_msg = [
+            "\n" + "=" * 70,
+            "JWT CONFIGURATION ERROR",
+            "=" * 70,
+            "\nMissing required environment variables for JWT authentication:",
+            ""
+        ]
+        for var in missing_vars:
+            error_msg.append(f"  ✗ {var}")
+
+        error_msg.extend([
+            "\nRequired variables for algorithm {{ jwt_config.algorithm }}:",
+            ""
+        ])
+        for var in required_vars:
+            status_symbol = "✓" if var not in missing_vars else "✗"
+            error_msg.append(f"  {status_symbol} {var}")
+
+        error_msg.extend([
+            "",
+            "Please set these environment variables before starting the application:",
+            ""
+        ])
+
+{% if jwt_config.algorithm in ['HS256', 'HS384', 'HS512'] %}
+        error_msg.extend([
+            "  # Generate a secure random secret:",
+            "  export JWT_SECRET=$(openssl rand -hex 32)",
+            ""
+        ])
+{% endif %}
+
+{% if jwt_config.algorithm.startswith('RS') %}
+        error_msg.extend([
+            "  # Generate RSA key pair for {{ jwt_config.algorithm }}:",
+            "  mkdir -p keys",
+            "  openssl genrsa -out keys/private.pem 2048",
+            "  openssl rsa -in keys/private.pem -pubout -out keys/public.pem",
+            "  export JWT_PRIVATE_KEY_PATH=keys/private.pem",
+            "  export JWT_PUBLIC_KEY_PATH=keys/public.pem",
+            ""
+        ])
+{% endif %}
+
+{% if jwt_config.algorithm.startswith('ES') %}
+        error_msg.extend([
+            "  # Generate ECDSA key pair for {{ jwt_config.algorithm }}:",
+            "  mkdir -p keys",
+{% if jwt_config.algorithm == 'ES256' %}
+            "  openssl ecparam -name prime256v1 -genkey -noout -out keys/private_ec.pem",
+{% elif jwt_config.algorithm == 'ES384' %}
+            "  openssl ecparam -name secp384r1 -genkey -noout -out keys/private_ec.pem",
+{% elif jwt_config.algorithm == 'ES512' %}
+            "  openssl ecparam -name secp521r1 -genkey -noout -out keys/private_ec.pem",
+{% endif %}
+            "  openssl ec -in keys/private_ec.pem -pubout -out keys/public_ec.pem",
+            "  export JWT_PRIVATE_KEY_PATH=keys/private_ec.pem",
+            "  export JWT_PUBLIC_KEY_PATH=keys/public_ec.pem",
+            ""
+        ])
+{% endif %}
+
+        error_msg.extend([
+            "Optional (for token revocation):",
+            "  export REDIS_URL=redis://localhost:6379/0",
+            "",
+            "=" * 70,
+            ""
+        ])
+
+        print("\n".join(error_msg), file=sys.stderr)
+        sys.exit(1)
+
+
+# Run validation on import (can be disabled by setting SKIP_JWT_VALIDATION=1)
+if not os.getenv("SKIP_JWT_VALIDATION"):
+    validate_jwt_environment()
 
 {% if jwt_config.algorithm.startswith('RS') %}
 # =============================================================================

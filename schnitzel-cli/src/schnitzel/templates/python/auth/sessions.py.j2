@@ -32,6 +32,12 @@ class SessionConfig:
     {% else %}
     remember_me_duration: Optional[int] = None
     {% endif %}
+    {% if session_config.max_concurrent_sessions %}
+    max_concurrent_sessions: Optional[int] = {{ session_config.max_concurrent_sessions }}  # auth_123
+    {% else %}
+    max_concurrent_sessions: Optional[int] = None  # auth_123: unlimited by default
+    {% endif %}
+    enable_hijacking_protection: bool = {{ session_config.enable_hijacking_protection | default(True) | string | capitalize }}  # auth_124
 
 
 # Default configuration
@@ -195,6 +201,38 @@ class SessionStore:
         # Store in Redis with TTL
         key = self._get_session_key(session_id)
         try:
+            {% if session_config.multi_device %}
+            # Check concurrent session limit (auth_123)
+            if session_config.max_concurrent_sessions:
+                user_sessions_key = f"user_sessions:{user_id}"
+                current_sessions = self.redis.smembers(user_sessions_key)
+                # Filter out expired sessions
+                active_sessions = [
+                    sid for sid in current_sessions
+                    if self.redis.exists(self._get_session_key(sid))
+                ]
+
+                # If limit exceeded, invalidate oldest session
+                if len(active_sessions) >= session_config.max_concurrent_sessions:
+                    # Find oldest session by created_at timestamp
+                    oldest_session_id = None
+                    oldest_timestamp = None
+
+                    for sid in active_sessions:
+                        session_key = self._get_session_key(sid)
+                        session_json = self.redis.get(session_key)
+                        if session_json:
+                            data = json.loads(session_json)
+                            created_at = data.get("created_at")
+                            if oldest_timestamp is None or (created_at and created_at < oldest_timestamp):
+                                oldest_timestamp = created_at
+                                oldest_session_id = sid
+
+                    # Delete oldest session
+                    if oldest_session_id:
+                        self.delete_session(oldest_session_id)
+            {% endif %}
+
             self.redis.setex(key, ttl, json.dumps(session_data))
 
             {% if session_config.multi_device %}
@@ -210,7 +248,7 @@ class SessionStore:
 
         return session_id
 
-    def get_session(self, session_id: str, include_expiry_info: bool = False) -> Optional[Dict[str, Any]]:
+    def get_session(self, session_id: str, include_expiry_info: bool = False, current_ip: Optional[str] = None, current_user_agent: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Retrieve session data by session ID.
 
         If sliding_window is enabled, automatically refreshes the session TTL
@@ -221,13 +259,21 @@ class SessionStore:
         seconds remaining before session expires. Useful for showing timeout
         warnings to users.
 
+        Session hijacking protection (auth_124):
+        When enable_hijacking_protection is True and current_ip/current_user_agent
+        are provided, validates consistency with stored values. Sets warning flags
+        if inconsistencies are detected.
+
         Args:
             session_id: Session identifier
             include_expiry_info: If True, include time_until_expiry in response (auth_110)
+            current_ip: Current request IP address for hijacking detection (auth_124)
+            current_user_agent: Current request User-Agent for hijacking detection (auth_124)
 
         Returns:
             Session data as dictionary, or None if session not found or expired
             If include_expiry_info=True, includes 'time_until_expiry' (seconds)
+            If hijacking_protection enabled, may include 'security_warning' flag
 
         Example:
             >>> data = store.get_session("abc123...")
@@ -237,6 +283,10 @@ class SessionStore:
             >>> data = store.get_session("abc123...", include_expiry_info=True)
             >>> if data:
             ...     print(f"Session expires in {data['time_until_expiry']} seconds")
+            >>> # With hijacking protection
+            >>> data = store.get_session("abc123...", current_ip="192.168.1.1", current_user_agent="Mozilla/5.0...")
+            >>> if data and data.get("security_warning"):
+            ...     print(f"Security warning: {data['security_warning']}")
         """
         key = self._get_session_key(session_id)
 
@@ -252,6 +302,25 @@ class SessionStore:
 
             # Parse session data
             session_data = json.loads(session_json)
+
+            # Session hijacking protection (auth_124)
+            if session_config.enable_hijacking_protection:
+                security_warnings = []
+
+                # Check IP address consistency
+                if current_ip and "ip_address" in session_data:
+                    if current_ip != session_data["ip_address"]:
+                        security_warnings.append(f"IP address changed from {session_data['ip_address']} to {current_ip}")
+
+                # Check User-Agent consistency
+                if current_user_agent and "user_agent" in session_data:
+                    if current_user_agent != session_data["user_agent"]:
+                        security_warnings.append(f"User-Agent changed")
+
+                # Add security warnings to session data
+                if security_warnings:
+                    session_data["security_warning"] = "; ".join(security_warnings)
+                    session_data["requires_reauth"] = True  # Flag for potential re-authentication
 
             # Update last accessed and last activity timestamps (auth_109)
             session_data["last_accessed"] = datetime.utcnow().isoformat()
@@ -673,6 +742,26 @@ class DatabaseSessionStore:
 
         db = self.SessionLocal()
         try:
+            {% if session_config.multi_device %}
+            # Check concurrent session limit (auth_123)
+            if session_config.max_concurrent_sessions:
+                active_count = db.query(SessionModel).filter(
+                    SessionModel.user_id == user_id,
+                    SessionModel.expires_at > datetime.utcnow()
+                ).count()
+
+                if active_count >= session_config.max_concurrent_sessions:
+                    # Delete oldest session
+                    oldest = db.query(SessionModel).filter(
+                        SessionModel.user_id == user_id,
+                        SessionModel.expires_at > datetime.utcnow()
+                    ).order_by(SessionModel.created_at.asc()).first()
+
+                    if oldest:
+                        db.delete(oldest)
+                        db.commit()
+            {% endif %}
+
             session_model = SessionModel(
                 id=session_id,
                 user_id=user_id,
@@ -686,12 +775,14 @@ class DatabaseSessionStore:
         finally:
             db.close()
 
-    def get_session(self, session_id: str, include_expiry_info: bool = False) -> Optional[Dict[str, Any]]:
+    def get_session(self, session_id: str, include_expiry_info: bool = False, current_ip: Optional[str] = None, current_user_agent: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Retrieve session from database.
 
         Args:
             session_id: Session identifier
             include_expiry_info: If True, include time_until_expiry (auth_110)
+            current_ip: Current request IP address for hijacking detection (auth_124)
+            current_user_agent: Current request User-Agent for hijacking detection (auth_124)
 
         Returns:
             Session data or None if not found/expired
@@ -707,6 +798,26 @@ class DatabaseSessionStore:
                 return None
 
             session_data = json.loads(session_model.data)
+
+            # Session hijacking protection (auth_124)
+            if session_config.enable_hijacking_protection:
+                security_warnings = []
+
+                # Check IP address consistency
+                if current_ip and "ip_address" in session_data:
+                    if current_ip != session_data["ip_address"]:
+                        security_warnings.append(f"IP address changed from {session_data['ip_address']} to {current_ip}")
+
+                # Check User-Agent consistency
+                if current_user_agent and "user_agent" in session_data:
+                    if current_user_agent != session_data["user_agent"]:
+                        security_warnings.append(f"User-Agent changed")
+
+                # Add security warnings to session data
+                if security_warnings:
+                    session_data["security_warning"] = "; ".join(security_warnings)
+                    session_data["requires_reauth"] = True  # Flag for potential re-authentication
+
             session_data["last_accessed"] = datetime.utcnow().isoformat()
             session_data["last_activity"] = datetime.utcnow().isoformat()  # auth_109
 
@@ -1016,6 +1127,30 @@ class MemorySessionStore:
         expires_at = datetime.utcnow() + timedelta(seconds=ttl)
         session_data["_expires_at"] = expires_at.isoformat()
 
+        {% if session_config.multi_device %}
+        # Check concurrent session limit (auth_123)
+        if session_config.max_concurrent_sessions:
+            if user_id in self._user_sessions:
+                active_sessions = [
+                    sid for sid in self._user_sessions[user_id]
+                    if sid in self._sessions and datetime.fromisoformat(self._sessions[sid]["_expires_at"]) > datetime.utcnow()
+                ]
+
+                if len(active_sessions) >= session_config.max_concurrent_sessions:
+                    # Find and delete oldest session
+                    oldest_session_id = None
+                    oldest_timestamp = None
+
+                    for sid in active_sessions:
+                        created_at = self._sessions[sid].get("created_at")
+                        if oldest_timestamp is None or (created_at and created_at < oldest_timestamp):
+                            oldest_timestamp = created_at
+                            oldest_session_id = sid
+
+                    if oldest_session_id:
+                        self.delete_session(oldest_session_id)
+        {% endif %}
+
         self._sessions[session_id] = session_data
 
         {% if session_config.multi_device %}
@@ -1027,12 +1162,14 @@ class MemorySessionStore:
 
         return session_id
 
-    def get_session(self, session_id: str, include_expiry_info: bool = False) -> Optional[Dict[str, Any]]:
+    def get_session(self, session_id: str, include_expiry_info: bool = False, current_ip: Optional[str] = None, current_user_agent: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Retrieve session from memory.
 
         Args:
             session_id: Session identifier
             include_expiry_info: If True, include time_until_expiry (auth_110)
+            current_ip: Current request IP address for hijacking detection (auth_124)
+            current_user_agent: Current request User-Agent for hijacking detection (auth_124)
 
         Returns:
             Session data or None if not found/expired
@@ -1047,6 +1184,25 @@ class MemorySessionStore:
             # Session expired, remove it
             self.delete_session(session_id)
             return None
+
+        # Session hijacking protection (auth_124)
+        if session_config.enable_hijacking_protection:
+            security_warnings = []
+
+            # Check IP address consistency
+            if current_ip and "ip_address" in session_data:
+                if current_ip != session_data["ip_address"]:
+                    security_warnings.append(f"IP address changed from {session_data['ip_address']} to {current_ip}")
+
+            # Check User-Agent consistency
+            if current_user_agent and "user_agent" in session_data:
+                if current_user_agent != session_data["user_agent"]:
+                    security_warnings.append(f"User-Agent changed")
+
+            # Add security warnings to session data
+            if security_warnings:
+                session_data["security_warning"] = "; ".join(security_warnings)
+                session_data["requires_reauth"] = True  # Flag for potential re-authentication
 
         # Update last accessed and last activity (auth_109)
         session_data["last_accessed"] = datetime.utcnow().isoformat()

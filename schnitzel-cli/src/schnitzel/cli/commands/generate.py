@@ -23,6 +23,12 @@ from schnitzel.generators.python.main import FastAPIMainGenerator
 from schnitzel.generators.python.models import PythonModelGenerator
 from schnitzel.generators.python.orm import SQLAlchemyORMGenerator
 from schnitzel.generators.python.routes import PythonRouteGenerator
+from schnitzel.generators.python.auth.jwt import JWTAuthGenerator
+from schnitzel.generators.python.auth.oauth import OAuthIntegrationGenerator
+from schnitzel.generators.python.auth.rbac import RBACPermissionGenerator
+from schnitzel.generators.python.auth.sessions import SessionManagementGenerator
+from schnitzel.generators.python.auth.mfa import MFAGenerator
+from schnitzel.generators.python.auth.migrations import AuthMigrationGenerator
 from schnitzel.generators.dart.models import DartModelGenerator
 from schnitzel.generators.dart.api_client import DartApiClientGenerator
 from schnitzel.utils.logging import get_logger
@@ -532,6 +538,148 @@ def _generate_dart_api_client(schema, output_dir: Path, schema_path: Path, force
     }
 
 
+def _generate_auth(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> list[dict]:
+    """Generate authentication utilities based on schema configuration.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        List of dictionaries with file info for each generated auth file
+    """
+    generated_files = []
+
+    # Check if auth is configured in schema
+    if not schema.auth:
+        if not dry_run and not _is_quiet_mode():
+            console.print("[yellow]No auth configuration found in schema - skipping auth generation[/yellow]")
+        return generated_files
+
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating authentication utilities...[/blue]")
+
+    # Determine output path: output_dir/backend/app/generated/auth
+    auth_output_dir = output_dir / "backend" / "app" / "generated" / "auth"
+
+    # Generate JWT if JWT config exists
+    if hasattr(schema.auth, 'jwt') and schema.auth.jwt:
+        jwt_file = auth_output_dir / "jwt.py"
+        if jwt_file.exists() and not force and not dry_run:
+            console.print(f"[yellow]Warning: {jwt_file} already exists. Use --force to overwrite.[/yellow]")
+        else:
+            if not dry_run:
+                try:
+                    generator = JWTAuthGenerator()
+                    output_file, size = generator.generate_to_file(schema, auth_output_dir, schema_source=schema_path.name, dry_run=dry_run)
+                    if not _is_quiet_mode():
+                        console.print(f"[green]✓ Generated backend/app/generated/auth/jwt.py[/green]")
+                    generated_files.append({'path': output_file, 'size': size, 'type': 'auth_jwt'})
+                except Exception as e:
+                    console.print(f"[red]✗ Failed to generate JWT auth:[/red] {e}")
+            else:
+                generated_files.append({'path': jwt_file, 'size': 0, 'type': 'auth_jwt'})
+
+    # Generate OAuth if providers are configured
+    if hasattr(schema.auth, 'providers') and schema.auth.providers:
+        oauth_file = auth_output_dir / "oauth.py"
+        if oauth_file.exists() and not force and not dry_run:
+            console.print(f"[yellow]Warning: {oauth_file} already exists. Use --force to overwrite.[/yellow]")
+        else:
+            if not dry_run:
+                try:
+                    generator = OAuthIntegrationGenerator()
+                    output_file, size = generator.generate_to_file(schema, auth_output_dir, schema_source=schema_path.name, dry_run=dry_run)
+                    if not _is_quiet_mode():
+                        console.print(f"[green]✓ Generated backend/app/generated/auth/oauth.py[/green]")
+                    generated_files.append({'path': output_file, 'size': size, 'type': 'auth_oauth'})
+                except Exception as e:
+                    console.print(f"[red]✗ Failed to generate OAuth:[/red] {e}")
+            else:
+                generated_files.append({'path': oauth_file, 'size': 0, 'type': 'auth_oauth'})
+
+    # Generate RBAC if roles are configured
+    if schema.roles:
+        rbac_file = auth_output_dir / "rbac.py"
+        if rbac_file.exists() and not force and not dry_run:
+            console.print(f"[yellow]Warning: {rbac_file} already exists. Use --force to overwrite.[/yellow]")
+        else:
+            if not dry_run:
+                try:
+                    generator = RBACPermissionGenerator()
+                    output_file, size = generator.generate_to_file(schema, auth_output_dir, schema_source=schema_path.name, dry_run=dry_run)
+                    if not _is_quiet_mode():
+                        console.print(f"[green]✓ Generated backend/app/generated/auth/rbac.py[/green]")
+                    generated_files.append({'path': output_file, 'size': size, 'type': 'auth_rbac'})
+                except Exception as e:
+                    console.print(f"[red]✗ Failed to generate RBAC:[/red] {e}")
+            else:
+                generated_files.append({'path': rbac_file, 'size': 0, 'type': 'auth_rbac'})
+
+    # Generate sessions if session config exists
+    if hasattr(schema.auth, 'session') and schema.auth.session:
+        sessions_file = auth_output_dir / "sessions.py"
+        if sessions_file.exists() and not force and not dry_run:
+            console.print(f"[yellow]Warning: {sessions_file} already exists. Use --force to overwrite.[/yellow]")
+        else:
+            if not dry_run:
+                try:
+                    generator = SessionManagementGenerator()
+                    output_file, size = generator.generate_to_file(schema, auth_output_dir, schema_source=schema_path.name, dry_run=dry_run)
+                    if not _is_quiet_mode():
+                        console.print(f"[green]✓ Generated backend/app/generated/auth/sessions.py[/green]")
+                    generated_files.append({'path': output_file, 'size': size, 'type': 'auth_sessions'})
+                except Exception as e:
+                    console.print(f"[red]✗ Failed to generate sessions:[/red] {e}")
+            else:
+                generated_files.append({'path': sessions_file, 'size': 0, 'type': 'auth_sessions'})
+
+    # Generate MFA if MFA config exists and is enabled
+    if hasattr(schema.auth, 'mfa') and schema.auth.mfa and schema.auth.mfa.enabled:
+        mfa_file = auth_output_dir / "mfa.py"
+        if mfa_file.exists() and not force and not dry_run:
+            console.print(f"[yellow]Warning: {mfa_file} already exists. Use --force to overwrite.[/yellow]")
+        else:
+            if not dry_run:
+                try:
+                    generator = MFAGenerator()
+                    output_file, size = generator.generate_to_file(schema, auth_output_dir, schema_source=schema_path.name, dry_run=dry_run)
+                    if not _is_quiet_mode():
+                        console.print(f"[green]✓ Generated backend/app/generated/auth/mfa.py[/green]")
+                    generated_files.append({'path': output_file, 'size': size, 'type': 'auth_mfa'})
+                except Exception as e:
+                    console.print(f"[red]✗ Failed to generate MFA:[/red] {e}")
+            else:
+                generated_files.append({'path': mfa_file, 'size': 0, 'type': 'auth_mfa'})
+
+    # Generate auth migration if auth is configured
+    # This creates an Alembic migration to add auth fields to the user table
+    if schema.auth or schema.roles:
+        migration_dir = output_dir / "backend" / "alembic" / "versions"
+        migration_file_prefix = f"auth_{datetime.now().strftime('%Y%m%d%H%M%S')}_add_auth_fields.py"
+        migration_file = migration_dir / migration_file_prefix
+
+        if not dry_run:
+            try:
+                generator = AuthMigrationGenerator()
+                output_file, size = generator.generate_to_file(schema, migration_dir, dry_run=dry_run)
+                if not _is_quiet_mode():
+                    console.print(f"[green]✓ Generated auth migration: {output_file.name}[/green]")
+                generated_files.append({'path': output_file, 'size': size, 'type': 'auth_migration'})
+            except Exception as e:
+                # Migration generation is optional - don't fail if alembic dir doesn't exist yet
+                if not _is_quiet_mode():
+                    console.print(f"[yellow]Note: Skipped auth migration generation:[/yellow] {e}")
+                    console.print(f"[dim]  You can generate migrations later using 'schnitzel migrate create'[/dim]")
+        else:
+            generated_files.append({'path': migration_file, 'size': 0, 'type': 'auth_migration'})
+
+    return generated_files
+
+
 def _generate_docker(
     schema_path: Path,
     output_dir: Path,
@@ -685,7 +833,7 @@ def _run_generation(
                         console.print(f"  - {model_name}.{field_name}")
 
         # Validate target option - support both 'flutter' and 'dart'
-        valid_targets = ["all", "docker", "python", "dart", "flutter"]
+        valid_targets = ["all", "docker", "python", "dart", "flutter", "auth"]
         if target not in valid_targets:
             console.print(f"[red]Error: Invalid target '{target}'[/red]")
             console.print(f"  Valid targets: {', '.join(valid_targets)}")
@@ -702,13 +850,15 @@ def _run_generation(
         # Count total generation steps for progress tracking
         generation_steps = []
         if target == "python":
-            generation_steps = ["python", "orm", "routes", "main"]
+            generation_steps = ["python", "orm", "routes", "main", "auth"]
         elif target == "dart":
             generation_steps = ["dart", "dart_api"]
         elif target == "docker":
             generation_steps = ["docker"]
+        elif target == "auth":
+            generation_steps = ["auth"]
         elif target == "all":
-            generation_steps = ["python", "orm", "routes", "main", "dart", "dart_api", "docker"]
+            generation_steps = ["python", "orm", "routes", "main", "auth", "dart", "dart_api", "docker"]
 
         # Handle dry-run mode
         if dry_run:
@@ -786,6 +936,11 @@ def _run_generation(
                         result['size'] = len(content.encode('utf-8'))
                         generated_files.append(result)
                         total_size += result['size']
+                elif step == "auth":
+                    auth_results = _generate_auth(schema, output_path, schema_path, force, dry_run)
+                    for result in auth_results:
+                        generated_files.append(result)
+                        total_size += result['size']
 
             # Display each file
             if not _is_quiet_mode():
@@ -798,7 +953,13 @@ def _run_generation(
                         'main': 'FastAPI main.py',
                         'dart': 'Dart models',
                         'dart_api': 'Dart API client',
-                        'docker': 'Docker Compose'
+                        'docker': 'Docker Compose',
+                        'auth_jwt': 'JWT Authentication',
+                        'auth_oauth': 'OAuth Integration',
+                        'auth_rbac': 'RBAC Permissions',
+                        'auth_sessions': 'Session Management',
+                        'auth_mfa': 'Multi-Factor Auth',
+                        'auth_migration': 'Auth Database Migration'
                     }.get(file_info['type'], file_info['type'])
                     console.print(f"    Type: {type_display}")
 
@@ -886,6 +1047,10 @@ def _run_generation(
                             result = _generate_docker(schema_path, output_path, force, dry_run, schema=schema)
                             if result:
                                 generated_files.append(result['path'])
+                        elif step == "auth":
+                            auth_results = _generate_auth(schema, output_path, schema_path, force, dry_run)
+                            for result in auth_results:
+                                generated_files.append(result['path'])
 
                         progress.update(gen_task, completed=idx + 1)
 
@@ -936,6 +1101,10 @@ def _run_generation(
                     elif step == "docker":
                         result = _generate_docker(schema_path, output_path, force, dry_run, schema=schema)
                         if result:
+                            generated_files.append(result['path'])
+                    elif step == "auth":
+                        auth_results = _generate_auth(schema, output_path, schema_path, force, dry_run)
+                        for result in auth_results:
                             generated_files.append(result['path'])
             except (PermissionError, IOError, OSError) as e:
                 _cleanup_files(generated_files)
@@ -998,7 +1167,7 @@ def generate_command(
         "all",
         "--target",
         "-t",
-        help="What to generate: all, python, flutter, docker",
+        help="What to generate: all, python, flutter, auth, docker",
     ),
     output_dir: str = typer.Option(
         ".",

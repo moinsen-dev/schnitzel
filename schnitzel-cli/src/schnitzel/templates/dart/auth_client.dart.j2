@@ -97,6 +97,175 @@ class AuthClient {
     return _currentAccessToken;
   }
 
+  // =============================================================================
+  // Offline Token Validation (auth_126)
+  // =============================================================================
+
+  /// Validate JWT token locally without server call
+  ///
+  /// Performs client-side validation by checking:
+  /// - Token expiry time
+  /// - Token structure (header.payload.signature)
+  /// - Basic format validation
+  ///
+  /// Note: This does NOT verify the signature. For full security,
+  /// use server-side validation. This is useful for:
+  /// - Checking if token is expired before making API calls
+  /// - Offline detection of invalid tokens
+  /// - Quick validation without network request
+  ///
+  /// Returns true if token appears valid (not expired, proper format)
+  bool isTokenValid(String? token) {
+    if (token == null || token.isEmpty) {
+      return false;
+    }
+
+    try {
+      // Parse JWT token (header.payload.signature)
+      final parts = token.split('.');
+      if (parts.length != 3) {
+        // Invalid JWT format
+        return false;
+      }
+
+      // Decode payload (base64url)
+      final payload = parts[1];
+      final normalizedPayload = base64Url.normalize(payload);
+      final payloadBytes = base64Url.decode(normalizedPayload);
+      final payloadStr = utf8.decode(payloadBytes);
+      final payloadJson = jsonDecode(payloadStr) as Map<String, dynamic>;
+
+      // Check expiry claim (exp)
+      final exp = payloadJson['exp'];
+      if (exp == null) {
+        // No expiry claim - treat as invalid
+        return false;
+      }
+
+      // Convert exp to DateTime
+      final expiryTime = DateTime.fromMillisecondsSinceEpoch(
+        (exp as int) * 1000, // exp is in seconds, convert to milliseconds
+        isUtc: true,
+      );
+
+      // Check if token is expired
+      final now = DateTime.now().toUtc();
+      if (now.isAfter(expiryTime)) {
+        // Token is expired
+        return false;
+      }
+
+      // Token appears valid (not expired, proper format)
+      return true;
+    } catch (e) {
+      // Error parsing token - treat as invalid
+      print('Token validation error: $e');
+      return false;
+    }
+  }
+
+  /// Check if current access token is valid (not expired)
+  ///
+  /// Returns true if the stored access token exists and is not expired.
+  /// Does not verify signature - only checks expiry locally.
+  Future<bool> isAccessTokenValid() async {
+    final token = await getAccessToken();
+    return isTokenValid(token);
+  }
+
+  /// Check if current refresh token is valid (not expired)
+  ///
+  /// Returns true if the stored refresh token exists and is not expired.
+  /// Does not verify signature - only checks expiry locally.
+  Future<bool> isRefreshTokenValid() async {
+    final token = await getRefreshToken();
+    return isTokenValid(token);
+  }
+
+  /// Get token expiry time
+  ///
+  /// Extracts the expiry time (exp claim) from a JWT token without
+  /// making a server request.
+  ///
+  /// Returns null if token is invalid or has no expiry claim.
+  DateTime? getTokenExpiry(String? token) {
+    if (token == null || token.isEmpty) {
+      return null;
+    }
+
+    try {
+      // Parse JWT token
+      final parts = token.split('.');
+      if (parts.length != 3) {
+        return null;
+      }
+
+      // Decode payload
+      final payload = parts[1];
+      final normalizedPayload = base64Url.normalize(payload);
+      final payloadBytes = base64Url.decode(normalizedPayload);
+      final payloadStr = utf8.decode(payloadBytes);
+      final payloadJson = jsonDecode(payloadStr) as Map<String, dynamic>;
+
+      // Get expiry claim
+      final exp = payloadJson['exp'];
+      if (exp == null) {
+        return null;
+      }
+
+      // Convert to DateTime
+      return DateTime.fromMillisecondsSinceEpoch(
+        (exp as int) * 1000,
+        isUtc: true,
+      );
+    } catch (e) {
+      print('Error getting token expiry: $e');
+      return null;
+    }
+  }
+
+  /// Get time until token expires
+  ///
+  /// Returns null if token is invalid, expired, or has no expiry.
+  Duration? getTimeUntilExpiry(String? token) {
+    final expiry = getTokenExpiry(token);
+    if (expiry == null) {
+      return null;
+    }
+
+    final now = DateTime.now().toUtc();
+    if (now.isAfter(expiry)) {
+      // Token already expired
+      return null;
+    }
+
+    return expiry.difference(now);
+  }
+
+  /// Check if token will expire soon
+  ///
+  /// Returns true if token will expire within the specified duration.
+  /// Useful for proactive token refresh.
+  ///
+  /// Example:
+  /// ```dart
+  /// if (await willTokenExpireSoon(Duration(minutes: 5))) {
+  ///   // Refresh token before it expires
+  ///   await refreshToken();
+  /// }
+  /// ```
+  Future<bool> willTokenExpireSoon(Duration threshold) async {
+    final token = await getAccessToken();
+    final timeUntilExpiry = getTimeUntilExpiry(token);
+
+    if (timeUntilExpiry == null) {
+      // Token invalid or expired
+      return true;
+    }
+
+    return timeUntilExpiry <= threshold;
+  }
+
   /// Get current refresh token
   Future<String?> getRefreshToken() async {
     if (_currentRefreshToken != null) {

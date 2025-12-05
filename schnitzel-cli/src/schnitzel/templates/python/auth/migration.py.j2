@@ -1,0 +1,106 @@
+"""Add authentication fields to user table.
+
+Revision ID: {{ revision }}
+Revises: {{ down_revision or 'None' }}
+Create Date: {{ now().strftime('%Y-%m-%d %H:%M:%S') }}
+
+This migration adds authentication-related columns to support:
+{% if has_password_auth %}- Email/password authentication (password_hash)
+{% endif %}{% if has_mfa %}- Multi-factor authentication (mfa_secret, mfa_enabled, mfa_backup_codes)
+{% endif %}{% if has_rbac %}- Role-based access control (role)
+{% endif %}{% if has_oauth %}- OAuth provider integration (oauth_providers table)
+{% endif %}- Timestamps (created_at, updated_at)
+"""
+
+from alembic import op
+import sqlalchemy as sa
+{% if has_mfa %}from sqlalchemy.dialects.postgresql import JSONB
+{% endif %}
+
+# revision identifiers, used by Alembic.
+revision = '{{ revision }}'
+down_revision = {{ down_revision or 'None' }}
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    """Add authentication fields to {{ user_table_name }} table."""
+
+    # Add authentication columns to {{ user_table_name }} table
+{% if has_password_auth %}
+    # Password authentication
+    op.add_column('{{ user_table_name }}', sa.Column('password_hash', sa.String(length=255), nullable=True))
+{% endif %}
+
+{% if has_mfa %}
+    # Multi-factor authentication
+    op.add_column('{{ user_table_name }}', sa.Column('mfa_secret', sa.String(length=32), nullable=True))
+    op.add_column('{{ user_table_name }}', sa.Column('mfa_enabled', sa.Boolean(), nullable=False, server_default='false'))
+    op.add_column('{{ user_table_name }}', sa.Column('mfa_backup_codes', JSONB, nullable=True))
+{% endif %}
+
+{% if has_rbac %}
+    # Role-based access control
+    op.add_column('{{ user_table_name }}', sa.Column('role', sa.String(length=50), nullable=False, server_default='user'))
+{% endif %}
+
+    # Timestamps
+    op.add_column('{{ user_table_name }}', sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')))
+    op.add_column('{{ user_table_name }}', sa.Column('updated_at', sa.DateTime(), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP'), onupdate=sa.text('CURRENT_TIMESTAMP')))
+
+{% if has_oauth %}
+    # Create oauth_providers table for linking OAuth accounts
+    op.create_table(
+        'oauth_providers',
+        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('user_id', sa.Integer(), nullable=False),
+        sa.Column('provider', sa.String(length=50), nullable=False),
+        sa.Column('provider_user_id', sa.String(length=255), nullable=False),
+        sa.Column('provider_email', sa.String(length=255), nullable=True),
+        sa.Column('access_token', sa.Text(), nullable=True),
+        sa.Column('refresh_token', sa.Text(), nullable=True),
+        sa.Column('expires_at', sa.DateTime(), nullable=True),
+        sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
+        sa.Column('updated_at', sa.DateTime(), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP'), onupdate=sa.text('CURRENT_TIMESTAMP')),
+        sa.PrimaryKeyConstraint('id'),
+        sa.ForeignKeyConstraint(['user_id'], ['{{ user_table_name }}.id'], ondelete='CASCADE'),
+    )
+
+    # Create indexes for oauth_providers
+    op.create_index('idx_oauth_user_id', 'oauth_providers', ['user_id'])
+    op.create_index('idx_oauth_provider_user', 'oauth_providers', ['provider', 'provider_user_id'], unique=True)
+{% endif %}
+
+    # Create index on email if not exists (for faster lookups during auth)
+    # Note: This assumes email column exists in {{ user_table_name }}
+    op.create_index('idx_{{ user_table_name }}_email', '{{ user_table_name }}', ['email'], unique=True, postgresql_where=sa.text("email IS NOT NULL"))
+
+
+def downgrade() -> None:
+    """Remove authentication fields from {{ user_table_name }} table."""
+
+    # Remove indexes
+    op.drop_index('idx_{{ user_table_name }}_email', table_name='{{ user_table_name }}')
+
+{% if has_oauth %}
+    # Remove oauth_providers table
+    op.drop_index('idx_oauth_provider_user', table_name='oauth_providers')
+    op.drop_index('idx_oauth_user_id', table_name='oauth_providers')
+    op.drop_table('oauth_providers')
+{% endif %}
+
+    # Remove columns from {{ user_table_name }}
+    op.drop_column('{{ user_table_name }}', 'updated_at')
+    op.drop_column('{{ user_table_name }}', 'created_at')
+{% if has_rbac %}
+    op.drop_column('{{ user_table_name }}', 'role')
+{% endif %}
+{% if has_mfa %}
+    op.drop_column('{{ user_table_name }}', 'mfa_backup_codes')
+    op.drop_column('{{ user_table_name }}', 'mfa_enabled')
+    op.drop_column('{{ user_table_name }}', 'mfa_secret')
+{% endif %}
+{% if has_password_auth %}
+    op.drop_column('{{ user_table_name }}', 'password_hash')
+{% endif %}

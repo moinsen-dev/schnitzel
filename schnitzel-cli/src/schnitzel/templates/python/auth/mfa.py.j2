@@ -1552,3 +1552,366 @@ def disable_mfa(user_id: str, password: Optional[str] = None, totp_code: Optiona
     # Credentials verified - disable MFA
     disable_mfa_for_user(user_id)
     return True
+
+
+# =============================================================================
+# WebAuthn/FIDO2 Support (auth_125)
+# =============================================================================
+
+def start_webauthn_registration(user_id: str, username: str, display_name: Optional[str] = None) -> dict[str, Any]:
+    """Start WebAuthn/FIDO2 registration flow (auth_125).
+
+    Generates registration options that the client uses to create a new
+    WebAuthn credential (e.g., hardware security key, platform authenticator).
+
+    This is a stub implementation. For production use, integrate with a
+    WebAuthn library like py_webauthn or duo_universal.
+
+    Args:
+        user_id: Unique user identifier
+        username: Username for the credential
+        display_name: Optional display name for the user
+
+    Returns:
+        Dictionary containing:
+        - challenge: Base64-encoded random challenge
+        - rp_id: Relying Party ID (your domain)
+        - rp_name: Relying Party name (your app name)
+        - user_id: User identifier (base64-encoded)
+        - user_name: Username
+        - user_display_name: Display name
+        - timeout: Timeout in milliseconds
+        - attestation: Attestation preference
+        - pub_key_cred_params: Supported public key algorithms
+
+    Example:
+        >>> options = start_webauthn_registration("user-123", "alice@example.com", "Alice")
+        >>> # Send options to client for navigator.credentials.create()
+        >>> return {"publicKey": options}
+
+    Implementation notes:
+        - Install: pip install webauthn
+        - Use webauthn.generate_registration_options()
+        - Store challenge in session/Redis with short TTL (5 minutes)
+        - Challenge must be verified in complete_webauthn_registration()
+    """
+    # TODO: Generate registration options using WebAuthn library
+    # Example with py_webauthn:
+    # from webauthn import generate_registration_options
+    # from webauthn.helpers.structs import (
+    #     AuthenticatorSelectionCriteria,
+    #     UserVerificationRequirement,
+    # )
+    #
+    # options = generate_registration_options(
+    #     rp_id="example.com",
+    #     rp_name="My App",
+    #     user_id=user_id.encode('utf-8'),
+    #     user_name=username,
+    #     user_display_name=display_name or username,
+    #     timeout=60000,
+    #     attestation="none",
+    #     authenticator_selection=AuthenticatorSelectionCriteria(
+    #         user_verification=UserVerificationRequirement.PREFERRED
+    #     ),
+    # )
+    #
+    # # Store challenge for verification
+    # redis_client.setex(f"webauthn_challenge:{user_id}", 300, options.challenge)
+    #
+    # return options
+
+    raise NotImplementedError(
+        "WebAuthn registration requires integration with a WebAuthn library like py_webauthn. "
+        "See function docstring for implementation guide."
+    )
+
+
+def complete_webauthn_registration(user_id: str, credential_data: dict) -> bool:
+    """Complete WebAuthn/FIDO2 registration (auth_125).
+
+    Verifies the credential created by the client and stores it in the database.
+
+    Args:
+        user_id: Unique user identifier
+        credential_data: Credential data from navigator.credentials.create()
+            Should include: id, rawId, response (attestationObject, clientDataJSON), type
+
+    Returns:
+        True if registration successful, False otherwise
+
+    Example:
+        >>> # Client calls navigator.credentials.create() and sends result
+        >>> credential = {
+        ...     "id": "credential-id-base64",
+        ...     "rawId": "credential-id-bytes",
+        ...     "response": {
+        ...         "attestationObject": "...",
+        ...         "clientDataJSON": "..."
+        ...     },
+        ...     "type": "public-key"
+        ... }
+        >>> if complete_webauthn_registration("user-123", credential):
+        ...     print("WebAuthn credential registered!")
+
+    Implementation notes:
+        - Use webauthn.verify_registration_response()
+        - Retrieve challenge from session/Redis
+        - Verify signature and attestation
+        - Store credential ID, public key, counter in database
+        - Table schema: user_id, credential_id, public_key, counter, created_at
+    """
+    # TODO: Verify registration response using WebAuthn library
+    # Example with py_webauthn:
+    # from webauthn import verify_registration_response
+    #
+    # # Retrieve stored challenge
+    # challenge = redis_client.get(f"webauthn_challenge:{user_id}")
+    # if not challenge:
+    #     return False
+    #
+    # try:
+    #     verification = verify_registration_response(
+    #         credential=credential_data,
+    #         expected_challenge=challenge,
+    #         expected_rp_id="example.com",
+    #         expected_origin="https://example.com",
+    #     )
+    #
+    #     # Store credential in database
+    #     db.execute(
+    #         "INSERT INTO webauthn_credentials (user_id, credential_id, public_key, counter, created_at) "
+    #         "VALUES (:user_id, :credential_id, :public_key, :counter, :created_at)",
+    #         {
+    #             "user_id": user_id,
+    #             "credential_id": verification.credential_id,
+    #             "public_key": verification.credential_public_key,
+    #             "counter": verification.sign_count,
+    #             "created_at": datetime.utcnow()
+    #         }
+    #     )
+    #
+    #     # Delete challenge
+    #     redis_client.delete(f"webauthn_challenge:{user_id}")
+    #     return True
+    #
+    # except Exception as e:
+    #     print(f"WebAuthn registration failed: {e}")
+    #     return False
+
+    raise NotImplementedError(
+        "WebAuthn registration verification requires integration with a WebAuthn library. "
+        "See function docstring for implementation guide."
+    )
+
+
+def start_webauthn_authentication(user_id: str) -> dict[str, Any]:
+    """Start WebAuthn/FIDO2 authentication flow (auth_125).
+
+    Generates authentication options that the client uses to authenticate
+    with a previously registered WebAuthn credential.
+
+    Args:
+        user_id: Unique user identifier
+
+    Returns:
+        Dictionary containing:
+        - challenge: Base64-encoded random challenge
+        - rp_id: Relying Party ID
+        - timeout: Timeout in milliseconds
+        - allow_credentials: List of allowed credential IDs for this user
+        - user_verification: User verification requirement
+
+    Example:
+        >>> options = start_webauthn_authentication("user-123")
+        >>> # Send options to client for navigator.credentials.get()
+        >>> return {"publicKey": options}
+
+    Implementation notes:
+        - Use webauthn.generate_authentication_options()
+        - Retrieve user's registered credential IDs from database
+        - Store challenge in session/Redis with short TTL (5 minutes)
+    """
+    # TODO: Generate authentication options using WebAuthn library
+    # Example with py_webauthn:
+    # from webauthn import generate_authentication_options
+    #
+    # # Get user's registered credentials
+    # credentials = db.fetch_all(
+    #     "SELECT credential_id FROM webauthn_credentials WHERE user_id = :user_id",
+    #     {"user_id": user_id}
+    # )
+    #
+    # if not credentials:
+    #     raise ValueError("User has no WebAuthn credentials registered")
+    #
+    # allow_credentials = [
+    #     {"type": "public-key", "id": cred["credential_id"]}
+    #     for cred in credentials
+    # ]
+    #
+    # options = generate_authentication_options(
+    #     rp_id="example.com",
+    #     timeout=60000,
+    #     allow_credentials=allow_credentials,
+    #     user_verification=UserVerificationRequirement.PREFERRED,
+    # )
+    #
+    # # Store challenge for verification
+    # redis_client.setex(f"webauthn_auth_challenge:{user_id}", 300, options.challenge)
+    #
+    # return options
+
+    raise NotImplementedError(
+        "WebAuthn authentication requires integration with a WebAuthn library like py_webauthn. "
+        "See function docstring for implementation guide."
+    )
+
+
+def complete_webauthn_authentication(user_id: str, credential_data: dict) -> bool:
+    """Complete WebAuthn/FIDO2 authentication (auth_125).
+
+    Verifies the authentication assertion from the client.
+
+    Args:
+        user_id: Unique user identifier
+        credential_data: Credential data from navigator.credentials.get()
+            Should include: id, rawId, response (authenticatorData, clientDataJSON, signature), type
+
+    Returns:
+        True if authentication successful, False otherwise
+
+    Example:
+        >>> # Client calls navigator.credentials.get() and sends result
+        >>> assertion = {
+        ...     "id": "credential-id-base64",
+        ...     "rawId": "credential-id-bytes",
+        ...     "response": {
+        ...         "authenticatorData": "...",
+        ...         "clientDataJSON": "...",
+        ...         "signature": "..."
+        ...     },
+        ...     "type": "public-key"
+        ... }
+        >>> if complete_webauthn_authentication("user-123", assertion):
+        ...     print("WebAuthn authentication successful!")
+
+    Implementation notes:
+        - Use webauthn.verify_authentication_response()
+        - Retrieve challenge from session/Redis
+        - Retrieve stored credential (public key, counter) from database
+        - Verify signature
+        - Update counter in database (prevents replay attacks)
+    """
+    # TODO: Verify authentication response using WebAuthn library
+    # Example with py_webauthn:
+    # from webauthn import verify_authentication_response
+    #
+    # # Retrieve stored challenge
+    # challenge = redis_client.get(f"webauthn_auth_challenge:{user_id}")
+    # if not challenge:
+    #     return False
+    #
+    # # Get credential from database
+    # credential = db.fetch_one(
+    #     "SELECT credential_id, public_key, counter FROM webauthn_credentials "
+    #     "WHERE user_id = :user_id AND credential_id = :credential_id",
+    #     {"user_id": user_id, "credential_id": credential_data["id"]}
+    # )
+    #
+    # if not credential:
+    #     return False
+    #
+    # try:
+    #     verification = verify_authentication_response(
+    #         credential=credential_data,
+    #         expected_challenge=challenge,
+    #         expected_rp_id="example.com",
+    #         expected_origin="https://example.com",
+    #         credential_public_key=credential["public_key"],
+    #         credential_current_sign_count=credential["counter"],
+    #     )
+    #
+    #     # Update counter to prevent replay attacks
+    #     db.execute(
+    #         "UPDATE webauthn_credentials SET counter = :counter WHERE credential_id = :credential_id",
+    #         {"counter": verification.new_sign_count, "credential_id": credential_data["id"]}
+    #     )
+    #
+    #     # Delete challenge
+    #     redis_client.delete(f"webauthn_auth_challenge:{user_id}")
+    #     return True
+    #
+    # except Exception as e:
+    #     print(f"WebAuthn authentication failed: {e}")
+    #     return False
+
+    raise NotImplementedError(
+        "WebAuthn authentication verification requires integration with a WebAuthn library. "
+        "See function docstring for implementation guide."
+    )
+
+
+def get_webauthn_credentials(user_id: str) -> list[dict]:
+    """Get list of WebAuthn credentials registered for a user (auth_125).
+
+    Args:
+        user_id: Unique user identifier
+
+    Returns:
+        List of credential dictionaries with keys:
+        - credential_id: Unique credential identifier
+        - created_at: When credential was registered
+        - last_used_at: When credential was last used for authentication
+        - device_name: Optional device name/description
+
+    Example:
+        >>> credentials = get_webauthn_credentials("user-123")
+        >>> for cred in credentials:
+        ...     print(f"Credential: {cred['credential_id']}")
+        ...     print(f"Created: {cred['created_at']}")
+    """
+    # TODO: Query database for user's WebAuthn credentials
+    # Example:
+    # credentials = db.fetch_all(
+    #     "SELECT credential_id, created_at, last_used_at, device_name "
+    #     "FROM webauthn_credentials WHERE user_id = :user_id "
+    #     "ORDER BY created_at DESC",
+    #     {"user_id": user_id}
+    # )
+    # return [dict(row) for row in credentials]
+
+    raise NotImplementedError(
+        "WebAuthn credential retrieval requires database integration. "
+        "See function docstring for implementation guide."
+    )
+
+
+def revoke_webauthn_credential(user_id: str, credential_id: str) -> bool:
+    """Revoke a WebAuthn credential (auth_125).
+
+    Removes a registered WebAuthn credential from the database.
+
+    Args:
+        user_id: Unique user identifier
+        credential_id: Credential identifier to revoke
+
+    Returns:
+        True if credential was revoked, False if not found
+
+    Example:
+        >>> if revoke_webauthn_credential("user-123", "credential-id"):
+        ...     print("Credential revoked successfully")
+    """
+    # TODO: Delete credential from database
+    # Example:
+    # result = db.execute(
+    #     "DELETE FROM webauthn_credentials WHERE user_id = :user_id AND credential_id = :credential_id",
+    #     {"user_id": user_id, "credential_id": credential_id}
+    # )
+    # return result.rowcount > 0
+
+    raise NotImplementedError(
+        "WebAuthn credential revocation requires database integration. "
+        "See function docstring for implementation guide."
+    )

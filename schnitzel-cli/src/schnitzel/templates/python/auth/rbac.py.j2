@@ -2,6 +2,7 @@
 
 from typing import List, Set, Optional
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -40,6 +41,8 @@ class RoleRegistry:
         self._roles: dict[str, Role] = {}
         self._permission_cache: dict[str, Set[str]] = {}
         self._user_permissions: dict[str, Set[str]] = {}  # user_id -> set of permissions
+        self._temporary_permissions: dict[str, dict] = {}  # user_id -> {permission: expiry_time}
+        self._audit_log: list[dict] = []  # List of audit log entries
 
     def register_role(self, role: Role) -> None:
         """
@@ -129,6 +132,68 @@ class RoleRegistry:
 
         return all_permissions
 
+    def _log_audit_event(self, action: str, user_id: Optional[str], role_name: Optional[str], permission: Optional[str], details: Optional[dict] = None) -> None:
+        """
+        Log an audit event for permission or role changes (auth_121).
+
+        Args:
+            action: Type of action (e.g., "role_permission_added", "user_permission_granted")
+            user_id: User ID if applicable
+            role_name: Role name if applicable
+            permission: Permission string if applicable
+            details: Additional details to log
+        """
+        audit_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "action": action,
+            "user_id": user_id,
+            "role_name": role_name,
+            "permission": permission,
+            "details": details or {}
+        }
+        self._audit_log.append(audit_entry)
+
+        # TODO: Store audit log in database for persistence
+        # Example:
+        # db.execute(
+        #     "INSERT INTO rbac_audit_log (timestamp, action, user_id, role_name, permission, details) "
+        #     "VALUES (:timestamp, :action, :user_id, :role_name, :permission, :details)",
+        #     audit_entry
+        # )
+
+    def get_audit_log(self, limit: Optional[int] = 100, user_id: Optional[str] = None, action: Optional[str] = None) -> list[dict]:
+        """
+        Retrieve audit log entries (auth_121).
+
+        Args:
+            limit: Maximum number of entries to return
+            user_id: Filter by user ID
+            action: Filter by action type
+
+        Returns:
+            List of audit log entries, most recent first
+
+        Example:
+            >>> logs = registry.get_audit_log(limit=50, user_id="user-123")
+            >>> for log in logs:
+            ...     print(f"{log['timestamp']}: {log['action']}")
+        """
+        filtered_logs = self._audit_log
+
+        if user_id:
+            filtered_logs = [log for log in filtered_logs if log.get("user_id") == user_id]
+
+        if action:
+            filtered_logs = [log for log in filtered_logs if log.get("action") == action]
+
+        # Return most recent first
+        filtered_logs = sorted(filtered_logs, key=lambda x: x["timestamp"], reverse=True)
+
+        if limit:
+            filtered_logs = filtered_logs[:limit]
+
+        return filtered_logs
+
     def add_permission_to_role(self, role_name: str, permission: str) -> bool:
         """
         Dynamically add a permission to a role at runtime.
@@ -159,6 +224,15 @@ class RoleRegistry:
             role.permissions.append(permission)
             # Clear cache to ensure changes take effect immediately
             self._permission_cache.clear()
+
+            # Log audit event (auth_121)
+            self._log_audit_event(
+                action="role_permission_added",
+                user_id=None,
+                role_name=role_name,
+                permission=permission,
+                details={"previous_permissions": len(role.permissions) - 1, "new_permissions": len(role.permissions)}
+            )
 
         return True
 
@@ -192,6 +266,15 @@ class RoleRegistry:
             role.permissions.remove(permission)
             # Clear cache to ensure changes take effect immediately
             self._permission_cache.clear()
+
+            # Log audit event (auth_121)
+            self._log_audit_event(
+                action="role_permission_removed",
+                user_id=None,
+                role_name=role_name,
+                permission=permission,
+                details={"remaining_permissions": len(role.permissions)}
+            )
             return True
 
         return False
@@ -218,6 +301,15 @@ class RoleRegistry:
             self._user_permissions[user_id] = set()
         self._user_permissions[user_id].add(permission)
 
+        # Log audit event (auth_121)
+        self._log_audit_event(
+            action="user_permission_granted",
+            user_id=user_id,
+            role_name=None,
+            permission=permission,
+            details={"total_user_permissions": len(self._user_permissions[user_id])}
+        )
+
     def revoke_permission_from_user(self, user_id: str, permission: str) -> bool:
         """
         Revoke a user-specific permission.
@@ -241,12 +333,90 @@ class RoleRegistry:
             # Clean up empty sets
             if not self._user_permissions[user_id]:
                 del self._user_permissions[user_id]
+
+            # Log audit event (auth_121)
+            self._log_audit_event(
+                action="user_permission_revoked",
+                user_id=user_id,
+                role_name=None,
+                permission=permission,
+                details={"remaining_user_permissions": len(self._user_permissions.get(user_id, set()))}
+            )
             return True
         return False
+
+    def grant_temporary_permission(self, user_id: str, permission: str, duration_seconds: int) -> None:
+        """
+        Grant a time-based temporary permission to a user (auth_122).
+
+        The permission will automatically expire after the specified duration.
+        Temporary permissions are checked alongside permanent permissions.
+
+        Args:
+            user_id: Unique identifier for the user
+            permission: Permission string to grant temporarily
+            duration_seconds: How long the permission should last in seconds
+
+        Example:
+            >>> # Grant permission for 1 hour
+            >>> registry.grant_temporary_permission("user-123", "admin:emergency", 3600)
+            >>> # Permission is valid for 1 hour, then automatically expires
+        """
+        if user_id not in self._temporary_permissions:
+            self._temporary_permissions[user_id] = {}
+
+        expiry_time = datetime.utcnow() + timedelta(seconds=duration_seconds)
+        self._temporary_permissions[user_id][permission] = expiry_time
+
+        # Log audit event (auth_121, auth_122)
+        self._log_audit_event(
+            action="temporary_permission_granted",
+            user_id=user_id,
+            role_name=None,
+            permission=permission,
+            details={
+                "duration_seconds": duration_seconds,
+                "expires_at": expiry_time.isoformat(),
+                "total_temporary_permissions": len(self._temporary_permissions[user_id])
+            }
+        )
+
+    def _cleanup_expired_permissions(self, user_id: str) -> None:
+        """
+        Remove expired temporary permissions for a user (auth_122).
+
+        Args:
+            user_id: User ID to clean up
+        """
+        if user_id not in self._temporary_permissions:
+            return
+
+        now = datetime.utcnow()
+        expired_permissions = [
+            perm for perm, expiry in self._temporary_permissions[user_id].items()
+            if expiry <= now
+        ]
+
+        for perm in expired_permissions:
+            del self._temporary_permissions[user_id][perm]
+            # Log expiry
+            self._log_audit_event(
+                action="temporary_permission_expired",
+                user_id=user_id,
+                role_name=None,
+                permission=perm,
+                details={"expired_at": now.isoformat()}
+            )
+
+        # Clean up empty dicts
+        if not self._temporary_permissions[user_id]:
+            del self._temporary_permissions[user_id]
 
     def get_user_specific_permissions(self, user_id: str) -> Set[str]:
         """
         Get all permissions granted directly to a user (not through roles).
+
+        Includes both permanent and temporary (non-expired) permissions.
 
         Args:
             user_id: Unique identifier for the user
@@ -259,7 +429,18 @@ class RoleRegistry:
             >>> "reports:view_sensitive" in perms
             True
         """
-        return self._user_permissions.get(user_id, set()).copy()
+        # Get permanent permissions
+        permanent_perms = self._user_permissions.get(user_id, set()).copy()
+
+        # Clean up expired temporary permissions
+        self._cleanup_expired_permissions(user_id)
+
+        # Add valid temporary permissions (auth_122)
+        if user_id in self._temporary_permissions:
+            temporary_perms = set(self._temporary_permissions[user_id].keys())
+            permanent_perms.update(temporary_perms)
+
+        return permanent_perms
 
     def check_permission(self, user_roles: List[str], permission: str, user_id: Optional[str] = None) -> bool:
         """
@@ -270,6 +451,7 @@ class RoleRegistry:
         - Scoped permissions: "resource:action:scope" format
         - Partial wildcards: "users:*", "users:read:*"
         - User-specific permissions: Checks permissions granted directly to the user
+        - Temporary permissions: Checks time-based permissions (auth_122)
 
         Args:
             user_roles: List of role names assigned to the user
@@ -300,6 +482,23 @@ class RoleRegistry:
             # Check for wildcard matches in user-specific permissions
             if self._check_wildcard_permission(permission, user_specific_perms):
                 return True
+
+        # Check temporary permissions (auth_122)
+        if user_id:
+            # Clean up expired permissions
+            self._cleanup_expired_permissions(user_id)
+            # Check valid temporary permissions
+            if user_id in self._temporary_permissions:
+                temp_perms = set(self._temporary_permissions[user_id].keys())
+                # Check for global wildcard
+                if "*" in temp_perms:
+                    return True
+                # Check for exact match
+                if permission in temp_perms:
+                    return True
+                # Check for wildcard matches
+                if self._check_wildcard_permission(permission, temp_perms):
+                    return True
 
         if not user_roles:
             return False
@@ -580,6 +779,8 @@ def get_user_specific_permissions(user_id: str) -> Set[str]:
     """
     Get all permissions granted directly to a user (not through roles) (auth_108).
 
+    Includes both permanent and temporary (non-expired) permissions.
+
     Args:
         user_id: Unique identifier for the user
 
@@ -592,6 +793,56 @@ def get_user_specific_permissions(user_id: str) -> Set[str]:
         True
     """
     return registry.get_user_specific_permissions(user_id)
+
+
+# =============================================================================
+# Time-Based Permissions (auth_122)
+# =============================================================================
+
+def grant_temporary_permission(user_id: str, permission: str, duration_seconds: int) -> None:
+    """
+    Grant a time-based temporary permission to a user (auth_122).
+
+    The permission will automatically expire after the specified duration.
+    All permission checks will deny access once the permission expires.
+
+    Args:
+        user_id: Unique identifier for the user
+        permission: Permission string to grant temporarily
+        duration_seconds: How long the permission should last in seconds
+
+    Example:
+        >>> # Grant emergency admin access for 1 hour
+        >>> grant_temporary_permission("user-123", "admin:emergency", 3600)
+        >>> # User has permission for 1 hour
+        >>> has_permission(["user"], "admin:emergency", user_id="user-123")
+        True
+        >>> # After 1 hour, permission automatically expires
+    """
+    registry.grant_temporary_permission(user_id, permission, duration_seconds)
+
+
+def get_audit_log(limit: Optional[int] = 100, user_id: Optional[str] = None, action: Optional[str] = None) -> list[dict]:
+    """
+    Retrieve audit log entries for permission changes (auth_121).
+
+    Args:
+        limit: Maximum number of entries to return (default: 100)
+        user_id: Filter by user ID
+        action: Filter by action type (e.g., "role_permission_added", "user_permission_granted")
+
+    Returns:
+        List of audit log entries, most recent first
+
+    Example:
+        >>> # Get all audit logs
+        >>> logs = get_audit_log(limit=50)
+        >>> # Get logs for specific user
+        >>> user_logs = get_audit_log(user_id="user-123")
+        >>> # Get logs for specific action
+        >>> role_changes = get_audit_log(action="role_permission_added")
+    """
+    return registry.get_audit_log(limit=limit, user_id=user_id, action=action)
 
 
 # =============================================================================
