@@ -31,6 +31,13 @@ class MFAGenerator:
         - verify_totp(): Verify TOTP code against secret
         - generate_totp_uri(): Generate otpauth:// URI for QR codes
         - generate_qr_code(): Generate QR code PNG image data
+        - generate_backup_codes(): Generate secure backup codes
+        - hash_backup_codes(): Hash backup codes for storage
+        - verify_backup_code(): Verify and consume backup codes
+        - start_mfa_enrollment(): Begin MFA setup flow
+        - complete_mfa_setup(): Finish MFA setup with verification
+        - require_mfa(): FastAPI dependency for MFA verification
+        - disable_mfa(): Disable MFA with authentication
 
         Args:
             schema: The Schnitzel schema to generate MFA utilities from

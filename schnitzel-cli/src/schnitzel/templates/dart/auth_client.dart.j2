@@ -1,0 +1,384 @@
+// Main Authentication Client for Dart/Flutter
+
+import 'dart:convert';
+import 'package:dio/dio.dart';
+import 'token_storage.dart';
+{% if auth_config.has_google or auth_config.has_apple or auth_config.has_magic_link %}
+import 'oauth_handler.dart';
+{% endif %}
+
+/// Result of an authentication operation
+class AuthResult {
+  final bool success;
+  final String? accessToken;
+  final String? refreshToken;
+  final String? error;
+  final Map<String, dynamic>? user;
+
+  AuthResult({
+    required this.success,
+    this.accessToken,
+    this.refreshToken,
+    this.error,
+    this.user,
+  });
+
+  factory AuthResult.success({
+    required String accessToken,
+    required String refreshToken,
+    Map<String, dynamic>? user,
+  }) {
+    return AuthResult(
+      success: true,
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+      user: user,
+    );
+  }
+
+  factory AuthResult.failure(String error) {
+    return AuthResult(
+      success: false,
+      error: error,
+    );
+  }
+}
+
+/// Main authentication client
+class AuthClient {
+  final Dio _dio;
+  final TokenStorage _tokenStorage;
+{% if auth_config.has_google or auth_config.has_apple or auth_config.has_magic_link %}
+  final OAuthHandler _oauthHandler;
+{% endif %}
+
+  String? _currentAccessToken;
+  String? _currentRefreshToken;
+
+  AuthClient({
+    required Dio dio,
+    TokenStorage? tokenStorage,
+{% if auth_config.has_google or auth_config.has_apple or auth_config.has_magic_link %}
+    OAuthHandler? oauthHandler,
+{% endif %}
+  })  : _dio = dio,
+        _tokenStorage = tokenStorage ?? TokenStorage(){% if auth_config.has_google or auth_config.has_apple or auth_config.has_magic_link %},
+        _oauthHandler = oauthHandler ?? OAuthHandler(){% endif %};
+
+  /// Check if user is currently authenticated
+  Future<bool> get isAuthenticated async {
+    if (_currentAccessToken != null) {
+      return true;
+    }
+
+    // Try to load tokens from storage
+    final accessToken = await _tokenStorage.getAccessToken();
+    if (accessToken != null) {
+      _currentAccessToken = accessToken;
+      _currentRefreshToken = await _tokenStorage.getRefreshToken();
+      return true;
+    }
+
+    return false;
+  }
+
+  /// Get current access token
+  Future<String?> getAccessToken() async {
+    if (_currentAccessToken != null) {
+      return _currentAccessToken;
+    }
+
+    _currentAccessToken = await _tokenStorage.getAccessToken();
+    return _currentAccessToken;
+  }
+
+  /// Get current refresh token
+  Future<String?> getRefreshToken() async {
+    if (_currentRefreshToken != null) {
+      return _currentRefreshToken;
+    }
+
+    _currentRefreshToken = await _tokenStorage.getRefreshToken();
+    return _currentRefreshToken;
+  }
+
+{% if auth_config.has_email_password %}
+  /// Login with email and password
+  Future<AuthResult> login({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '{{ auth_config.endpoints.login }}',
+        data: {
+          'email': email,
+          'password': password,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data as Map<String, dynamic>;
+        final accessToken = data['access_token'] as String?;
+        final refreshToken = data['refresh_token'] as String?;
+        final user = data['user'] as Map<String, dynamic>?;
+
+        if (accessToken == null || refreshToken == null) {
+          return AuthResult.failure('Invalid response from server');
+        }
+
+        // Store tokens
+        await _tokenStorage.saveTokens(
+          accessToken: accessToken,
+          refreshToken: refreshToken,
+        );
+
+        _currentAccessToken = accessToken;
+        _currentRefreshToken = refreshToken;
+
+        return AuthResult.success(
+          accessToken: accessToken,
+          refreshToken: refreshToken,
+          user: user,
+        );
+      } else {
+        return AuthResult.failure('Login failed with status ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      final errorMessage = e.response?.data?['error'] ?? e.message ?? 'Login failed';
+      return AuthResult.failure(errorMessage);
+    } catch (e) {
+      return AuthResult.failure('Unexpected error: $e');
+    }
+  }
+
+  /// Register a new user with email and password
+  Future<AuthResult> register({
+    required String email,
+    required String password,
+    Map<String, dynamic>? additionalData,
+  }) async {
+    try {
+      final data = {
+        'email': email,
+        'password': password,
+        ...?additionalData,
+      };
+
+      final response = await _dio.post(
+        '{{ auth_config.endpoints.register }}',
+        data: data,
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = response.data as Map<String, dynamic>;
+        final accessToken = responseData['access_token'] as String?;
+        final refreshToken = responseData['refresh_token'] as String?;
+        final user = responseData['user'] as Map<String, dynamic>?;
+
+        if (accessToken == null || refreshToken == null) {
+          return AuthResult.failure('Invalid response from server');
+        }
+
+        // Store tokens
+        await _tokenStorage.saveTokens(
+          accessToken: accessToken,
+          refreshToken: refreshToken,
+        );
+
+        _currentAccessToken = accessToken;
+        _currentRefreshToken = refreshToken;
+
+        return AuthResult.success(
+          accessToken: accessToken,
+          refreshToken: refreshToken,
+          user: user,
+        );
+      } else {
+        return AuthResult.failure('Registration failed with status ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      final errorMessage = e.response?.data?['error'] ?? e.message ?? 'Registration failed';
+      return AuthResult.failure(errorMessage);
+    } catch (e) {
+      return AuthResult.failure('Unexpected error: $e');
+    }
+  }
+{% endif %}
+
+  /// Refresh access token using refresh token
+  Future<AuthResult> refreshToken() async {
+    try {
+      final refreshToken = await getRefreshToken();
+      if (refreshToken == null) {
+        return AuthResult.failure('No refresh token available');
+      }
+
+      final response = await _dio.post(
+        '{{ auth_config.endpoints.refresh }}',
+        data: {
+          'refresh_token': refreshToken,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data as Map<String, dynamic>;
+        final newAccessToken = data['access_token'] as String?;
+        final newRefreshToken = data['refresh_token'] as String? ?? refreshToken;
+
+        if (newAccessToken == null) {
+          return AuthResult.failure('Invalid response from server');
+        }
+
+        // Store new tokens
+        await _tokenStorage.saveTokens(
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+        );
+
+        _currentAccessToken = newAccessToken;
+        _currentRefreshToken = newRefreshToken;
+
+        return AuthResult.success(
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+        );
+      } else {
+        return AuthResult.failure('Token refresh failed with status ${response.statusCode}');
+      }
+    } on DioException catch (e) {
+      final errorMessage = e.response?.data?['error'] ?? e.message ?? 'Token refresh failed';
+      return AuthResult.failure(errorMessage);
+    } catch (e) {
+      return AuthResult.failure('Unexpected error: $e');
+    }
+  }
+
+  /// Logout and clear all tokens
+  Future<void> logout() async {
+    try {
+      // Call logout endpoint if we have a token
+      final accessToken = await getAccessToken();
+      if (accessToken != null) {
+        await _dio.post(
+          '{{ auth_config.endpoints.logout }}',
+          options: Options(
+            headers: {
+              'Authorization': 'Bearer $accessToken',
+            },
+          ),
+        );
+      }
+    } catch (e) {
+      // Ignore errors from logout endpoint
+      print('Logout endpoint error (ignored): $e');
+    } finally {
+      // Always clear local tokens
+      await _tokenStorage.clearTokens();
+      _currentAccessToken = null;
+      _currentRefreshToken = null;
+    }
+  }
+
+  /// Get current user information
+  Future<Map<String, dynamic>?> getCurrentUser() async {
+    try {
+      final accessToken = await getAccessToken();
+      if (accessToken == null) {
+        return null;
+      }
+
+      final response = await _dio.get(
+        '{{ auth_config.endpoints.me }}',
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $accessToken',
+          },
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        return response.data as Map<String, dynamic>?;
+      }
+
+      return null;
+    } catch (e) {
+      print('Get current user error: $e');
+      return null;
+    }
+  }
+
+{% if auth_config.has_google %}
+  /// Sign in with Google
+  Future<AuthResult> signInWithGoogle() async {
+    try {
+      final result = await _oauthHandler.handleGoogleSignIn();
+      if (result.success && result.accessToken != null && result.refreshToken != null) {
+        await _tokenStorage.saveTokens(
+          accessToken: result.accessToken!,
+          refreshToken: result.refreshToken!,
+        );
+        _currentAccessToken = result.accessToken;
+        _currentRefreshToken = result.refreshToken;
+      }
+      return result;
+    } catch (e) {
+      return AuthResult.failure('Google sign-in failed: $e');
+    }
+  }
+{% endif %}
+
+{% if auth_config.has_apple %}
+  /// Sign in with Apple
+  Future<AuthResult> signInWithApple() async {
+    try {
+      final result = await _oauthHandler.handleAppleSignIn();
+      if (result.success && result.accessToken != null && result.refreshToken != null) {
+        await _tokenStorage.saveTokens(
+          accessToken: result.accessToken!,
+          refreshToken: result.refreshToken!,
+        );
+        _currentAccessToken = result.accessToken;
+        _currentRefreshToken = result.refreshToken;
+      }
+      return result;
+    } catch (e) {
+      return AuthResult.failure('Apple sign-in failed: $e');
+    }
+  }
+{% endif %}
+
+{% if auth_config.has_magic_link %}
+  /// Verify magic link token
+  Future<AuthResult> verifyMagicLink(String token) async {
+    try {
+      final result = await _oauthHandler.handleMagicLink(token);
+      if (result.success && result.accessToken != null && result.refreshToken != null) {
+        await _tokenStorage.saveTokens(
+          accessToken: result.accessToken!,
+          refreshToken: result.refreshToken!,
+        );
+        _currentAccessToken = result.accessToken;
+        _currentRefreshToken = result.refreshToken;
+      }
+      return result;
+    } catch (e) {
+      return AuthResult.failure('Magic link verification failed: $e');
+    }
+  }
+
+  /// Request magic link to be sent to email
+  Future<bool> requestMagicLink(String email) async {
+    try {
+      final response = await _dio.post(
+        '/auth/magic-link/request',
+        data: {'email': email},
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Magic link request error: $e');
+      return false;
+    }
+  }
+{% endif %}
+}

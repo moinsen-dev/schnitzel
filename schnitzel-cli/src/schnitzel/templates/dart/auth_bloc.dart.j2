@@ -1,0 +1,369 @@
+// BLoC for authentication state management
+
+import 'dart:async';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:equatable/equatable.dart';
+import 'auth_client.dart';
+
+// =============================================================================
+// Auth Events
+// =============================================================================
+
+abstract class AuthEvent extends Equatable {
+  const AuthEvent();
+
+  @override
+  List<Object?> get props => [];
+}
+
+/// Check if user is authenticated (load from storage)
+class AuthCheckRequested extends AuthEvent {
+  const AuthCheckRequested();
+}
+
+{% if auth_config.has_email_password %}
+/// Login with email and password
+class AuthLoginRequested extends AuthEvent {
+  final String email;
+  final String password;
+
+  const AuthLoginRequested({
+    required this.email,
+    required this.password,
+  });
+
+  @override
+  List<Object?> get props => [email, password];
+}
+
+/// Register new user
+class AuthRegisterRequested extends AuthEvent {
+  final String email;
+  final String password;
+  final Map<String, dynamic>? additionalData;
+
+  const AuthRegisterRequested({
+    required this.email,
+    required this.password,
+    this.additionalData,
+  });
+
+  @override
+  List<Object?> get props => [email, password, additionalData];
+}
+{% endif %}
+
+{% if auth_config.has_google %}
+/// Sign in with Google
+class AuthGoogleSignInRequested extends AuthEvent {
+  const AuthGoogleSignInRequested();
+}
+{% endif %}
+
+{% if auth_config.has_apple %}
+/// Sign in with Apple
+class AuthAppleSignInRequested extends AuthEvent {
+  const AuthAppleSignInRequested();
+}
+{% endif %}
+
+{% if auth_config.has_magic_link %}
+/// Request magic link
+class AuthMagicLinkRequested extends AuthEvent {
+  final String email;
+
+  const AuthMagicLinkRequested({required this.email});
+
+  @override
+  List<Object?> get props => [email];
+}
+
+/// Verify magic link token
+class AuthMagicLinkVerifyRequested extends AuthEvent {
+  final String token;
+
+  const AuthMagicLinkVerifyRequested({required this.token});
+
+  @override
+  List<Object?> get props => [token];
+}
+{% endif %}
+
+/// Logout
+class AuthLogoutRequested extends AuthEvent {
+  const AuthLogoutRequested();
+}
+
+/// Refresh token
+class AuthTokenRefreshRequested extends AuthEvent {
+  const AuthTokenRefreshRequested();
+}
+
+// =============================================================================
+// Auth States
+// =============================================================================
+
+abstract class AuthState extends Equatable {
+  const AuthState();
+
+  @override
+  List<Object?> get props => [];
+}
+
+/// Initial state - checking authentication status
+class AuthInitial extends AuthState {
+  const AuthInitial();
+}
+
+/// Checking if user is authenticated
+class AuthLoading extends AuthState {
+  const AuthLoading();
+}
+
+/// User is authenticated
+class AuthAuthenticated extends AuthState {
+  final String accessToken;
+  final String refreshToken;
+  final Map<String, dynamic>? user;
+
+  const AuthAuthenticated({
+    required this.accessToken,
+    required this.refreshToken,
+    this.user,
+  });
+
+  @override
+  List<Object?> get props => [accessToken, refreshToken, user];
+}
+
+/// User is not authenticated
+class AuthUnauthenticated extends AuthState {
+  const AuthUnauthenticated();
+}
+
+/// Authentication error
+class AuthError extends AuthState {
+  final String message;
+
+  const AuthError({required this.message});
+
+  @override
+  List<Object?> get props => [message];
+}
+
+// =============================================================================
+// Auth BLoC
+// =============================================================================
+
+/// BLoC for managing authentication state
+class AuthBloc extends Bloc<AuthEvent, AuthState> {
+  final AuthClient _authClient;
+
+  AuthBloc({required AuthClient authClient})
+      : _authClient = authClient,
+        super(const AuthInitial()) {
+    on<AuthCheckRequested>(_onAuthCheckRequested);
+{% if auth_config.has_email_password %}
+    on<AuthLoginRequested>(_onAuthLoginRequested);
+    on<AuthRegisterRequested>(_onAuthRegisterRequested);
+{% endif %}
+{% if auth_config.has_google %}
+    on<AuthGoogleSignInRequested>(_onAuthGoogleSignInRequested);
+{% endif %}
+{% if auth_config.has_apple %}
+    on<AuthAppleSignInRequested>(_onAuthAppleSignInRequested);
+{% endif %}
+{% if auth_config.has_magic_link %}
+    on<AuthMagicLinkRequested>(_onAuthMagicLinkRequested);
+    on<AuthMagicLinkVerifyRequested>(_onAuthMagicLinkVerifyRequested);
+{% endif %}
+    on<AuthLogoutRequested>(_onAuthLogoutRequested);
+    on<AuthTokenRefreshRequested>(_onAuthTokenRefreshRequested);
+  }
+
+  Future<void> _onAuthCheckRequested(
+    AuthCheckRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(const AuthLoading());
+
+    final isAuthenticated = await _authClient.isAuthenticated;
+
+    if (isAuthenticated) {
+      final accessToken = await _authClient.getAccessToken();
+      final refreshToken = await _authClient.getRefreshToken();
+      final user = await _authClient.getCurrentUser();
+
+      if (accessToken != null && refreshToken != null) {
+        emit(AuthAuthenticated(
+          accessToken: accessToken,
+          refreshToken: refreshToken,
+          user: user,
+        ));
+      } else {
+        emit(const AuthUnauthenticated());
+      }
+    } else {
+      emit(const AuthUnauthenticated());
+    }
+  }
+
+{% if auth_config.has_email_password %}
+  Future<void> _onAuthLoginRequested(
+    AuthLoginRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(const AuthLoading());
+
+    final result = await _authClient.login(
+      email: event.email,
+      password: event.password,
+    );
+
+    if (result.success && result.accessToken != null && result.refreshToken != null) {
+      emit(AuthAuthenticated(
+        accessToken: result.accessToken!,
+        refreshToken: result.refreshToken!,
+        user: result.user,
+      ));
+    } else {
+      emit(AuthError(message: result.error ?? 'Login failed'));
+      emit(const AuthUnauthenticated());
+    }
+  }
+
+  Future<void> _onAuthRegisterRequested(
+    AuthRegisterRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(const AuthLoading());
+
+    final result = await _authClient.register(
+      email: event.email,
+      password: event.password,
+      additionalData: event.additionalData,
+    );
+
+    if (result.success && result.accessToken != null && result.refreshToken != null) {
+      emit(AuthAuthenticated(
+        accessToken: result.accessToken!,
+        refreshToken: result.refreshToken!,
+        user: result.user,
+      ));
+    } else {
+      emit(AuthError(message: result.error ?? 'Registration failed'));
+      emit(const AuthUnauthenticated());
+    }
+  }
+{% endif %}
+
+{% if auth_config.has_google %}
+  Future<void> _onAuthGoogleSignInRequested(
+    AuthGoogleSignInRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(const AuthLoading());
+
+    final result = await _authClient.signInWithGoogle();
+
+    if (result.success && result.accessToken != null && result.refreshToken != null) {
+      emit(AuthAuthenticated(
+        accessToken: result.accessToken!,
+        refreshToken: result.refreshToken!,
+        user: result.user,
+      ));
+    } else {
+      emit(AuthError(message: result.error ?? 'Google sign-in failed'));
+      emit(const AuthUnauthenticated());
+    }
+  }
+{% endif %}
+
+{% if auth_config.has_apple %}
+  Future<void> _onAuthAppleSignInRequested(
+    AuthAppleSignInRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(const AuthLoading());
+
+    final result = await _authClient.signInWithApple();
+
+    if (result.success && result.accessToken != null && result.refreshToken != null) {
+      emit(AuthAuthenticated(
+        accessToken: result.accessToken!,
+        refreshToken: result.refreshToken!,
+        user: result.user,
+      ));
+    } else {
+      emit(AuthError(message: result.error ?? 'Apple sign-in failed'));
+      emit(const AuthUnauthenticated());
+    }
+  }
+{% endif %}
+
+{% if auth_config.has_magic_link %}
+  Future<void> _onAuthMagicLinkRequested(
+    AuthMagicLinkRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(const AuthLoading());
+
+    final success = await _authClient.requestMagicLink(event.email);
+
+    if (success) {
+      // Stay in loading state, wait for user to click link
+      emit(const AuthLoading());
+    } else {
+      emit(const AuthError(message: 'Failed to send magic link'));
+      emit(const AuthUnauthenticated());
+    }
+  }
+
+  Future<void> _onAuthMagicLinkVerifyRequested(
+    AuthMagicLinkVerifyRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(const AuthLoading());
+
+    final result = await _authClient.verifyMagicLink(event.token);
+
+    if (result.success && result.accessToken != null && result.refreshToken != null) {
+      emit(AuthAuthenticated(
+        accessToken: result.accessToken!,
+        refreshToken: result.refreshToken!,
+        user: result.user,
+      ));
+    } else {
+      emit(AuthError(message: result.error ?? 'Magic link verification failed'));
+      emit(const AuthUnauthenticated());
+    }
+  }
+{% endif %}
+
+  Future<void> _onAuthLogoutRequested(
+    AuthLogoutRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(const AuthLoading());
+    await _authClient.logout();
+    emit(const AuthUnauthenticated());
+  }
+
+  Future<void> _onAuthTokenRefreshRequested(
+    AuthTokenRefreshRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    final result = await _authClient.refreshToken();
+
+    if (result.success && result.accessToken != null && result.refreshToken != null) {
+      final user = await _authClient.getCurrentUser();
+      emit(AuthAuthenticated(
+        accessToken: result.accessToken!,
+        refreshToken: result.refreshToken!,
+        user: user,
+      ));
+    } else {
+      emit(const AuthUnauthenticated());
+    }
+  }
+}

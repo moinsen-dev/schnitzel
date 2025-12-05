@@ -1,12 +1,14 @@
 """Generated MFA (Multi-Factor Authentication) utilities from Schnitzel schema."""
 
+import hashlib
 import io
 import secrets
-from typing import Optional
+from typing import Optional, Any
 from pydantic import BaseModel
 import pyotp
 import qrcode
 from qrcode.image.pure import PyPNGImage
+from fastapi import HTTPException, Depends, Request
 
 
 # =============================================================================
@@ -265,44 +267,82 @@ def generate_backup_codes(count: Optional[int] = None) -> list[str]:
     return codes
 
 
-def verify_backup_code(code: str, stored_codes: list[str]) -> bool:
-    """Verify a backup code against stored codes.
+def hash_backup_codes(codes: list[str]) -> list[str]:
+    """Hash backup codes for secure storage.
 
-    Checks if the provided backup code matches any of the stored codes.
+    Hashes each backup code using SHA-256 so they can be stored safely
+    in the database without exposing the actual codes.
+
+    Args:
+        codes: List of plaintext backup codes
+
+    Returns:
+        List of hashed backup codes (hex encoded)
+
+    Example:
+        >>> codes = generate_backup_codes(10)
+        >>> hashed = hash_backup_codes(codes)
+        >>> # Store hashed codes in database
+        >>> user.backup_codes = hashed
+    """
+    hashed = []
+    for code in codes:
+        # Normalize and hash the code
+        normalized = code.strip().upper()
+        hash_obj = hashlib.sha256(normalized.encode('utf-8'))
+        hashed.append(hash_obj.hexdigest())
+    return hashed
+
+
+def verify_backup_code(code: str, hashed_codes: list[str]) -> tuple[bool, list[str]]:
+    """Verify a backup code against stored hashed codes.
+
+    Checks if the provided backup code matches any of the hashed codes.
     Uses constant-time comparison to prevent timing attacks.
+    Returns remaining codes after removing the used one.
 
     Args:
         code: Backup code provided by user (format: XXXX-XXXX)
-        stored_codes: List of hashed backup codes from database
+        hashed_codes: List of hashed backup codes from database
 
     Returns:
-        True if the code matches, False otherwise
+        Tuple of (is_valid, remaining_codes):
+        - is_valid: True if the code matches, False otherwise
+        - remaining_codes: List of remaining hashed codes (excluding used one)
 
     Note:
-        You should hash backup codes before storing them in the database,
-        similar to how you hash passwords. After successful verification,
-        remove the used backup code from the database.
+        Always update the database with the remaining_codes after verification
+        to ensure each backup code can only be used once.
 
     Example:
-        >>> stored_codes = ["A3F2-9B8C", "7D4E-1F6A"]  # In practice, these would be hashed
+        >>> hashed_codes = hash_backup_codes(["A3F2-9B8C", "7D4E-1F6A"])
         >>> user_code = "A3F2-9B8C"
         >>>
-        >>> if verify_backup_code(user_code, stored_codes):
-        ...     # Remove the used code from database
+        >>> is_valid, remaining = verify_backup_code(user_code, hashed_codes)
+        >>> if is_valid:
+        ...     # Update database with remaining codes
+        ...     user.backup_codes = remaining
         ...     print("Valid backup code!")
     """
     if not code:
-        return False
+        return False, hashed_codes
 
     # Normalize input (remove spaces, convert to uppercase)
     normalized_code = code.strip().upper()
 
-    # Check against each stored code using constant-time comparison
-    for stored_code in stored_codes:
-        if secrets.compare_digest(normalized_code, stored_code.upper()):
-            return True
+    # Hash the provided code
+    hash_obj = hashlib.sha256(normalized_code.encode('utf-8'))
+    code_hash = hash_obj.hexdigest()
 
-    return False
+    # Check against each stored code using constant-time comparison
+    for i, stored_hash in enumerate(hashed_codes):
+        if secrets.compare_digest(code_hash, stored_hash):
+            # Code is valid - remove it from the list
+            remaining_codes = hashed_codes[:i] + hashed_codes[i+1:]
+            return True, remaining_codes
+
+    # Code not found
+    return False, hashed_codes
 
 
 # =============================================================================
@@ -408,3 +448,456 @@ def get_supported_mfa_methods() -> list[str]:
         List of supported MFA methods (e.g., ["totp", "backup_codes"])
     """
     return mfa_config.methods
+
+
+# =============================================================================
+# Database Stubs (To be implemented by the application)
+# =============================================================================
+
+def store_pending_mfa(user_id: str, secret: str, backup_codes: list[str]) -> None:
+    """Store pending MFA configuration in database.
+
+    STUB: This function must be implemented by your application to store
+    the MFA secret and backup codes during the enrollment process.
+
+    Args:
+        user_id: User's unique identifier
+        secret: TOTP secret (store securely, consider encryption)
+        backup_codes: Hashed backup codes
+
+    Example implementation:
+        >>> async def store_pending_mfa(user_id: str, secret: str, backup_codes: list[str]) -> None:
+        ...     await db.execute(
+        ...         "UPDATE users SET mfa_secret_pending = :secret, "
+        ...         "backup_codes_pending = :codes WHERE id = :user_id",
+        ...         {"secret": secret, "codes": json.dumps(backup_codes), "user_id": user_id}
+        ...     )
+    """
+    raise NotImplementedError(
+        "store_pending_mfa must be implemented by the application. "
+        "Store the secret and backup_codes in your database with pending status."
+    )
+
+
+def enable_mfa_for_user(user_id: str) -> None:
+    """Enable MFA for a user after successful verification.
+
+    STUB: This function must be implemented by your application to activate
+    MFA for a user by moving pending data to active status.
+
+    Args:
+        user_id: User's unique identifier
+
+    Example implementation:
+        >>> async def enable_mfa_for_user(user_id: str) -> None:
+        ...     await db.execute(
+        ...         "UPDATE users SET mfa_enabled = true, "
+        ...         "mfa_secret = mfa_secret_pending, "
+        ...         "backup_codes = backup_codes_pending, "
+        ...         "mfa_secret_pending = NULL, "
+        ...         "backup_codes_pending = NULL "
+        ...         "WHERE id = :user_id",
+        ...         {"user_id": user_id}
+        ...     )
+    """
+    raise NotImplementedError(
+        "enable_mfa_for_user must be implemented by the application. "
+        "Move pending MFA data to active status in your database."
+    )
+
+
+def disable_mfa_for_user(user_id: str) -> None:
+    """Disable MFA for a user.
+
+    STUB: This function must be implemented by your application to deactivate
+    MFA and clear all MFA-related data for a user.
+
+    Args:
+        user_id: User's unique identifier
+
+    Example implementation:
+        >>> async def disable_mfa_for_user(user_id: str) -> None:
+        ...     await db.execute(
+        ...         "UPDATE users SET mfa_enabled = false, "
+        ...         "mfa_secret = NULL, "
+        ...         "backup_codes = NULL "
+        ...         "WHERE id = :user_id",
+        ...         {"user_id": user_id}
+        ...     )
+    """
+    raise NotImplementedError(
+        "disable_mfa_for_user must be implemented by the application. "
+        "Clear MFA data and set mfa_enabled to false in your database."
+    )
+
+
+def get_user_mfa_secret(user_id: str) -> Optional[str]:
+    """Get user's MFA secret from database.
+
+    STUB: This function must be implemented by your application to retrieve
+    the user's TOTP secret from the database.
+
+    Args:
+        user_id: User's unique identifier
+
+    Returns:
+        TOTP secret if MFA is enabled, None otherwise
+
+    Example implementation:
+        >>> async def get_user_mfa_secret(user_id: str) -> Optional[str]:
+        ...     result = await db.fetch_one(
+        ...         "SELECT mfa_secret FROM users WHERE id = :user_id",
+        ...         {"user_id": user_id}
+        ...     )
+        ...     return result["mfa_secret"] if result else None
+    """
+    raise NotImplementedError(
+        "get_user_mfa_secret must be implemented by the application. "
+        "Retrieve the user's MFA secret from your database."
+    )
+
+
+def get_user_backup_codes(user_id: str) -> list[str]:
+    """Get user's backup codes from database.
+
+    STUB: This function must be implemented by your application to retrieve
+    the user's hashed backup codes from the database.
+
+    Args:
+        user_id: User's unique identifier
+
+    Returns:
+        List of hashed backup codes
+
+    Example implementation:
+        >>> async def get_user_backup_codes(user_id: str) -> list[str]:
+        ...     result = await db.fetch_one(
+        ...         "SELECT backup_codes FROM users WHERE id = :user_id",
+        ...         {"user_id": user_id}
+        ...     )
+        ...     return json.loads(result["backup_codes"]) if result else []
+    """
+    raise NotImplementedError(
+        "get_user_backup_codes must be implemented by the application. "
+        "Retrieve the user's backup codes from your database."
+    )
+
+
+def update_user_backup_codes(user_id: str, backup_codes: list[str]) -> None:
+    """Update user's backup codes in database.
+
+    STUB: This function must be implemented by your application to update
+    the user's backup codes after one has been used.
+
+    Args:
+        user_id: User's unique identifier
+        backup_codes: Updated list of hashed backup codes
+
+    Example implementation:
+        >>> async def update_user_backup_codes(user_id: str, backup_codes: list[str]) -> None:
+        ...     await db.execute(
+        ...         "UPDATE users SET backup_codes = :codes WHERE id = :user_id",
+        ...         {"codes": json.dumps(backup_codes), "user_id": user_id}
+        ...     )
+    """
+    raise NotImplementedError(
+        "update_user_backup_codes must be implemented by the application. "
+        "Update the backup codes in your database."
+    )
+
+
+def is_user_mfa_enabled(user_id: str) -> bool:
+    """Check if MFA is enabled for a user.
+
+    STUB: This function must be implemented by your application to check
+    if a user has MFA enabled.
+
+    Args:
+        user_id: User's unique identifier
+
+    Returns:
+        True if MFA is enabled, False otherwise
+
+    Example implementation:
+        >>> async def is_user_mfa_enabled(user_id: str) -> bool:
+        ...     result = await db.fetch_one(
+        ...         "SELECT mfa_enabled FROM users WHERE id = :user_id",
+        ...         {"user_id": user_id}
+        ...     )
+        ...     return result["mfa_enabled"] if result else False
+    """
+    raise NotImplementedError(
+        "is_user_mfa_enabled must be implemented by the application. "
+        "Check if MFA is enabled for the user in your database."
+    )
+
+
+def verify_user_password(user_id: str, password: str) -> bool:
+    """Verify a user's password.
+
+    STUB: This function must be implemented by your application to verify
+    a user's password when disabling MFA.
+
+    Args:
+        user_id: User's unique identifier
+        password: Password to verify
+
+    Returns:
+        True if password is correct, False otherwise
+
+    Example implementation:
+        >>> async def verify_user_password(user_id: str, password: str) -> bool:
+        ...     result = await db.fetch_one(
+        ...         "SELECT password_hash FROM users WHERE id = :user_id",
+        ...         {"user_id": user_id}
+        ...     )
+        ...     if not result:
+        ...         return False
+        ...     return verify_password(password, result["password_hash"])
+    """
+    raise NotImplementedError(
+        "verify_user_password must be implemented by the application. "
+        "Verify the user's password against the database."
+    )
+
+
+# =============================================================================
+# MFA Enrollment Flow (auth_053)
+# =============================================================================
+
+def start_mfa_enrollment(user_id: str, email: str) -> dict[str, Any]:
+    """Start MFA enrollment process for a user.
+
+    Generates all required MFA data (secret, QR code, backup codes) and
+    stores them in pending state. The user must verify a TOTP code before
+    MFA is fully enabled.
+
+    Args:
+        user_id: User's unique identifier
+        email: User's email address for TOTP URI
+
+    Returns:
+        Dictionary containing:
+        - secret: TOTP secret (show to user as fallback)
+        - qr_code: PNG image bytes (base64 encode before sending to client)
+        - backup_codes: List of plaintext backup codes (show once to user)
+
+    Raises:
+        Exception: If database operation fails
+
+    Example:
+        >>> enrollment_data = start_mfa_enrollment("user-123", "user@example.com")
+        >>>
+        >>> # Return to client
+        >>> return {
+        ...     "secret": enrollment_data["secret"],
+        ...     "qr_code": base64.b64encode(enrollment_data["qr_code"]).decode(),
+        ...     "backup_codes": enrollment_data["backup_codes"]
+        ... }
+        >>>
+        >>> # User should scan QR code and verify with complete_mfa_setup()
+    """
+    # Generate TOTP secret
+    secret = generate_totp_secret()
+
+    # Generate URI for QR code
+    uri = generate_totp_uri(secret, email)
+
+    # Generate QR code image
+    qr_code = generate_qr_code(uri)
+
+    # Generate backup codes
+    backup_codes = generate_backup_codes()
+
+    # Hash backup codes for storage
+    hashed_codes = hash_backup_codes(backup_codes)
+
+    # Store in database as pending
+    store_pending_mfa(user_id, secret, hashed_codes)
+
+    return {
+        "secret": secret,
+        "qr_code": qr_code,
+        "backup_codes": backup_codes,  # Return plaintext codes to show user once
+    }
+
+
+# =============================================================================
+# MFA Setup Completion (auth_055)
+# =============================================================================
+
+def complete_mfa_setup(user_id: str, totp_code: str) -> bool:
+    """Complete MFA setup by verifying a TOTP code.
+
+    Verifies that the user can generate valid TOTP codes before enabling MFA.
+    This prevents users from locking themselves out due to setup errors.
+
+    Args:
+        user_id: User's unique identifier
+        totp_code: 6-digit TOTP code from user's authenticator app
+
+    Returns:
+        True if code is valid and MFA was enabled, False if code is invalid
+
+    Raises:
+        ValueError: If user has no pending MFA setup
+        Exception: If database operation fails
+
+    Example:
+        >>> # After start_mfa_enrollment(), user scans QR code
+        >>> code = "123456"  # User enters from authenticator app
+        >>>
+        >>> if complete_mfa_setup("user-123", code):
+        ...     print("MFA enabled successfully!")
+        ... else:
+        ...     print("Invalid code. Please try again.")
+    """
+    # Get pending secret from database
+    secret = get_user_mfa_secret(user_id)
+
+    if not secret:
+        raise ValueError("No pending MFA setup found for user")
+
+    # Verify the TOTP code
+    is_valid = verify_totp(secret, totp_code)
+
+    if is_valid:
+        # Code is valid - enable MFA for user
+        enable_mfa_for_user(user_id)
+        return True
+
+    return False
+
+
+# =============================================================================
+# MFA Verification Middleware (auth_054)
+# =============================================================================
+
+async def require_mfa(
+    request: Request,
+    user_id: Optional[str] = None
+) -> dict[str, Any]:
+    """FastAPI dependency to require MFA verification.
+
+    Checks if the user has MFA enabled and if they have verified their
+    MFA code in the current session. Raises HTTPException if MFA is
+    required but not verified.
+
+    Args:
+        request: FastAPI request object (for session access)
+        user_id: User's unique identifier (usually from auth dependency)
+
+    Returns:
+        Dictionary with user_id and mfa_verified status
+
+    Raises:
+        HTTPException(403): If MFA is required but not verified
+
+    Usage:
+        >>> from fastapi import Depends
+        >>>
+        >>> @app.get("/protected")
+        >>> async def protected_route(
+        ...     mfa_check: dict = Depends(require_mfa)
+        ... ):
+        ...     return {"message": "Access granted"}
+        >>>
+        >>> # Or with custom auth dependency
+        >>> async def get_current_user(token: str) -> dict:
+        ...     # ... verify token and get user_id
+        ...     return {"user_id": "user-123"}
+        >>>
+        >>> @app.get("/protected")
+        >>> async def protected_route(
+        ...     user: dict = Depends(get_current_user),
+        ...     mfa_check: dict = Depends(require_mfa)
+        ... ):
+        ...     return {"message": "Access granted"}
+    """
+    # If no user_id provided, try to get from request state
+    if user_id is None:
+        user_id = getattr(request.state, "user_id", None)
+
+    if not user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Authentication required"
+        )
+
+    # Check if user has MFA enabled
+    mfa_enabled = is_user_mfa_enabled(user_id)
+
+    if not mfa_enabled:
+        # MFA not enabled for this user - allow access
+        return {"user_id": user_id, "mfa_verified": False}
+
+    # Check if MFA has been verified in this session
+    session = getattr(request.state, "session", {})
+    mfa_verified = session.get("mfa_verified", False)
+    mfa_user_id = session.get("mfa_user_id")
+
+    if not mfa_verified or mfa_user_id != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="MFA verification required. Please verify your MFA code."
+        )
+
+    return {"user_id": user_id, "mfa_verified": True}
+
+
+# =============================================================================
+# Disable MFA Flow (auth_056)
+# =============================================================================
+
+def disable_mfa(user_id: str, password: Optional[str] = None, totp_code: Optional[str] = None) -> bool:
+    """Disable MFA for a user.
+
+    Requires either the user's password OR a valid TOTP code to prevent
+    unauthorized disabling of MFA. Clears all MFA data from the database.
+
+    Args:
+        user_id: User's unique identifier
+        password: User's password for verification (optional)
+        totp_code: Valid TOTP code for verification (optional)
+
+    Returns:
+        True if MFA was disabled, False if verification failed
+
+    Raises:
+        ValueError: If neither password nor totp_code is provided
+        ValueError: If user doesn't have MFA enabled
+
+    Example:
+        >>> # Disable with password
+        >>> if disable_mfa("user-123", password="user-password"):
+        ...     print("MFA disabled successfully!")
+        >>>
+        >>> # Or disable with TOTP code
+        >>> if disable_mfa("user-123", totp_code="123456"):
+        ...     print("MFA disabled successfully!")
+    """
+    if not password and not totp_code:
+        raise ValueError("Either password or totp_code must be provided")
+
+    # Check if user has MFA enabled
+    if not is_user_mfa_enabled(user_id):
+        raise ValueError("MFA is not enabled for this user")
+
+    # Verify credentials
+    verified = False
+
+    if password:
+        # Verify password
+        verified = verify_user_password(user_id, password)
+    elif totp_code:
+        # Verify TOTP code
+        secret = get_user_mfa_secret(user_id)
+        if secret:
+            verified = verify_totp(secret, totp_code)
+
+    if not verified:
+        return False
+
+    # Credentials verified - disable MFA
+    disable_mfa_for_user(user_id)
+    return True

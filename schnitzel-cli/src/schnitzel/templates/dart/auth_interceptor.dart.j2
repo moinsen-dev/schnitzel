@@ -1,0 +1,190 @@
+// Dio interceptor for automatic token injection and refresh
+
+import 'package:dio/dio.dart';
+import 'token_storage.dart';
+
+/// Authentication interceptor for Dio
+///
+/// Automatically:
+/// - Adds Authorization header to requests
+/// - Refreshes access token on 401 responses
+/// - Retries failed requests after token refresh
+class AuthInterceptor extends Interceptor {
+  final TokenStorage _tokenStorage;
+  final Dio _dio;
+  final String refreshEndpoint;
+  final void Function()? onAuthenticationFailed;
+
+  bool _isRefreshing = false;
+  final List<({RequestOptions options, ErrorInterceptorHandler handler})> _requestsQueue = [];
+
+  AuthInterceptor({
+    required TokenStorage tokenStorage,
+    required Dio dio,
+    this.refreshEndpoint = '{{ auth_config.endpoints.refresh }}',
+    this.onAuthenticationFailed,
+  })  : _tokenStorage = tokenStorage,
+        _dio = dio;
+
+  @override
+  void onRequest(
+    RequestOptions options,
+    RequestInterceptorHandler handler,
+  ) async {
+    // Skip adding token for auth endpoints
+    if (_isAuthEndpoint(options.path)) {
+      return handler.next(options);
+    }
+
+    // Get access token from storage
+    final accessToken = await _tokenStorage.getAccessToken();
+
+    if (accessToken != null) {
+      // Add Authorization header
+      options.headers['Authorization'] = 'Bearer $accessToken';
+    }
+
+    return handler.next(options);
+  }
+
+  @override
+  void onError(
+    DioException err,
+    ErrorInterceptorHandler handler,
+  ) async {
+    // Check if error is 401 Unauthorized
+    if (err.response?.statusCode == 401) {
+      // Don't retry auth endpoints
+      if (_isAuthEndpoint(err.requestOptions.path)) {
+        return handler.next(err);
+      }
+
+      // Try to refresh token
+      final refreshed = await _refreshToken();
+
+      if (refreshed) {
+        // Retry the failed request with new token
+        try {
+          final accessToken = await _tokenStorage.getAccessToken();
+          final options = err.requestOptions;
+          options.headers['Authorization'] = 'Bearer $accessToken';
+
+          final response = await _dio.fetch(options);
+          return handler.resolve(response);
+        } catch (e) {
+          return handler.next(err);
+        }
+      } else {
+        // Token refresh failed - notify app to show login
+        if (onAuthenticationFailed != null) {
+          onAuthenticationFailed!();
+        }
+        return handler.next(err);
+      }
+    }
+
+    return handler.next(err);
+  }
+
+  /// Refresh access token using refresh token
+  Future<bool> _refreshToken() async {
+    // Prevent multiple simultaneous refresh attempts
+    if (_isRefreshing) {
+      return false;
+    }
+
+    _isRefreshing = true;
+
+    try {
+      final refreshToken = await _tokenStorage.getRefreshToken();
+      if (refreshToken == null) {
+        return false;
+      }
+
+      // Call refresh endpoint
+      final response = await _dio.post(
+        refreshEndpoint,
+        data: {
+          'refresh_token': refreshToken,
+        },
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data as Map<String, dynamic>;
+        final newAccessToken = data['access_token'] as String?;
+        final newRefreshToken = data['refresh_token'] as String? ?? refreshToken;
+
+        if (newAccessToken != null) {
+          // Save new tokens
+          await _tokenStorage.saveTokens(
+            accessToken: newAccessToken,
+            refreshToken: newRefreshToken,
+          );
+
+          return true;
+        }
+      }
+
+      return false;
+    } catch (e) {
+      print('Token refresh error: $e');
+      return false;
+    } finally {
+      _isRefreshing = false;
+    }
+  }
+
+  /// Check if path is an auth endpoint that shouldn't be retried
+  bool _isAuthEndpoint(String path) {
+    final authPaths = [
+      '{{ auth_config.endpoints.login }}',
+      '{{ auth_config.endpoints.register }}',
+      '{{ auth_config.endpoints.logout }}',
+      '{{ auth_config.endpoints.refresh }}',
+      '/auth/login',
+      '/auth/register',
+      '/auth/logout',
+      '/auth/refresh',
+      '/auth/magic-link',
+    ];
+
+    return authPaths.any((authPath) => path.contains(authPath));
+  }
+}
+
+/// Factory function to create Dio instance with auth interceptor
+Dio createAuthenticatedDio({
+  required String baseUrl,
+  required TokenStorage tokenStorage,
+  Duration connectTimeout = const Duration(seconds: 30),
+  Duration receiveTimeout = const Duration(seconds: 30),
+  void Function()? onAuthenticationFailed,
+}) {
+  final dio = Dio(
+    BaseOptions(
+      baseUrl: baseUrl,
+      connectTimeout: connectTimeout,
+      receiveTimeout: receiveTimeout,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+    ),
+  );
+
+  // Add auth interceptor
+  dio.interceptors.add(
+    AuthInterceptor(
+      tokenStorage: tokenStorage,
+      dio: dio,
+      onAuthenticationFailed: onAuthenticationFailed,
+    ),
+  );
+
+  return dio;
+}
