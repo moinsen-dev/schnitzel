@@ -1,0 +1,403 @@
+"""Generated RBAC permission utilities from Schnitzel schema."""
+
+from typing import List, Set, Optional
+from dataclasses import dataclass, field
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+
+# =============================================================================
+# Role Definition
+# =============================================================================
+
+@dataclass
+class Role:
+    """Role definition with permissions and inheritance."""
+
+    name: str
+    permissions: List[str] = field(default_factory=list)
+    inherits: List[str] = field(default_factory=list)
+    description: str = ""
+
+    def __post_init__(self):
+        """Initialize role after dataclass creation."""
+        # Ensure permissions and inherits are lists
+        if not isinstance(self.permissions, list):
+            self.permissions = list(self.permissions) if self.permissions else []
+        if not isinstance(self.inherits, list):
+            self.inherits = list(self.inherits) if self.inherits else []
+
+
+# =============================================================================
+# Role Registry
+# =============================================================================
+
+class RoleRegistry:
+    """Registry for managing role definitions and permission checking."""
+
+    def __init__(self):
+        """Initialize the role registry."""
+        self._roles: dict[str, Role] = {}
+        self._permission_cache: dict[str, Set[str]] = {}
+
+    def register_role(self, role: Role) -> None:
+        """
+        Register a role in the registry.
+
+        Args:
+            role: Role instance to register
+
+        Example:
+            >>> registry = RoleRegistry()
+            >>> registry.register_role(Role(name="admin", permissions=["*"]))
+        """
+        self._roles[role.name] = role
+        # Clear cache when roles change
+        self._permission_cache.clear()
+
+    def get_role(self, role_name: str) -> Optional[Role]:
+        """
+        Get a role by name.
+
+        Args:
+            role_name: Name of the role to retrieve
+
+        Returns:
+            Role instance or None if not found
+
+        Example:
+            >>> role = registry.get_role("admin")
+        """
+        return self._roles.get(role_name)
+
+    def get_all_permissions(self, role_name: str) -> Set[str]:
+        """
+        Get all permissions for a role including inherited permissions.
+
+        Uses caching to avoid repeated inheritance resolution.
+
+        Args:
+            role_name: Name of the role
+
+        Returns:
+            Set of all permissions (direct + inherited)
+
+        Example:
+            >>> permissions = registry.get_all_permissions("moderator")
+            >>> "users:read" in permissions
+            True
+        """
+        # Check cache first
+        if role_name in self._permission_cache:
+            return self._permission_cache[role_name]
+
+        # Get role
+        role = self.get_role(role_name)
+        if not role:
+            return set()
+
+        # Start with direct permissions
+        all_permissions = set(role.permissions)
+
+        # Recursively add inherited permissions
+        for parent_role_name in role.inherits:
+            parent_permissions = self.get_all_permissions(parent_role_name)
+            all_permissions.update(parent_permissions)
+
+        # Cache and return
+        self._permission_cache[role_name] = all_permissions
+        return all_permissions
+
+    def check_permission(self, user_roles: List[str], permission: str) -> bool:
+        """
+        Check if any of the user's roles grants a specific permission.
+
+        Supports:
+        - Wildcard permissions: "*" grants all permissions
+        - Scoped permissions: "resource:action:scope" format
+        - Partial wildcards: "users:*", "users:read:*"
+
+        Args:
+            user_roles: List of role names assigned to the user
+            permission: Permission string to check (e.g., "users:read:own")
+
+        Returns:
+            True if user has the permission, False otherwise
+
+        Example:
+            >>> registry.check_permission(["admin"], "users:delete")
+            True
+            >>> registry.check_permission(["user"], "users:delete")
+            False
+        """
+        if not user_roles:
+            return False
+
+        # Get all permissions from all user roles
+        user_permissions = set()
+        for role_name in user_roles:
+            role_permissions = self.get_all_permissions(role_name)
+            user_permissions.update(role_permissions)
+
+        # Check for global wildcard
+        if "*" in user_permissions:
+            return True
+
+        # Check for exact match
+        if permission in user_permissions:
+            return True
+
+        # Check for wildcard matches
+        # Split permission into parts (e.g., "users:read:own" -> ["users", "read", "own"])
+        permission_parts = permission.split(":")
+
+        for user_perm in user_permissions:
+            if "*" in user_perm:
+                # Check if wildcard permission matches
+                user_perm_parts = user_perm.split(":")
+
+                # Compare each part
+                matches = True
+                for i, user_part in enumerate(user_perm_parts):
+                    if user_part == "*":
+                        # Wildcard matches everything at this level and beyond
+                        break
+                    if i >= len(permission_parts) or user_part != permission_parts[i]:
+                        matches = False
+                        break
+
+                if matches:
+                    return True
+
+        return False
+
+
+# =============================================================================
+# Global Registry Instance
+# =============================================================================
+
+# Create global registry
+registry = RoleRegistry()
+
+# Register roles from schema
+{% for role in roles %}
+registry.register_role(Role(
+    name="{{ role.name }}",
+    permissions=[{% for perm in role.permissions %}"{{ perm }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+    inherits=[{% for parent in role.inherits %}"{{ parent }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+    description="{{ role.description }}"
+))
+{% endfor %}
+
+
+# =============================================================================
+# Permission Checking Functions
+# =============================================================================
+
+def has_permission(user_roles: List[str], permission: str) -> bool:
+    """
+    Check if user has a specific permission.
+
+    Args:
+        user_roles: List of role names assigned to the user
+        permission: Permission string to check (e.g., "users:read")
+
+    Returns:
+        True if user has the permission, False otherwise
+
+    Example:
+        >>> has_permission(["admin"], "users:delete")
+        True
+        >>> has_permission(["user"], "users:delete")
+        False
+    """
+    return registry.check_permission(user_roles, permission)
+
+
+def has_any_permission(user_roles: List[str], permissions: List[str]) -> bool:
+    """
+    Check if user has any of the specified permissions.
+
+    Args:
+        user_roles: List of role names assigned to the user
+        permissions: List of permission strings to check
+
+    Returns:
+        True if user has at least one permission, False otherwise
+
+    Example:
+        >>> has_any_permission(["moderator"], ["users:delete", "users:read"])
+        True
+    """
+    for permission in permissions:
+        if registry.check_permission(user_roles, permission):
+            return True
+    return False
+
+
+def has_all_permissions(user_roles: List[str], permissions: List[str]) -> bool:
+    """
+    Check if user has all of the specified permissions.
+
+    Args:
+        user_roles: List of role names assigned to the user
+        permissions: List of permission strings to check
+
+    Returns:
+        True if user has all permissions, False otherwise
+
+    Example:
+        >>> has_all_permissions(["admin"], ["users:read", "users:write"])
+        True
+        >>> has_all_permissions(["user"], ["users:read", "users:write"])
+        False
+    """
+    for permission in permissions:
+        if not registry.check_permission(user_roles, permission):
+            return False
+    return True
+
+
+def get_user_permissions(user_roles: List[str]) -> Set[str]:
+    """
+    Get all permissions granted to a user through their roles.
+
+    Args:
+        user_roles: List of role names assigned to the user
+
+    Returns:
+        Set of all permission strings
+
+    Example:
+        >>> permissions = get_user_permissions(["moderator"])
+        >>> "users:read" in permissions
+        True
+    """
+    all_permissions = set()
+    for role_name in user_roles:
+        role_permissions = registry.get_all_permissions(role_name)
+        all_permissions.update(role_permissions)
+    return all_permissions
+
+
+# =============================================================================
+# FastAPI Dependencies
+# =============================================================================
+
+security = HTTPBearer()
+
+
+def require_permission(permission: str):
+    """
+    FastAPI dependency to require a specific permission.
+
+    This dependency extracts user roles from the JWT token and checks
+    if the user has the required permission.
+
+    Args:
+        permission: Permission string required (e.g., "users:read")
+
+    Returns:
+        Dependency function for FastAPI routes
+
+    Example:
+        >>> @app.get("/users", dependencies=[Depends(require_permission("users:read"))])
+        >>> async def list_users():
+        >>>     return {"users": []}
+
+    Raises:
+        HTTPException: 403 if user doesn't have permission
+    """
+    def dependency(credentials: HTTPAuthorizationCredentials = Depends(security)):
+        # Extract token
+        token = credentials.credentials
+
+        # TODO: Decode JWT and extract user roles
+        # This is a placeholder - integrate with your JWT implementation
+        # from .jwt import verify_access_token
+        # payload = verify_access_token(token)
+        # user_roles = payload.get("roles", [])
+
+        # For now, assume roles are in the token (customize based on your JWT structure)
+        user_roles = []  # Replace with actual role extraction
+
+        # Check permission
+        if not has_permission(user_roles, permission):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission denied: requires '{permission}'"
+            )
+
+        return credentials
+
+    return dependency
+
+
+def require_any_permission(permissions: List[str]):
+    """
+    FastAPI dependency to require any of multiple permissions.
+
+    Args:
+        permissions: List of permission strings (user needs at least one)
+
+    Returns:
+        Dependency function for FastAPI routes
+
+    Example:
+        >>> @app.get("/content", dependencies=[Depends(require_any_permission(["content:read", "content:write"]))])
+        >>> async def get_content():
+        >>>     return {"content": []}
+
+    Raises:
+        HTTPException: 403 if user doesn't have any of the permissions
+    """
+    def dependency(credentials: HTTPAuthorizationCredentials = Depends(security)):
+        token = credentials.credentials
+
+        # TODO: Decode JWT and extract user roles (same as above)
+        user_roles = []  # Replace with actual role extraction
+
+        if not has_any_permission(user_roles, permissions):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission denied: requires one of {permissions}"
+            )
+
+        return credentials
+
+    return dependency
+
+
+def require_all_permissions(permissions: List[str]):
+    """
+    FastAPI dependency to require all of multiple permissions.
+
+    Args:
+        permissions: List of permission strings (user needs all of them)
+
+    Returns:
+        Dependency function for FastAPI routes
+
+    Example:
+        >>> @app.get("/admin", dependencies=[Depends(require_all_permissions(["users:read", "users:write"]))])
+        >>> async def admin_panel():
+        >>>     return {"admin": True}
+
+    Raises:
+        HTTPException: 403 if user doesn't have all permissions
+    """
+    def dependency(credentials: HTTPAuthorizationCredentials = Depends(security)):
+        token = credentials.credentials
+
+        # TODO: Decode JWT and extract user roles (same as above)
+        user_roles = []  # Replace with actual role extraction
+
+        if not has_all_permissions(user_roles, permissions):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission denied: requires all of {permissions}"
+            )
+
+        return credentials
+
+    return dependency

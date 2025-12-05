@@ -132,18 +132,23 @@ class OAuthIntegrationGenerator:
             "has_google": False,
             "has_apple": False,
             "has_magic_link": False,
-            "has_email_password": False,
+            "has_email_password": True,
             "callback_url": "http://localhost:8000/auth/callback",
         }
 
         # Extract auth configuration if it exists
-        if not schema.auth or not isinstance(schema.auth, dict):
+        if not schema.auth:
             return oauth_config
 
         auth_config = schema.auth
 
-        # Extract providers list
-        providers: List[str] = auth_config.get("providers", ["email_password"])
+        # Extract providers list (handle both dict and AuthConfig object)
+        if isinstance(auth_config, dict):
+            providers: List[str] = auth_config.get("providers", ["email_password"])
+        else:
+            # It's an AuthConfig Pydantic model
+            providers: List[str] = auth_config.providers
+
         oauth_config["providers"] = providers
 
         # Set flags for each provider type
@@ -153,7 +158,12 @@ class OAuthIntegrationGenerator:
         oauth_config["has_email_password"] = "email_password" in providers
 
         # Extract callback URL if provided
-        if "oauth_callback_url" in auth_config:
-            oauth_config["callback_url"] = auth_config["oauth_callback_url"]
+        if isinstance(auth_config, dict):
+            if "oauth_callback_url" in auth_config:
+                oauth_config["callback_url"] = auth_config["oauth_callback_url"]
+        else:
+            # It's an AuthConfig Pydantic model
+            if auth_config.oauth_callback_url:
+                oauth_config["callback_url"] = auth_config.oauth_callback_url
 
         return oauth_config

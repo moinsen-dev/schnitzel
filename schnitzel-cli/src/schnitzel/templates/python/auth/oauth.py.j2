@@ -1,14 +1,53 @@
-"""Generated OAuth integration utilities from Schnitzel schema."""
+"""Generated OAuth integration utilities from Schnitzel schema.
+
+This module provides authentication functionality including:
+- Email/password registration and login with bcrypt hashing
+- Google OAuth 2.0 integration
+- Apple Sign In integration
+- Magic link passwordless authentication
+- User creation and OAuth provider linking
+- FastAPI router with all authentication endpoints
+
+Required Environment Variables:
+    JWT_SECRET_KEY: Secret key for JWT token generation (required)
+    JWT_ALGORITHM: Algorithm for JWT (default: HS256)
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: Access token expiration (default: 15)
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: Refresh token expiration (default: 30)
+
+    GOOGLE_CLIENT_ID: Google OAuth client ID (if using Google)
+    GOOGLE_CLIENT_SECRET: Google OAuth client secret (if using Google)
+    GOOGLE_REDIRECT_URI: Google OAuth redirect URI (if using Google)
+
+    APPLE_CLIENT_ID: Apple Sign In client ID (if using Apple)
+    APPLE_TEAM_ID: Apple team ID (if using Apple)
+    APPLE_KEY_ID: Apple key ID (if using Apple)
+    APPLE_PRIVATE_KEY: Apple private key (if using Apple)
+    APPLE_REDIRECT_URI: Apple redirect URI (if using Apple)
+
+    MAGIC_LINK_SECRET: Secret for magic link tokens (if using magic links)
+    MAGIC_LINK_EXPIRY_MINUTES: Magic link expiration (default: 15)
+
+    SMTP_HOST: SMTP server host for sending emails (if using magic links)
+    SMTP_PORT: SMTP server port (default: 587)
+    SMTP_USER: SMTP username for authentication
+    SMTP_PASSWORD: SMTP password for authentication
+    SMTP_FROM_EMAIL: Email address to send from (default: noreply@yourapp.com)
+"""
 
 import os
 import secrets
+import smtplib
 from datetime import datetime, timedelta
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from typing import Any, Dict, Optional
 from urllib.parse import urlencode
 
 import httpx
+from fastapi import APIRouter, HTTPException, status, Depends
 from jose import jwt, JWTError
-from pydantic import BaseModel
+from passlib.context import CryptContext
+from pydantic import BaseModel, EmailStr
 
 
 # =============================================================================
@@ -17,6 +56,12 @@ from pydantic import BaseModel
 
 class OAuthConfig(BaseModel):
     """OAuth configuration for various providers."""
+
+    # JWT Configuration
+    jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "change-this-secret-in-production")
+    jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
+    jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+    jwt_refresh_token_expire_days: int = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
     # Google OAuth
     google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
@@ -34,9 +79,386 @@ class OAuthConfig(BaseModel):
     magic_link_secret: str = os.getenv("MAGIC_LINK_SECRET", "change-this-secret-in-production")
     magic_link_expiry_minutes: int = int(os.getenv("MAGIC_LINK_EXPIRY_MINUTES", "15"))
 
+    # SMTP Configuration (for magic link emails)
+    smtp_host: str = os.getenv("SMTP_HOST", "")
+    smtp_port: int = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user: str = os.getenv("SMTP_USER", "")
+    smtp_password: str = os.getenv("SMTP_PASSWORD", "")
+    smtp_from_email: str = os.getenv("SMTP_FROM_EMAIL", "noreply@yourapp.com")
+
 
 # Default configuration (can be overridden)
 oauth_config = OAuthConfig()
+
+# Password hashing context using bcrypt
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+# =============================================================================
+# Pydantic Models
+# =============================================================================
+
+class UserRegistration(BaseModel):
+    """Request model for user registration."""
+    email: EmailStr
+    password: str
+
+
+class UserLogin(BaseModel):
+    """Request model for user login."""
+    email: EmailStr
+    password: str
+
+
+class TokenResponse(BaseModel):
+    """Response model for token endpoints."""
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+
+class MagicLinkRequest(BaseModel):
+    """Request model for magic link generation."""
+    email: EmailStr
+
+
+class UserDict(BaseModel):
+    """User dictionary returned from authentication operations."""
+    id: str
+    email: str
+    provider: Optional[str] = None
+    provider_id: Optional[str] = None
+
+
+# =============================================================================
+# Password Hashing Utilities
+# =============================================================================
+
+def hash_password(password: str) -> str:
+    """Hash a password using bcrypt.
+
+    Args:
+        password: Plain text password to hash
+
+    Returns:
+        Hashed password string
+
+    Example:
+        >>> hashed = hash_password("my-secure-password")
+        >>> # Store hashed in database
+    """
+    return pwd_context.hash(password)
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against its hash.
+
+    Args:
+        plain_password: Plain text password to verify
+        hashed_password: Hashed password from database
+
+    Returns:
+        True if password matches, False otherwise
+
+    Example:
+        >>> if verify_password(input_password, stored_hash):
+        ...     # Password is correct
+        ...     pass
+    """
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+# =============================================================================
+# JWT Token Generation
+# =============================================================================
+
+def create_tokens(user_id: str, email: str) -> Dict[str, str]:
+    """Create access and refresh tokens for a user.
+
+    Args:
+        user_id: Unique user identifier
+        email: User's email address
+
+    Returns:
+        Dictionary with access_token and refresh_token
+
+    Example:
+        >>> tokens = create_tokens("user-123", "user@example.com")
+        >>> access = tokens["access_token"]
+        >>> refresh = tokens["refresh_token"]
+    """
+    # Create access token
+    access_expiration = datetime.utcnow() + timedelta(
+        minutes=oauth_config.jwt_access_token_expire_minutes
+    )
+    access_payload = {
+        "sub": user_id,
+        "email": email,
+        "exp": access_expiration,
+        "type": "access",
+    }
+    access_token = jwt.encode(
+        access_payload,
+        oauth_config.jwt_secret_key,
+        algorithm=oauth_config.jwt_algorithm,
+    )
+
+    # Create refresh token
+    refresh_expiration = datetime.utcnow() + timedelta(
+        days=oauth_config.jwt_refresh_token_expire_days
+    )
+    refresh_payload = {
+        "sub": user_id,
+        "email": email,
+        "exp": refresh_expiration,
+        "type": "refresh",
+    }
+    refresh_token = jwt.encode(
+        refresh_payload,
+        oauth_config.jwt_secret_key,
+        algorithm=oauth_config.jwt_algorithm,
+    )
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+    }
+
+
+# =============================================================================
+# User Database Stubs (Replace with your actual database implementation)
+# =============================================================================
+
+def _get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    """Get user from database by email.
+
+    This is a stub - replace with your actual database query.
+
+    Args:
+        email: User's email address
+
+    Returns:
+        User dictionary if found, None otherwise
+        Expected fields: id, email, password_hash, provider, provider_id
+    """
+    # TODO: Replace with actual database query
+    # Example with SQLAlchemy:
+    # from app.database import get_db
+    # db = get_db()
+    # user = db.query(User).filter(User.email == email).first()
+    # return user.to_dict() if user else None
+    raise NotImplementedError("Replace _get_user_by_email with your database implementation")
+
+
+def _create_user(email: str, password_hash: Optional[str] = None,
+                 provider: Optional[str] = None, provider_id: Optional[str] = None) -> Dict[str, Any]:
+    """Create a new user in the database.
+
+    This is a stub - replace with your actual database insertion.
+
+    Args:
+        email: User's email address
+        password_hash: Hashed password (for email/password auth)
+        provider: OAuth provider name (e.g., "google", "apple")
+        provider_id: Provider-specific user ID
+
+    Returns:
+        Created user dictionary with id, email, provider, provider_id
+    """
+    # TODO: Replace with actual database insertion
+    # Example with SQLAlchemy:
+    # from app.database import get_db
+    # from app.models import User
+    # import uuid
+    # db = get_db()
+    # user = User(
+    #     id=str(uuid.uuid4()),
+    #     email=email,
+    #     password_hash=password_hash,
+    #     provider=provider,
+    #     provider_id=provider_id
+    # )
+    # db.add(user)
+    # db.commit()
+    # db.refresh(user)
+    # return user.to_dict()
+    raise NotImplementedError("Replace _create_user with your database implementation")
+
+
+def _link_oauth_provider(user_id: str, provider: str, provider_id: str) -> bool:
+    """Link an OAuth provider to an existing user.
+
+    This is a stub - replace with your actual database update.
+
+    Args:
+        user_id: User's ID
+        provider: OAuth provider name
+        provider_id: Provider-specific user ID
+
+    Returns:
+        True if successful, False otherwise
+    """
+    # TODO: Replace with actual database update
+    # Example: Update user record or create a separate oauth_providers table
+    raise NotImplementedError("Replace _link_oauth_provider with your database implementation")
+
+
+# =============================================================================
+# Email/Password Authentication Flow (auth_021)
+# =============================================================================
+{% if oauth_config.has_email_password %}
+
+def register_user(email: str, password: str) -> Dict[str, Any]:
+    """Register a new user with email and password.
+
+    Creates a new user account with hashed password and returns JWT tokens.
+
+    Args:
+        email: User's email address
+        password: Plain text password (will be hashed)
+
+    Returns:
+        Dictionary with user info and tokens: {user, access_token, refresh_token}
+
+    Raises:
+        HTTPException: 400 if user already exists
+
+    Example:
+        >>> result = register_user("user@example.com", "secure-password")
+        >>> access_token = result["access_token"]
+        >>> user_id = result["user"]["id"]
+    """
+    # Check if user already exists
+    existing_user = _get_user_by_email(email)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User with this email already exists"
+        )
+
+    # Hash the password
+    password_hash = hash_password(password)
+
+    # Create user in database
+    user = _create_user(email=email, password_hash=password_hash, provider="email_password")
+
+    # Generate JWT tokens
+    tokens = create_tokens(user["id"], user["email"])
+
+    return {
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+        },
+        "access_token": tokens["access_token"],
+        "refresh_token": tokens["refresh_token"],
+    }
+
+
+def login_user(email: str, password: str) -> Dict[str, Any]:
+    """Authenticate user with email and password.
+
+    Verifies credentials and returns JWT tokens on success.
+
+    Args:
+        email: User's email address
+        password: Plain text password
+
+    Returns:
+        Dictionary with user info and tokens: {user, access_token, refresh_token}
+
+    Raises:
+        HTTPException: 401 if credentials are invalid
+
+    Example:
+        >>> result = login_user("user@example.com", "password")
+        >>> access_token = result["access_token"]
+    """
+    # Get user from database
+    user = _get_user_by_email(email)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
+
+    # Verify password
+    if not user.get("password_hash"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This account uses OAuth login. Please use the appropriate provider."
+        )
+
+    if not verify_password(password, user["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
+
+    # Generate JWT tokens
+    tokens = create_tokens(user["id"], user["email"])
+
+    return {
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+        },
+        "access_token": tokens["access_token"],
+        "refresh_token": tokens["refresh_token"],
+    }
+
+{% endif %}
+
+# =============================================================================
+# User Creation on OAuth Callback (auth_022)
+# =============================================================================
+
+def get_or_create_user(provider: str, email: str, provider_id: str) -> Dict[str, Any]:
+    """Get existing user or create new one from OAuth provider data.
+
+    If a user with this email exists, links the OAuth provider to their account.
+    If no user exists, creates a new user with the OAuth provider.
+
+    Args:
+        provider: OAuth provider name ("google", "apple", etc.)
+        email: User's email from OAuth provider
+        provider_id: Provider-specific user ID
+
+    Returns:
+        Dictionary with user info and tokens: {user, access_token, refresh_token}
+
+    Example:
+        >>> result = get_or_create_user("google", "user@example.com", "google-123")
+        >>> user_id = result["user"]["id"]
+        >>> access_token = result["access_token"]
+    """
+    # Check if user exists with this email
+    user = _get_user_by_email(email)
+
+    if user:
+        # User exists - link OAuth provider if not already linked
+        if user.get("provider") != provider or user.get("provider_id") != provider_id:
+            _link_oauth_provider(user["id"], provider, provider_id)
+    else:
+        # Create new user with OAuth provider
+        user = _create_user(
+            email=email,
+            provider=provider,
+            provider_id=provider_id
+        )
+
+    # Generate JWT tokens
+    tokens = create_tokens(user["id"], user["email"])
+
+    return {
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "provider": provider,
+        },
+        "access_token": tokens["access_token"],
+        "refresh_token": tokens["refresh_token"],
+    }
 
 
 # =============================================================================
@@ -77,18 +499,21 @@ def get_google_auth_url(state: Optional[str] = None) -> str:
 async def google_callback(code: str) -> Dict[str, Any]:
     """Exchange authorization code for access token and fetch user info.
 
+    Creates or retrieves user account and returns JWT tokens.
+
     Args:
         code: Authorization code from Google OAuth callback
 
     Returns:
-        Dictionary containing access_token, refresh_token, and user info
+        Dictionary containing user info and JWT tokens
 
     Raises:
         httpx.HTTPError: If token exchange or user info request fails
 
     Example:
         >>> result = await google_callback(code="auth-code-123")
-        >>> print(result["user_info"]["email"])
+        >>> print(result["user"]["email"])
+        >>> access_token = result["access_token"]
     """
     # Exchange code for tokens
     token_url = "https://oauth2.googleapis.com/token"
@@ -109,12 +534,14 @@ async def google_callback(code: str) -> Dict[str, Any]:
         # Get user info
         user_info = await get_google_user_info(tokens["access_token"])
 
-        return {
-            "access_token": tokens["access_token"],
-            "refresh_token": tokens.get("refresh_token"),
-            "expires_in": tokens.get("expires_in"),
-            "user_info": user_info,
-        }
+        # Create or get user and generate JWT tokens
+        result = get_or_create_user(
+            provider="google",
+            email=user_info["email"],
+            provider_id=user_info["id"]
+        )
+
+        return result
 
 
 async def get_google_user_info(access_token: str) -> Dict[str, Any]:
@@ -181,14 +608,14 @@ async def apple_callback(code: str, id_token: Optional[str] = None) -> Dict[str,
     """Exchange authorization code for tokens and extract user info.
 
     Apple Sign In returns an id_token which contains user information.
-    The code can be exchanged for an access token if needed for additional API calls.
+    Creates or retrieves user account and returns JWT tokens.
 
     Args:
         code: Authorization code from Apple callback
         id_token: Optional ID token from Apple (contains user info)
 
     Returns:
-        Dictionary containing tokens and user info
+        Dictionary containing user info and JWT tokens
 
     Raises:
         httpx.HTTPError: If token exchange fails
@@ -196,7 +623,8 @@ async def apple_callback(code: str, id_token: Optional[str] = None) -> Dict[str,
 
     Example:
         >>> result = await apple_callback(code="auth-code-123", id_token="jwt-token")
-        >>> print(result["user_info"]["email"])
+        >>> print(result["user"]["email"])
+        >>> access_token = result["access_token"]
     """
     # Decode ID token to get user info
     user_info = {}
@@ -218,12 +646,14 @@ async def apple_callback(code: str, id_token: Optional[str] = None) -> Dict[str,
         token_response.raise_for_status()
         tokens = token_response.json()
 
-        return {
-            "access_token": tokens.get("access_token"),
-            "refresh_token": tokens.get("refresh_token"),
-            "expires_in": tokens.get("expires_in"),
-            "user_info": user_info,
-        }
+        # Create or get user and generate JWT tokens
+        result = get_or_create_user(
+            provider="apple",
+            email=user_info["email"],
+            provider_id=user_info["id"]
+        )
+
+        return result
 
 
 def decode_apple_id_token(id_token: str) -> Dict[str, Any]:
@@ -391,10 +821,10 @@ def verify_magic_link(token: str) -> str:
 
 
 async def send_magic_link_email(email: str, magic_link: str) -> bool:
-    """Send magic link email to user.
+    """Send magic link email to user via SMTP.
 
-    This is a stub implementation. In production, integrate with your email service
-    provider (SendGrid, AWS SES, Mailgun, etc.).
+    Uses SMTP configuration from environment variables to send the magic link email.
+    Falls back to console output if SMTP is not configured.
 
     Args:
         email: Recipient email address
@@ -403,32 +833,89 @@ async def send_magic_link_email(email: str, magic_link: str) -> bool:
     Returns:
         True if email was sent successfully, False otherwise
 
+    Raises:
+        Exception: If SMTP sending fails
+
     Example:
         >>> token, link = generate_magic_link("user@example.com")
         >>> success = await send_magic_link_email("user@example.com", link)
         >>> if success:
         ...     print("Magic link sent!")
     """
-    # TODO: Integrate with email service provider
-    # Example with SendGrid:
-    # import sendgrid
-    # from sendgrid.helpers.mail import Mail
-    #
-    # sg = sendgrid.SendGridAPIClient(api_key=os.environ.get('SENDGRID_API_KEY'))
-    # message = Mail(
-    #     from_email='noreply@yourapp.com',
-    #     to_emails=email,
-    #     subject='Your Magic Link',
-    #     html_content=f'<p>Click here to sign in: <a href="{magic_link}">Sign In</a></p>'
-    # )
-    # response = sg.send(message)
-    # return response.status_code == 202
+    # Check if SMTP is configured
+    if not oauth_config.smtp_host or not oauth_config.smtp_user:
+        # Fallback: Print to console (for development)
+        print(f"[DEV MODE] Magic link email for {email}")
+        print(f"[DEV MODE] Magic link: {magic_link}")
+        print("[DEV MODE] Configure SMTP_HOST, SMTP_USER, SMTP_PASSWORD to send real emails")
+        return True
 
-    # Stub implementation - just print the link
-    print(f"[STUB] Would send magic link email to {email}")
-    print(f"[STUB] Magic link: {magic_link}")
+    try:
+        # Create email message
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = 'Your Magic Link - Sign In'
+        msg['From'] = oauth_config.smtp_from_email
+        msg['To'] = email
 
-    return True
+        # Plain text version
+        text = f"""
+Hello,
+
+Click the link below to sign in to your account:
+
+{magic_link}
+
+This link will expire in {oauth_config.magic_link_expiry_minutes} minutes.
+
+If you didn't request this link, you can safely ignore this email.
+"""
+
+        # HTML version
+        html = f"""
+<html>
+  <head></head>
+  <body>
+    <h2>Sign In to Your Account</h2>
+    <p>Click the button below to sign in:</p>
+    <p>
+      <a href="{magic_link}"
+         style="display: inline-block; padding: 12px 24px; background-color: #007bff;
+                color: white; text-decoration: none; border-radius: 4px;">
+        Sign In
+      </a>
+    </p>
+    <p>Or copy and paste this link into your browser:</p>
+    <p><a href="{magic_link}">{magic_link}</a></p>
+    <p style="color: #666; font-size: 14px;">
+      This link will expire in {oauth_config.magic_link_expiry_minutes} minutes.
+    </p>
+    <p style="color: #999; font-size: 12px;">
+      If you didn't request this link, you can safely ignore this email.
+    </p>
+  </body>
+</html>
+"""
+
+        # Attach both versions
+        part1 = MIMEText(text, 'plain')
+        part2 = MIMEText(html, 'html')
+        msg.attach(part1)
+        msg.attach(part2)
+
+        # Connect to SMTP server and send
+        with smtplib.SMTP(oauth_config.smtp_host, oauth_config.smtp_port) as server:
+            server.starttls()  # Enable TLS
+            server.login(oauth_config.smtp_user, oauth_config.smtp_password)
+            server.send_message(msg)
+
+        return True
+
+    except Exception as e:
+        print(f"[ERROR] Failed to send magic link email: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send magic link email"
+        )
 
 {% endif %}
 
@@ -455,3 +942,253 @@ def validate_oauth_state(provided_state: str, stored_state: str) -> bool:
         ...     pass
     """
     return secrets.compare_digest(provided_state, stored_state)
+
+
+# =============================================================================
+# FastAPI Router with Authentication Endpoints (auth_024)
+# =============================================================================
+
+# Create auth router
+auth_router = APIRouter(prefix="/auth", tags=["auth"])
+
+{% if oauth_config.has_email_password %}
+@auth_router.post("/register", response_model=TokenResponse)
+async def register_endpoint(user_data: UserRegistration) -> TokenResponse:
+    """Register a new user with email and password.
+
+    Args:
+        user_data: User registration data (email, password)
+
+    Returns:
+        TokenResponse with access_token and refresh_token
+
+    Raises:
+        HTTPException: 400 if user already exists
+
+    Example:
+        POST /auth/register
+        {
+            "email": "user@example.com",
+            "password": "secure-password"
+        }
+    """
+    result = register_user(user_data.email, user_data.password)
+    return TokenResponse(
+        access_token=result["access_token"],
+        refresh_token=result["refresh_token"]
+    )
+
+
+@auth_router.post("/login", response_model=TokenResponse)
+async def login_endpoint(credentials: UserLogin) -> TokenResponse:
+    """Login with email and password.
+
+    Args:
+        credentials: User login credentials (email, password)
+
+    Returns:
+        TokenResponse with access_token and refresh_token
+
+    Raises:
+        HTTPException: 401 if credentials are invalid
+
+    Example:
+        POST /auth/login
+        {
+            "email": "user@example.com",
+            "password": "password"
+        }
+    """
+    result = login_user(credentials.email, credentials.password)
+    return TokenResponse(
+        access_token=result["access_token"],
+        refresh_token=result["refresh_token"]
+    )
+
+{% endif %}
+
+{% if oauth_config.has_google %}
+@auth_router.get("/google")
+async def google_auth_redirect():
+    """Redirect to Google OAuth authorization page.
+
+    Returns:
+        Redirect response to Google OAuth URL
+
+    Example:
+        GET /auth/google
+        -> Redirects to Google authorization page
+    """
+    from fastapi.responses import RedirectResponse
+
+    # Generate state for CSRF protection
+    state = secrets.token_urlsafe(32)
+
+    # TODO: Store state in session/redis for validation in callback
+    # Example: redis_client.setex(f"oauth_state:{state}", 300, "google")
+
+    auth_url = get_google_auth_url(state=state)
+    return RedirectResponse(url=auth_url)
+
+
+@auth_router.get("/google/callback", response_model=TokenResponse)
+async def google_callback_endpoint(code: str, state: str) -> TokenResponse:
+    """Handle Google OAuth callback.
+
+    Args:
+        code: Authorization code from Google
+        state: State parameter for CSRF protection
+
+    Returns:
+        TokenResponse with access_token and refresh_token
+
+    Raises:
+        HTTPException: 400 if state is invalid or code exchange fails
+
+    Example:
+        GET /auth/google/callback?code=...&state=...
+    """
+    # TODO: Validate state parameter against stored value
+    # Example:
+    # stored_state = redis_client.get(f"oauth_state:{state}")
+    # if not stored_state or not validate_oauth_state(state, stored_state.decode()):
+    #     raise HTTPException(status_code=400, detail="Invalid state parameter")
+
+    result = await google_callback(code)
+    return TokenResponse(
+        access_token=result["access_token"],
+        refresh_token=result["refresh_token"]
+    )
+
+{% endif %}
+
+{% if oauth_config.has_apple %}
+@auth_router.get("/apple")
+async def apple_auth_redirect():
+    """Redirect to Apple Sign In authorization page.
+
+    Returns:
+        Redirect response to Apple Sign In URL
+
+    Example:
+        GET /auth/apple
+        -> Redirects to Apple authorization page
+    """
+    from fastapi.responses import RedirectResponse
+
+    # Generate state for CSRF protection
+    state = secrets.token_urlsafe(32)
+
+    # TODO: Store state in session/redis for validation in callback
+    # Example: redis_client.setex(f"oauth_state:{state}", 300, "apple")
+
+    auth_url = get_apple_auth_url(state=state)
+    return RedirectResponse(url=auth_url)
+
+
+@auth_router.post("/apple/callback", response_model=TokenResponse)
+async def apple_callback_endpoint(code: str, id_token: Optional[str] = None, state: Optional[str] = None) -> TokenResponse:
+    """Handle Apple Sign In callback.
+
+    Args:
+        code: Authorization code from Apple
+        id_token: ID token from Apple (contains user info)
+        state: State parameter for CSRF protection
+
+    Returns:
+        TokenResponse with access_token and refresh_token
+
+    Raises:
+        HTTPException: 400 if state is invalid or code exchange fails
+
+    Example:
+        POST /auth/apple/callback
+        Form data: code=...&id_token=...&state=...
+    """
+    # TODO: Validate state parameter against stored value
+    # if state:
+    #     stored_state = redis_client.get(f"oauth_state:{state}")
+    #     if not stored_state or not validate_oauth_state(state, stored_state.decode()):
+    #         raise HTTPException(status_code=400, detail="Invalid state parameter")
+
+    result = await apple_callback(code, id_token)
+    return TokenResponse(
+        access_token=result["access_token"],
+        refresh_token=result["refresh_token"]
+    )
+
+{% endif %}
+
+{% if oauth_config.has_magic_link %}
+@auth_router.post("/magic-link")
+async def send_magic_link_endpoint(request: MagicLinkRequest):
+    """Send a magic link to the user's email for passwordless authentication.
+
+    Args:
+        request: Magic link request with email
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException: 500 if email sending fails
+
+    Example:
+        POST /auth/magic-link
+        {
+            "email": "user@example.com"
+        }
+    """
+    # Generate magic link
+    token, magic_link = generate_magic_link(request.email)
+
+    # Send email
+    await send_magic_link_email(request.email, magic_link)
+
+    return {
+        "message": "Magic link sent to your email",
+        "email": request.email
+    }
+
+
+@auth_router.get("/magic-link/verify", response_model=TokenResponse)
+async def verify_magic_link_endpoint(token: str) -> TokenResponse:
+    """Verify a magic link token and authenticate the user.
+
+    Args:
+        token: Magic link token from email
+
+    Returns:
+        TokenResponse with access_token and refresh_token
+
+    Raises:
+        HTTPException: 401 if token is invalid or expired
+
+    Example:
+        GET /auth/magic-link/verify?token=...
+    """
+    try:
+        # Verify token and get email
+        email = verify_magic_link(token)
+
+        # Get or create user
+        user = _get_user_by_email(email)
+        if not user:
+            # Create new user with magic link authentication
+            user = _create_user(email=email, provider="magic_link")
+
+        # Generate JWT tokens
+        tokens = create_tokens(user["id"], user["email"])
+
+        return TokenResponse(
+            access_token=tokens["access_token"],
+            refresh_token=tokens["refresh_token"]
+        )
+
+    except (JWTError, ValueError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid or expired magic link: {str(e)}"
+        )
+
+{% endif %}

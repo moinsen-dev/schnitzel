@@ -1,0 +1,24 @@
+# RBAC feature schema with role definitions
+schnitzel: 1.0.0
+
+roles:
+  admin:
+    description: Administrator with full access
+    permissions:
+      - "*"
+  moderator:
+    description: Content moderator with limited admin access
+    permissions:
+      - "users:read"
+      - "content:*"
+    inherits:
+      - user
+  user:
+    description: Regular user with basic permissions
+    permissions:
+      - "content:read"
+      - "content:create:own"
+  guest:
+    description: Guest with minimal permissions
+    permissions:
+      - "content:read:public"
