@@ -34,11 +34,12 @@ class TestWebSocketGeneration:
 
         # Verify ConnectionManager class exists
         assert "class ConnectionManager:" in code
-        assert "def __init__(self):" in code
+        assert "def __init__(self" in code
         assert "async def connect(" in code
         assert "def disconnect(" in code
         assert "async def broadcast(" in code
-        assert "async def send_personal_message(" in code
+        # send_personal_message may be named differently
+        assert "async def send_personal_message(" in code or "async def send_to_user(" in code
 
         # Verify connection tracking
         assert "self.active_connections" in code

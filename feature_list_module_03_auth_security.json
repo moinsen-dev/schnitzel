@@ -1,0 +1,2427 @@
+[
+  {
+    "id": "auth_001",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Schema models include AuthConfig for authentication configuration",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/schema/models.py",
+      "Verify AuthConfig class exists with fields: providers, jwt, session, mfa, roles",
+      "Verify providers field accepts List[Literal['email_password', 'google', 'apple', 'magic_link']]",
+      "Verify jwt field has JWTConfig nested model with algorithm, access_expiry, refresh_expiry",
+      "Verify session field has SessionConfig with storage, ttl, multi_device",
+      "Verify mfa field has MFAConfig with enabled, methods",
+      "Verify roles field accepts List[RoleConfig]"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_002",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Schema models include JWTConfig for JWT configuration",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/schema/models.py",
+      "Verify JWTConfig class exists",
+      "Verify algorithm field accepts Literal['HS256', 'RS256', 'ES256']",
+      "Verify access_expiry field accepts duration string (e.g., '15m', '1h')",
+      "Verify refresh_expiry field accepts duration string (e.g., '7d', '30d')",
+      "Verify secret_key field accepts string (for HS256)",
+      "Verify public_key and private_key fields (for RS256/ES256)"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_003",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Schema models include RoleConfig for RBAC role definitions",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/schema/models.py",
+      "Verify RoleConfig class exists with fields: name, permissions, inherits",
+      "Verify name field accepts string role name",
+      "Verify permissions field accepts List[str] with wildcard support",
+      "Verify inherits field accepts Optional[str] for role inheritance",
+      "Verify scoped permissions like 'read:own', 'update:assigned' are supported"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_004",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Schema models include SessionConfig for session management",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/schema/models.py",
+      "Verify SessionConfig class exists",
+      "Verify storage field accepts Literal['redis', 'database', 'memory']",
+      "Verify ttl field accepts duration string for session timeout",
+      "Verify multi_device field accepts boolean",
+      "Verify remember_me field accepts boolean",
+      "Verify remember_me_ttl field for extended sessions"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_005",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Schema models include MFAConfig for multi-factor authentication",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/schema/models.py",
+      "Verify MFAConfig class exists",
+      "Verify enabled field accepts boolean",
+      "Verify methods field accepts List[Literal['totp', 'sms', 'email']]",
+      "Verify backup_codes field accepts integer count",
+      "Verify issuer field for TOTP QR code generation"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_006",
+    "category": "functional",
+    "priority": "P0",
+    "description": "JWT auth generator file exists with correct structure",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/generators/python/auth/jwt.py exists",
+      "Verify file imports Jinja2 Environment and Template",
+      "Verify generate_jwt_auth function accepts schema parameter",
+      "Verify function reads auth.jwt section from schema",
+      "Verify function returns generated JWT utility code as string",
+      "Run pyright on generator file - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_007",
+    "category": "functional",
+    "priority": "P0",
+    "description": "JWT auth generator template exists",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/templates/python/auth/jwt.py.j2 exists",
+      "Verify template includes imports for jose, datetime, typing",
+      "Verify template has create_access_token function",
+      "Verify template has create_refresh_token function",
+      "Verify template has verify_token function",
+      "Verify template uses Jinja2 variables: {{algorithm}}, {{access_expiry}}, {{refresh_expiry}}"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_008",
+    "category": "functional",
+    "priority": "P0",
+    "description": "JWT generator creates access token generation function",
+    "steps": [
+      "Create schema with auth.jwt: algorithm=HS256, access_expiry=15m",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/jwt.py exists",
+      "Check create_access_token function exists",
+      "Verify function signature: create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str",
+      "Verify function uses jwt.encode with HS256 algorithm",
+      "Verify default expiry is 15 minutes",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_009",
+    "category": "functional",
+    "priority": "P0",
+    "description": "JWT generator creates refresh token generation function",
+    "steps": [
+      "Create schema with auth.jwt: refresh_expiry=7d",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/jwt.py exists",
+      "Check create_refresh_token function exists",
+      "Verify function signature: create_refresh_token(data: dict) -> str",
+      "Verify function uses longer expiry (7 days)",
+      "Verify token includes 'type': 'refresh' claim",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_010",
+    "category": "functional",
+    "priority": "P0",
+    "description": "JWT generator creates token verification function",
+    "steps": [
+      "Create schema with auth.jwt configuration",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/jwt.py exists",
+      "Check verify_token function exists",
+      "Verify function signature: verify_token(token: str) -> dict",
+      "Verify function uses jwt.decode with algorithm validation",
+      "Verify function handles ExpiredSignatureError",
+      "Verify function handles JWTError",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_011",
+    "category": "functional",
+    "priority": "P0",
+    "description": "JWT generator supports HS256 algorithm",
+    "steps": [
+      "Create schema with auth.jwt: algorithm=HS256, secret_key='test_secret'",
+      "Run schnitzel generate --target python",
+      "Verify generated code imports jose.jwt",
+      "Verify create_access_token uses algorithm='HS256'",
+      "Verify secret key is loaded from environment variable JWT_SECRET",
+      "Verify verify_token validates with HS256",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_012",
+    "category": "functional",
+    "priority": "P0",
+    "description": "JWT generator supports RS256 algorithm",
+    "steps": [
+      "Create schema with auth.jwt: algorithm=RS256",
+      "Run schnitzel generate --target python",
+      "Verify generated code handles RSA keys",
+      "Verify create_access_token uses private key from environment",
+      "Verify verify_token uses public key from environment",
+      "Verify key loading includes error handling",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_013",
+    "category": "functional",
+    "priority": "P0",
+    "description": "JWT generator includes claims management",
+    "steps": [
+      "Create schema with auth.jwt configuration",
+      "Run schnitzel generate --target python",
+      "Verify generated code includes standard claims: sub, exp, iat",
+      "Verify support for custom claims in token data",
+      "Verify claims are properly typed in return value",
+      "Verify verify_token returns typed claims dictionary",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_014",
+    "category": "functional",
+    "priority": "P0",
+    "description": "JWT generator creates FastAPI dependency for token validation",
+    "steps": [
+      "Create schema with auth.jwt configuration",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/jwt.py exists",
+      "Check get_current_user dependency exists",
+      "Verify dependency signature: get_current_user(token: str = Depends(oauth2_scheme)) -> dict",
+      "Verify dependency uses verify_token internally",
+      "Verify dependency raises HTTPException(401) on invalid token",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_015",
+    "category": "functional",
+    "priority": "P0",
+    "description": "JWT generator handles configurable expiry times",
+    "steps": [
+      "Create schema with auth.jwt: access_expiry='30m', refresh_expiry='14d'",
+      "Run schnitzel generate --target python",
+      "Verify access token expiry is 30 minutes",
+      "Verify refresh token expiry is 14 days",
+      "Verify expiry calculation uses timedelta correctly",
+      "Verify 'exp' claim is set in token payload",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_016",
+    "category": "functional",
+    "priority": "P0",
+    "description": "OAuth integration generator file exists with correct structure",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/generators/python/auth/oauth.py exists",
+      "Verify file imports Jinja2 Environment and Template",
+      "Verify generate_oauth_integration function accepts schema parameter",
+      "Verify function reads auth.providers section from schema",
+      "Verify function generates separate flows for each provider",
+      "Run pyright on generator file - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_017",
+    "category": "functional",
+    "priority": "P0",
+    "description": "OAuth integration template exists",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/templates/python/auth/oauth.py.j2 exists",
+      "Verify template includes imports for httpx, fastapi",
+      "Verify template has sections for each provider: google, apple, magic_link",
+      "Verify template includes callback handlers",
+      "Verify template includes user creation/linking logic",
+      "Verify template uses Jinja2 conditionals for enabled providers"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_018",
+    "category": "functional",
+    "priority": "P0",
+    "description": "OAuth generator creates Google OAuth flow",
+    "steps": [
+      "Create schema with auth.providers: ['google']",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/oauth.py exists",
+      "Check google_auth_url function exists",
+      "Verify function generates OAuth URL with correct scopes",
+      "Check google_callback function exists",
+      "Verify callback exchanges code for token",
+      "Verify callback retrieves user info from Google API",
+      "Verify callback creates/links user account",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_019",
+    "category": "functional",
+    "priority": "P0",
+    "description": "OAuth generator creates Apple Sign In flow",
+    "steps": [
+      "Create schema with auth.providers: ['apple']",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/oauth.py exists",
+      "Check apple_auth_url function exists",
+      "Verify function uses Apple's authorization endpoint",
+      "Check apple_callback function exists",
+      "Verify callback handles Apple's JWT token",
+      "Verify callback validates token signature",
+      "Verify callback extracts user info from token",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_020",
+    "category": "functional",
+    "priority": "P0",
+    "description": "OAuth generator creates magic link email flow",
+    "steps": [
+      "Create schema with auth.providers: ['magic_link']",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/oauth.py exists",
+      "Check send_magic_link function exists",
+      "Verify function generates unique token",
+      "Verify function stores token in Redis with TTL",
+      "Verify function sends email with link",
+      "Check verify_magic_link function exists",
+      "Verify function validates token from Redis",
+      "Verify function authenticates user",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_021",
+    "category": "functional",
+    "priority": "P0",
+    "description": "OAuth generator creates email/password authentication flow",
+    "steps": [
+      "Create schema with auth.providers: ['email_password']",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/oauth.py exists",
+      "Check register_user function exists",
+      "Verify function hashes password with passlib",
+      "Verify function creates user in database",
+      "Check login_user function exists",
+      "Verify function verifies password hash",
+      "Verify function returns JWT tokens on success",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_022",
+    "category": "functional",
+    "priority": "P0",
+    "description": "OAuth generator handles user creation on OAuth callback",
+    "steps": [
+      "Create schema with auth.providers including OAuth",
+      "Run schnitzel generate --target python",
+      "Verify OAuth callback checks if user exists by email",
+      "Verify callback creates new user if not exists",
+      "Verify callback links OAuth provider to existing user",
+      "Verify callback stores provider_id and provider_type",
+      "Verify callback returns JWT tokens",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_023",
+    "category": "functional",
+    "priority": "P0",
+    "description": "OAuth generator includes environment variable configuration",
+    "steps": [
+      "Create schema with auth.providers: ['google', 'apple']",
+      "Run schnitzel generate --target python",
+      "Verify generated code loads GOOGLE_CLIENT_ID from environment",
+      "Verify generated code loads GOOGLE_CLIENT_SECRET from environment",
+      "Verify generated code loads APPLE_CLIENT_ID from environment",
+      "Verify generated code includes error handling for missing env vars",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_024",
+    "category": "functional",
+    "priority": "P0",
+    "description": "OAuth generator creates FastAPI router with auth endpoints",
+    "steps": [
+      "Create schema with auth.providers configuration",
+      "Run schnitzel generate --target python",
+      "Verify generated code includes APIRouter instance",
+      "Verify POST /auth/register endpoint exists (if email_password)",
+      "Verify POST /auth/login endpoint exists (if email_password)",
+      "Verify GET /auth/{provider} endpoints exist for OAuth providers",
+      "Verify GET /auth/{provider}/callback endpoints exist",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_025",
+    "category": "functional",
+    "priority": "P0",
+    "description": "RBAC permission generator file exists with correct structure",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/generators/python/auth/rbac.py exists",
+      "Verify file imports Jinja2 Environment and Template",
+      "Verify generate_rbac function accepts schema parameter",
+      "Verify function reads auth.roles section from schema",
+      "Verify function generates role definitions and permission checking logic",
+      "Run pyright on generator file - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_026",
+    "category": "functional",
+    "priority": "P0",
+    "description": "RBAC permission template exists",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/templates/python/auth/rbac.py.j2 exists",
+      "Verify template includes Role and Permission classes",
+      "Verify template has check_permission function",
+      "Verify template has FastAPI dependency for role checking",
+      "Verify template supports wildcard permissions",
+      "Verify template supports scoped permissions"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_027",
+    "category": "functional",
+    "priority": "P0",
+    "description": "RBAC generator creates role definitions from schema",
+    "steps": [
+      "Create schema with auth.roles: [admin, editor, viewer]",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/rbac.py exists",
+      "Check Role enum exists with all role values",
+      "Verify role names match schema definitions",
+      "Verify each role has associated permissions list",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_028",
+    "category": "functional",
+    "priority": "P0",
+    "description": "RBAC generator creates permission checking utility",
+    "steps": [
+      "Create schema with auth.roles configuration",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/rbac.py exists",
+      "Check has_permission function exists",
+      "Verify function signature: has_permission(user_role: str, required_permission: str) -> bool",
+      "Verify function checks if required permission is in role's permissions",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_029",
+    "category": "functional",
+    "priority": "P0",
+    "description": "RBAC generator supports wildcard permissions",
+    "steps": [
+      "Create schema with role having permission: 'posts:*'",
+      "Run schnitzel generate --target python",
+      "Verify permission checking supports wildcard matching",
+      "Verify 'posts:*' grants 'posts:read', 'posts:write', etc.",
+      "Verify wildcard logic handles multiple levels: 'admin:*' covers all",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_030",
+    "category": "functional",
+    "priority": "P0",
+    "description": "RBAC generator supports scoped permissions",
+    "steps": [
+      "Create schema with role having permission: 'posts:read:own'",
+      "Run schnitzel generate --target python",
+      "Verify permission checking supports scope extraction",
+      "Verify scope parameter in has_permission function",
+      "Verify 'own' scope checks if resource belongs to user",
+      "Verify 'assigned' scope checks if resource is assigned to user",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_031",
+    "category": "functional",
+    "priority": "P0",
+    "description": "RBAC generator creates FastAPI dependency for role checking",
+    "steps": [
+      "Create schema with auth.roles configuration",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/rbac.py exists",
+      "Check require_permission dependency exists",
+      "Verify dependency signature: require_permission(permission: str) returns Depends",
+      "Verify dependency raises HTTPException(403) if permission denied",
+      "Verify dependency integrates with get_current_user",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_032",
+    "category": "functional",
+    "priority": "P0",
+    "description": "RBAC generator supports role inheritance",
+    "steps": [
+      "Create schema with role hierarchy: admin inherits from editor",
+      "Run schnitzel generate --target python",
+      "Verify generated code includes inheritance logic",
+      "Verify admin role automatically has all editor permissions",
+      "Verify has_permission checks inherited roles recursively",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_033",
+    "category": "functional",
+    "priority": "P0",
+    "description": "RBAC generator creates role assignment utilities",
+    "steps": [
+      "Create schema with auth.roles configuration",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/rbac.py exists",
+      "Check assign_role function exists",
+      "Verify function updates user's role in database",
+      "Check get_user_permissions function exists",
+      "Verify function returns all permissions for user's role",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_034",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Session management generator file exists with correct structure",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/generators/python/auth/sessions.py exists",
+      "Verify file imports Jinja2 Environment and Template",
+      "Verify generate_session_management function accepts schema parameter",
+      "Verify function reads auth.session section from schema",
+      "Verify function generates session store and management code",
+      "Run pyright on generator file - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_035",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Session management template exists",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/templates/python/auth/sessions.py.j2 exists",
+      "Verify template includes SessionStore class",
+      "Verify template has create_session function",
+      "Verify template has get_session function",
+      "Verify template has invalidate_session function",
+      "Verify template supports Redis, database, and memory storage"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_036",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Session generator creates Redis-based session store",
+    "steps": [
+      "Create schema with auth.session: storage=redis, ttl=1h",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/sessions.py exists",
+      "Check RedisSessionStore class exists",
+      "Verify class initializes Redis connection",
+      "Verify create_session stores session in Redis with TTL",
+      "Verify get_session retrieves session from Redis",
+      "Verify invalidate_session deletes session from Redis",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_037",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Session generator creates session with unique session ID",
+    "steps": [
+      "Create schema with auth.session configuration",
+      "Run schnitzel generate --target python",
+      "Verify create_session generates unique session_id",
+      "Verify session_id uses secure random generation (secrets module)",
+      "Verify session_id is sufficiently long (at least 32 bytes)",
+      "Verify session_id is URL-safe",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_038",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Session generator stores user data in session",
+    "steps": [
+      "Create schema with auth.session configuration",
+      "Run schnitzel generate --target python",
+      "Verify create_session accepts user_id parameter",
+      "Verify session stores user_id, created_at, last_accessed",
+      "Verify session can store additional metadata (device_id, ip_address)",
+      "Verify get_session returns complete session data",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_039",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Session generator implements session expiry",
+    "steps": [
+      "Create schema with auth.session: ttl=30m",
+      "Run schnitzel generate --target python",
+      "Verify session TTL is set correctly in Redis",
+      "Verify get_session returns None for expired sessions",
+      "Verify session auto-expires after TTL",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_040",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Session generator supports sliding expiration",
+    "steps": [
+      "Create schema with auth.session configuration",
+      "Run schnitzel generate --target python",
+      "Verify get_session updates last_accessed timestamp",
+      "Verify get_session extends TTL in Redis (sliding window)",
+      "Verify active sessions don't expire if used regularly",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_041",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Session generator supports multi-device sessions",
+    "steps": [
+      "Create schema with auth.session: multi_device=true",
+      "Run schnitzel generate --target python",
+      "Verify user can have multiple active sessions",
+      "Verify each device gets unique session_id",
+      "Verify invalidate_session only affects specific device",
+      "Check invalidate_all_sessions function exists for user",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_042",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Session generator implements remember me functionality",
+    "steps": [
+      "Create schema with auth.session: remember_me=true, remember_me_ttl=30d",
+      "Run schnitzel generate --target python",
+      "Verify create_session accepts remember_me parameter",
+      "Verify remember_me=true extends session TTL to 30 days",
+      "Verify remember_me=false uses normal TTL",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_043",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Session generator creates FastAPI dependency for session validation",
+    "steps": [
+      "Create schema with auth.session configuration",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/sessions.py exists",
+      "Check get_current_session dependency exists",
+      "Verify dependency extracts session_id from cookie or header",
+      "Verify dependency validates session via get_session",
+      "Verify dependency raises HTTPException(401) if session invalid",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_044",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Session generator supports database-backed sessions",
+    "steps": [
+      "Create schema with auth.session: storage=database",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/sessions.py exists",
+      "Check DatabaseSessionStore class exists",
+      "Verify class uses SQLAlchemy to store sessions",
+      "Verify sessions table has columns: id, user_id, created_at, expires_at",
+      "Verify expired sessions are cleaned up periodically",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_045",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Session generator supports in-memory sessions for development",
+    "steps": [
+      "Create schema with auth.session: storage=memory",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/sessions.py exists",
+      "Check MemorySessionStore class exists",
+      "Verify class uses simple dict for session storage",
+      "Verify sessions are lost on server restart (warning in comments)",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_046",
+    "category": "functional",
+    "priority": "P0",
+    "description": "MFA generator file exists with correct structure",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/generators/python/auth/mfa.py exists",
+      "Verify file imports Jinja2 Environment and Template",
+      "Verify generate_mfa function accepts schema parameter",
+      "Verify function reads auth.mfa section from schema",
+      "Verify function generates MFA enrollment and verification code",
+      "Run pyright on generator file - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_047",
+    "category": "functional",
+    "priority": "P0",
+    "description": "MFA generator template exists",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/templates/python/auth/mfa.py.j2 exists",
+      "Verify template includes imports for pyotp, qrcode",
+      "Verify template has generate_totp_secret function",
+      "Verify template has verify_totp_code function",
+      "Verify template has generate_backup_codes function",
+      "Verify template includes QR code generation for TOTP"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_048",
+    "category": "functional",
+    "priority": "P0",
+    "description": "MFA generator creates TOTP secret generation",
+    "steps": [
+      "Create schema with auth.mfa: enabled=true, methods=['totp']",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/mfa.py exists",
+      "Check generate_totp_secret function exists",
+      "Verify function generates random base32 secret",
+      "Verify function returns secret and provisioning URI",
+      "Verify provisioning URI includes issuer and user email",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_049",
+    "category": "functional",
+    "priority": "P0",
+    "description": "MFA generator creates TOTP verification",
+    "steps": [
+      "Create schema with auth.mfa: enabled=true, methods=['totp']",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/mfa.py exists",
+      "Check verify_totp_code function exists",
+      "Verify function signature: verify_totp_code(secret: str, code: str) -> bool",
+      "Verify function uses pyotp to validate code",
+      "Verify function handles time window for validation",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_050",
+    "category": "functional",
+    "priority": "P0",
+    "description": "MFA generator creates QR code generation for TOTP",
+    "steps": [
+      "Create schema with auth.mfa configuration",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/mfa.py exists",
+      "Check generate_totp_qr_code function exists",
+      "Verify function accepts provisioning URI",
+      "Verify function generates QR code image",
+      "Verify function returns image as bytes or base64",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_051",
+    "category": "functional",
+    "priority": "P0",
+    "description": "MFA generator creates backup codes generation",
+    "steps": [
+      "Create schema with auth.mfa: backup_codes=10",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/mfa.py exists",
+      "Check generate_backup_codes function exists",
+      "Verify function generates 10 unique codes",
+      "Verify codes are secure random alphanumeric strings",
+      "Verify codes are hashed before storage",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_052",
+    "category": "functional",
+    "priority": "P0",
+    "description": "MFA generator creates backup code verification",
+    "steps": [
+      "Create schema with auth.mfa configuration",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/mfa.py exists",
+      "Check verify_backup_code function exists",
+      "Verify function validates backup code against hashed values",
+      "Verify function marks code as used after successful validation",
+      "Verify used codes cannot be reused",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_053",
+    "category": "functional",
+    "priority": "P0",
+    "description": "MFA generator creates enrollment flow",
+    "steps": [
+      "Create schema with auth.mfa configuration",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/mfa.py exists",
+      "Check enroll_mfa endpoint exists",
+      "Verify endpoint generates TOTP secret",
+      "Verify endpoint returns QR code and backup codes",
+      "Verify endpoint requires verification before enabling MFA",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_054",
+    "category": "functional",
+    "priority": "P0",
+    "description": "MFA generator creates verification middleware",
+    "steps": [
+      "Create schema with auth.mfa: enabled=true",
+      "Run schnitzel generate --target python",
+      "Verify backend/app/generated/auth/mfa.py exists",
+      "Check require_mfa dependency exists",
+      "Verify dependency checks if user has MFA enabled",
+      "Verify dependency validates MFA code from request",
+      "Verify dependency raises HTTPException if MFA verification fails",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_055",
+    "category": "functional",
+    "priority": "P0",
+    "description": "MFA generator handles MFA setup completion",
+    "steps": [
+      "Create schema with auth.mfa configuration",
+      "Run schnitzel generate --target python",
+      "Verify complete_mfa_enrollment endpoint exists",
+      "Verify endpoint validates TOTP code from user",
+      "Verify endpoint enables MFA for user on successful validation",
+      "Verify endpoint stores encrypted TOTP secret in database",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_056",
+    "category": "functional",
+    "priority": "P0",
+    "description": "MFA generator creates disable MFA flow",
+    "steps": [
+      "Create schema with auth.mfa configuration",
+      "Run schnitzel generate --target python",
+      "Verify disable_mfa endpoint exists",
+      "Verify endpoint requires password confirmation",
+      "Verify endpoint disables MFA for user",
+      "Verify endpoint clears TOTP secret and backup codes",
+      "Run pyright - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_057",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart auth client generator file exists with correct structure",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/generators/dart/auth.py exists",
+      "Verify file imports Jinja2 Environment and Template",
+      "Verify generate_dart_auth function accepts schema parameter",
+      "Verify function reads auth section from schema",
+      "Verify function generates Dart auth client code",
+      "Run pyright on generator file - no type errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_058",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart auth client template exists",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/templates/dart/auth.dart.j2 exists",
+      "Verify template includes AuthClient class",
+      "Verify template has login, logout, refresh token methods",
+      "Verify template includes token storage logic",
+      "Verify template includes Dio interceptor for auth",
+      "Verify template supports multiple auth providers"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_059",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart auth generator creates AuthClient class",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate --target dart",
+      "Verify packages/shared/lib/generated/auth/auth_client.dart exists",
+      "Check AuthClient class exists",
+      "Verify class has login method: Future<AuthResult> login(String email, String password)",
+      "Verify class has logout method: Future<void> logout()",
+      "Verify class has refreshToken method: Future<void> refreshToken()",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_060",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart auth generator creates secure token storage",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate --target dart",
+      "Verify packages/shared/lib/generated/auth/token_storage.dart exists",
+      "Check TokenStorage class uses flutter_secure_storage",
+      "Verify saveAccessToken method exists",
+      "Verify saveRefreshToken method exists",
+      "Verify getAccessToken method exists",
+      "Verify clearTokens method exists",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_061",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart auth generator creates auto token refresh logic",
+    "steps": [
+      "Create schema with auth.jwt configuration",
+      "Run schnitzel generate --target dart",
+      "Verify AuthClient checks token expiry before requests",
+      "Verify AuthClient calls refreshToken automatically when expired",
+      "Verify refresh logic uses refresh token to get new access token",
+      "Verify new tokens are stored after refresh",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_062",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart auth generator creates Dio auth interceptor",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate --target dart",
+      "Verify packages/shared/lib/generated/auth/auth_interceptor.dart exists",
+      "Check AuthInterceptor extends Dio Interceptor",
+      "Verify interceptor adds Authorization header with access token",
+      "Verify interceptor handles 401 responses by refreshing token",
+      "Verify interceptor retries original request after token refresh",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_063",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart auth generator creates AuthBloc for state management",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate --target dart",
+      "Verify packages/shared/lib/generated/auth/auth_bloc.dart exists",
+      "Check AuthBloc extends Bloc<AuthEvent, AuthState>",
+      "Verify AuthState includes: Authenticated, Unauthenticated, Loading",
+      "Verify AuthEvent includes: LoginRequested, LogoutRequested, TokenRefreshed",
+      "Verify bloc handles state transitions correctly",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_064",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart auth generator creates OAuth flow handlers",
+    "steps": [
+      "Create schema with auth.providers: ['google', 'apple']",
+      "Run schnitzel generate --target dart",
+      "Verify packages/shared/lib/generated/auth/oauth_handler.dart exists",
+      "Check loginWithGoogle method exists",
+      "Check loginWithApple method exists",
+      "Verify methods use url_launcher to open OAuth URL",
+      "Verify methods handle callback with deep linking",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_065",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart auth generator handles Google OAuth flow",
+    "steps": [
+      "Create schema with auth.providers: ['google']",
+      "Run schnitzel generate --target dart",
+      "Verify loginWithGoogle opens Google OAuth URL",
+      "Verify method includes client_id from environment",
+      "Verify method includes correct redirect_uri",
+      "Verify callback extracts authorization code",
+      "Verify callback sends code to backend for token exchange",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_066",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart auth generator handles Apple Sign In flow",
+    "steps": [
+      "Create schema with auth.providers: ['apple']",
+      "Run schnitzel generate --target dart",
+      "Verify loginWithApple uses sign_in_with_apple package",
+      "Verify method requests email and name scopes",
+      "Verify method handles credential response",
+      "Verify method sends credential to backend",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_067",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart auth generator creates logout functionality",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate --target dart",
+      "Verify AuthClient.logout() clears tokens from storage",
+      "Verify logout() invalidates session on backend",
+      "Verify logout() updates AuthBloc to Unauthenticated state",
+      "Verify logout() clears any cached user data",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_068",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart auth generator handles token refresh failures",
+    "steps": [
+      "Create schema with auth.jwt configuration",
+      "Run schnitzel generate --target dart",
+      "Verify refresh token failure logs user out",
+      "Verify refresh failure clears stored tokens",
+      "Verify refresh failure transitions AuthBloc to Unauthenticated",
+      "Verify user is redirected to login screen",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_069",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Dart auth generator creates user model with auth fields",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate --target dart",
+      "Verify User model includes id, email, roles fields",
+      "Verify User model includes provider and provider_id fields",
+      "Verify User model includes mfa_enabled field",
+      "Verify User model uses freezed for immutability",
+      "Run dart analyze - no errors"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_070",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: JWT token generation works end-to-end",
+    "steps": [
+      "Create test schema with auth.jwt: algorithm=HS256, access_expiry=15m",
+      "Run schnitzel generate",
+      "Import generated jwt.py in test",
+      "Call create_access_token with user data",
+      "Verify token is valid JWT string",
+      "Decode token and verify claims: sub, exp, iat",
+      "Verify token expires in 15 minutes",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_071",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: JWT token validation works correctly",
+    "steps": [
+      "Create test schema with auth.jwt configuration",
+      "Run schnitzel generate",
+      "Import generated jwt.py in test",
+      "Create access token with test data",
+      "Call verify_token with the token",
+      "Verify returned claims match original data",
+      "Test with invalid token - verify JWTError is raised",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_072",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: JWT refresh token flow works",
+    "steps": [
+      "Create test schema with auth.jwt configuration",
+      "Run schnitzel generate",
+      "Import generated jwt.py in test",
+      "Create refresh token",
+      "Verify refresh token has longer expiry than access token",
+      "Verify refresh token has 'type': 'refresh' claim",
+      "Use refresh token to get new access token",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_073",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: JWT RS256 algorithm works correctly",
+    "steps": [
+      "Create test schema with auth.jwt: algorithm=RS256",
+      "Generate RSA key pair for testing",
+      "Run schnitzel generate",
+      "Import generated jwt.py in test",
+      "Create token with private key",
+      "Verify token with public key",
+      "Verify verification fails with wrong key",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_074",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Email/password registration works",
+    "steps": [
+      "Create test schema with auth.providers: ['email_password']",
+      "Run schnitzel generate",
+      "Import generated oauth.py in test",
+      "Call register_user with email and password",
+      "Verify user is created in database",
+      "Verify password is hashed (not plaintext)",
+      "Verify JWT tokens are returned",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_075",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Email/password login works",
+    "steps": [
+      "Create test schema with auth.providers: ['email_password']",
+      "Run schnitzel generate",
+      "Register test user first",
+      "Call login_user with correct credentials",
+      "Verify JWT tokens are returned",
+      "Test with incorrect password - verify authentication fails",
+      "Test with non-existent email - verify user not found",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_076",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Password hashing is secure",
+    "steps": [
+      "Create test schema with auth.providers: ['email_password']",
+      "Run schnitzel generate",
+      "Register user with password 'test123'",
+      "Retrieve user from database",
+      "Verify password field is hashed (bcrypt or argon2)",
+      "Verify password hash is different each time (salt)",
+      "Verify password verification works with passlib",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_077",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Magic link generation works",
+    "steps": [
+      "Create test schema with auth.providers: ['magic_link']",
+      "Run schnitzel generate",
+      "Mock Redis connection",
+      "Call send_magic_link with email",
+      "Verify unique token is generated",
+      "Verify token is stored in Redis with TTL",
+      "Verify magic link URL is created",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_078",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Magic link verification works",
+    "steps": [
+      "Create test schema with auth.providers: ['magic_link']",
+      "Run schnitzel generate",
+      "Generate magic link token",
+      "Call verify_magic_link with token",
+      "Verify user is authenticated",
+      "Verify JWT tokens are returned",
+      "Test with expired token - verify failure",
+      "Test with invalid token - verify failure",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_079",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: RBAC role checking works",
+    "steps": [
+      "Create test schema with auth.roles: [admin, editor, viewer]",
+      "Assign permissions: admin=['*'], editor=['posts:*'], viewer=['posts:read']",
+      "Run schnitzel generate",
+      "Import generated rbac.py in test",
+      "Test admin can do everything",
+      "Test editor can read/write posts",
+      "Test viewer can only read posts",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_080",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: RBAC wildcard permissions work",
+    "steps": [
+      "Create test schema with role having 'posts:*' permission",
+      "Run schnitzel generate",
+      "Import generated rbac.py in test",
+      "Test has_permission('posts:*', 'posts:read') returns True",
+      "Test has_permission('posts:*', 'posts:write') returns True",
+      "Test has_permission('posts:*', 'users:read') returns False",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_081",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: RBAC scoped permissions work",
+    "steps": [
+      "Create test schema with role having 'posts:read:own' permission",
+      "Run schnitzel generate",
+      "Import generated rbac.py in test",
+      "Test user can read their own posts",
+      "Test user cannot read other users' posts",
+      "Test scope checking with resource ownership",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_082",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: RBAC role inheritance works",
+    "steps": [
+      "Create test schema with role hierarchy: admin inherits editor",
+      "Editor has 'posts:*', admin inherits all editor permissions",
+      "Run schnitzel generate",
+      "Import generated rbac.py in test",
+      "Test admin has all editor permissions",
+      "Test admin permissions include both explicit and inherited",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_083",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: FastAPI role dependency works",
+    "steps": [
+      "Create test schema with auth.roles configuration",
+      "Run schnitzel generate",
+      "Create test FastAPI app with protected endpoint",
+      "Use require_permission dependency on endpoint",
+      "Test with user having required permission - access granted",
+      "Test with user lacking permission - 403 Forbidden",
+      "Run pytest with FastAPI TestClient - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_084",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Redis session creation works",
+    "steps": [
+      "Create test schema with auth.session: storage=redis, ttl=1h",
+      "Run schnitzel generate",
+      "Mock Redis connection",
+      "Import generated sessions.py in test",
+      "Call create_session with user_id",
+      "Verify session is stored in Redis",
+      "Verify session has TTL of 1 hour",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_085",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Session retrieval works",
+    "steps": [
+      "Create test schema with auth.session configuration",
+      "Run schnitzel generate",
+      "Create test session",
+      "Call get_session with session_id",
+      "Verify session data is returned correctly",
+      "Test with invalid session_id - returns None",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_086",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Session invalidation works",
+    "steps": [
+      "Create test schema with auth.session configuration",
+      "Run schnitzel generate",
+      "Create test session",
+      "Call invalidate_session with session_id",
+      "Verify session is deleted from Redis",
+      "Test get_session returns None after invalidation",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_087",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Multi-device sessions work",
+    "steps": [
+      "Create test schema with auth.session: multi_device=true",
+      "Run schnitzel generate",
+      "Create multiple sessions for same user (different devices)",
+      "Verify each session has unique session_id",
+      "Verify all sessions are active simultaneously",
+      "Invalidate one session - others remain active",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_088",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Remember me functionality works",
+    "steps": [
+      "Create test schema with auth.session: remember_me=true, remember_me_ttl=30d",
+      "Run schnitzel generate",
+      "Create session with remember_me=true",
+      "Verify session TTL is 30 days",
+      "Create session with remember_me=false",
+      "Verify session TTL is normal (1h)",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_089",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Session sliding expiration works",
+    "steps": [
+      "Create test schema with auth.session configuration",
+      "Run schnitzel generate",
+      "Create test session",
+      "Wait 30 seconds",
+      "Call get_session - verify TTL is extended",
+      "Verify last_accessed timestamp is updated",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_090",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: TOTP secret generation works",
+    "steps": [
+      "Create test schema with auth.mfa: enabled=true, methods=['totp']",
+      "Run schnitzel generate",
+      "Import generated mfa.py in test",
+      "Call generate_totp_secret",
+      "Verify secret is base32 encoded",
+      "Verify provisioning URI is generated",
+      "Verify URI includes issuer and user email",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_091",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: TOTP code verification works",
+    "steps": [
+      "Create test schema with auth.mfa: enabled=true, methods=['totp']",
+      "Run schnitzel generate",
+      "Generate TOTP secret",
+      "Generate valid TOTP code using pyotp",
+      "Call verify_totp_code with secret and code",
+      "Verify code is accepted",
+      "Test with invalid code - verify rejection",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_092",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: TOTP QR code generation works",
+    "steps": [
+      "Create test schema with auth.mfa configuration",
+      "Run schnitzel generate",
+      "Generate TOTP secret and provisioning URI",
+      "Call generate_totp_qr_code",
+      "Verify QR code image is generated",
+      "Verify image can be encoded as base64",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_093",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Backup codes generation works",
+    "steps": [
+      "Create test schema with auth.mfa: backup_codes=10",
+      "Run schnitzel generate",
+      "Call generate_backup_codes",
+      "Verify 10 unique codes are generated",
+      "Verify codes are sufficiently random and secure",
+      "Verify codes are hashed before storage",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_094",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Backup code verification works",
+    "steps": [
+      "Create test schema with auth.mfa configuration",
+      "Run schnitzel generate",
+      "Generate backup codes",
+      "Use one backup code for verification",
+      "Verify code is accepted",
+      "Verify code is marked as used",
+      "Test reusing same code - verify rejection",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_095",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: MFA enrollment flow works end-to-end",
+    "steps": [
+      "Create test schema with auth.mfa: enabled=true",
+      "Run schnitzel generate",
+      "Call enroll_mfa endpoint",
+      "Verify TOTP secret and QR code are returned",
+      "Verify backup codes are generated",
+      "Complete enrollment with valid TOTP code",
+      "Verify MFA is enabled for user",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_096",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: MFA verification middleware works",
+    "steps": [
+      "Create test schema with auth.mfa: enabled=true",
+      "Run schnitzel generate",
+      "Enable MFA for test user",
+      "Create FastAPI endpoint with require_mfa dependency",
+      "Test access without MFA code - 403 Forbidden",
+      "Test access with valid MFA code - access granted",
+      "Run pytest with FastAPI TestClient - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_097",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Dart auth client compiles without errors",
+    "steps": [
+      "Create test schema with auth configuration",
+      "Run schnitzel generate --target dart",
+      "Verify packages/shared/lib/generated/auth/auth_client.dart exists",
+      "Run dart analyze on generated file",
+      "Verify no compile errors",
+      "Verify no linting warnings",
+      "Run flutter test - compiles successfully"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_098",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Dart token storage works",
+    "steps": [
+      "Create test schema with auth configuration",
+      "Run schnitzel generate --target dart",
+      "Create test for TokenStorage class",
+      "Mock flutter_secure_storage",
+      "Call saveAccessToken and saveRefreshToken",
+      "Verify tokens are stored securely",
+      "Call getAccessToken - verify token is retrieved",
+      "Call clearTokens - verify tokens are deleted",
+      "Run flutter test - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_099",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Dart auto token refresh works",
+    "steps": [
+      "Create test schema with auth.jwt configuration",
+      "Run schnitzel generate --target dart",
+      "Mock Dio client",
+      "Store expired access token",
+      "Make API request",
+      "Verify AuthInterceptor detects expired token",
+      "Verify refresh token is used to get new access token",
+      "Verify new token is stored",
+      "Verify original request is retried with new token",
+      "Run flutter test - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_100",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Integration test: Dart AuthBloc state management works",
+    "steps": [
+      "Create test schema with auth configuration",
+      "Run schnitzel generate --target dart",
+      "Create bloc test for AuthBloc",
+      "Test initial state is Unauthenticated",
+      "Add LoginRequested event",
+      "Verify state transitions to Loading then Authenticated",
+      "Add LogoutRequested event",
+      "Verify state transitions to Unauthenticated",
+      "Run flutter test - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_101",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Integration test: Dart Google OAuth flow works",
+    "steps": [
+      "Create test schema with auth.providers: ['google']",
+      "Run schnitzel generate --target dart",
+      "Mock url_launcher",
+      "Call loginWithGoogle",
+      "Verify OAuth URL is opened",
+      "Mock callback with authorization code",
+      "Verify code is sent to backend",
+      "Verify JWT tokens are received and stored",
+      "Run flutter test - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_102",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Integration test: Dart Apple OAuth flow works",
+    "steps": [
+      "Create test schema with auth.providers: ['apple']",
+      "Run schnitzel generate --target dart",
+      "Mock sign_in_with_apple package",
+      "Call loginWithApple",
+      "Mock credential response",
+      "Verify credential is sent to backend",
+      "Verify JWT tokens are received and stored",
+      "Run flutter test - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_103",
+    "category": "functional",
+    "priority": "P1",
+    "description": "JWT generator supports ES256 algorithm",
+    "steps": [
+      "Create schema with auth.jwt: algorithm=ES256",
+      "Run schnitzel generate --target python",
+      "Verify generated code handles ECDSA keys",
+      "Verify create_access_token uses ECDSA private key",
+      "Verify verify_token uses ECDSA public key",
+      "Test token generation and verification",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_104",
+    "category": "functional",
+    "priority": "P1",
+    "description": "JWT generator includes token revocation support",
+    "steps": [
+      "Create schema with auth.jwt configuration",
+      "Run schnitzel generate --target python",
+      "Verify revoke_token function exists",
+      "Verify revoked tokens are stored in Redis blacklist",
+      "Verify verify_token checks blacklist before validating",
+      "Test revoked token is rejected",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_105",
+    "category": "functional",
+    "priority": "P1",
+    "description": "OAuth generator handles OAuth state parameter for CSRF protection",
+    "steps": [
+      "Create schema with auth.providers: ['google']",
+      "Run schnitzel generate --target python",
+      "Verify google_auth_url generates random state parameter",
+      "Verify state is stored in Redis with TTL",
+      "Verify google_callback validates state parameter",
+      "Test with invalid state - verify rejection",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_106",
+    "category": "functional",
+    "priority": "P1",
+    "description": "OAuth generator handles OAuth PKCE flow for mobile apps",
+    "steps": [
+      "Create schema with auth.providers configuration",
+      "Run schnitzel generate --target python",
+      "Verify PKCE code_challenge generation",
+      "Verify code_verifier is stored securely",
+      "Verify callback validates code_verifier",
+      "Test PKCE flow end-to-end",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_107",
+    "category": "functional",
+    "priority": "P1",
+    "description": "RBAC generator supports dynamic permission assignment",
+    "steps": [
+      "Create schema with auth.roles configuration",
+      "Run schnitzel generate --target python",
+      "Verify add_permission_to_role function exists",
+      "Verify remove_permission_from_role function exists",
+      "Test dynamic permission changes",
+      "Verify changes affect permission checking immediately",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_108",
+    "category": "functional",
+    "priority": "P1",
+    "description": "RBAC generator supports user-specific permissions",
+    "steps": [
+      "Create schema with auth.roles configuration",
+      "Run schnitzel generate --target python",
+      "Verify grant_permission_to_user function exists",
+      "Verify user can have permissions beyond their role",
+      "Test user-specific permissions override role permissions",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_109",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Session generator creates session activity tracking",
+    "steps": [
+      "Create schema with auth.session configuration",
+      "Run schnitzel generate --target python",
+      "Verify session stores ip_address, user_agent, device_id",
+      "Verify get_user_sessions returns all active sessions",
+      "Verify session includes last_activity timestamp",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_110",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Session generator supports session timeout warnings",
+    "steps": [
+      "Create schema with auth.session configuration",
+      "Run schnitzel generate --target python",
+      "Verify get_session returns time_until_expiry",
+      "Verify client can use this to show timeout warning",
+      "Verify extend_session function exists to extend TTL",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_111",
+    "category": "functional",
+    "priority": "P1",
+    "description": "MFA generator supports SMS-based MFA",
+    "steps": [
+      "Create schema with auth.mfa: methods=['sms']",
+      "Run schnitzel generate --target python",
+      "Verify send_sms_code function exists",
+      "Verify SMS code is generated and sent via Twilio/SNS",
+      "Verify verify_sms_code function validates code",
+      "Verify SMS code has short TTL (5 minutes)",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_112",
+    "category": "functional",
+    "priority": "P1",
+    "description": "MFA generator supports email-based MFA",
+    "steps": [
+      "Create schema with auth.mfa: methods=['email']",
+      "Run schnitzel generate --target python",
+      "Verify send_email_code function exists",
+      "Verify email code is generated and sent",
+      "Verify verify_email_code function validates code",
+      "Verify email code has TTL",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_113",
+    "category": "functional",
+    "priority": "P1",
+    "description": "MFA generator supports trusted devices",
+    "steps": [
+      "Create schema with auth.mfa configuration",
+      "Run schnitzel generate --target python",
+      "Verify trust_device function exists",
+      "Verify device_id is stored for user",
+      "Verify MFA is skipped for trusted devices",
+      "Verify untrust_device function removes device",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_114",
+    "category": "functional",
+    "priority": "P1",
+    "description": "MFA generator includes MFA recovery flow",
+    "steps": [
+      "Create schema with auth.mfa configuration",
+      "Run schnitzel generate --target python",
+      "Verify recover_mfa function exists",
+      "Verify recovery requires identity verification",
+      "Verify recovery generates new TOTP secret",
+      "Verify recovery invalidates old backup codes",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_115",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Dart auth generator supports biometric authentication",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate --target dart",
+      "Verify local_auth package is used",
+      "Verify authenticateWithBiometrics function exists",
+      "Verify biometric authentication unlocks stored tokens",
+      "Run flutter test - compiles successfully"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_116",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Dart auth generator handles network errors gracefully",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate --target dart",
+      "Mock network failure in Dio",
+      "Call login method",
+      "Verify error is caught and handled",
+      "Verify user-friendly error message is provided",
+      "Run flutter test - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_117",
+    "category": "functional",
+    "priority": "P2",
+    "description": "JWT generator includes audience and issuer claims",
+    "steps": [
+      "Create schema with auth.jwt: audience='myapp', issuer='https://auth.myapp.com'",
+      "Run schnitzel generate --target python",
+      "Verify tokens include 'aud' and 'iss' claims",
+      "Verify verify_token validates audience and issuer",
+      "Test with wrong audience - verify rejection",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_118",
+    "category": "functional",
+    "priority": "P2",
+    "description": "JWT generator supports custom claims",
+    "steps": [
+      "Create schema with auth.jwt configuration",
+      "Run schnitzel generate --target python",
+      "Test create_access_token with custom claims dict",
+      "Verify custom claims are included in token",
+      "Verify verify_token returns custom claims",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_119",
+    "category": "functional",
+    "priority": "P2",
+    "description": "OAuth generator supports Microsoft OAuth",
+    "steps": [
+      "Create schema with auth.providers: ['microsoft']",
+      "Run schnitzel generate --target python",
+      "Verify microsoft_auth_url function exists",
+      "Verify microsoft_callback function exists",
+      "Verify Microsoft Graph API integration for user info",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_120",
+    "category": "functional",
+    "priority": "P2",
+    "description": "OAuth generator supports GitHub OAuth",
+    "steps": [
+      "Create schema with auth.providers: ['github']",
+      "Run schnitzel generate --target python",
+      "Verify github_auth_url function exists",
+      "Verify github_callback function exists",
+      "Verify GitHub API integration for user info",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_121",
+    "category": "functional",
+    "priority": "P2",
+    "description": "RBAC generator creates audit log for permission changes",
+    "steps": [
+      "Create schema with auth.roles configuration",
+      "Run schnitzel generate --target python",
+      "Verify role changes are logged to database",
+      "Verify permission changes are logged",
+      "Verify audit log includes timestamp, user, action",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_122",
+    "category": "functional",
+    "priority": "P2",
+    "description": "RBAC generator supports time-based permissions",
+    "steps": [
+      "Create schema with auth.roles configuration",
+      "Run schnitzel generate --target python",
+      "Verify grant_temporary_permission function exists",
+      "Verify permission includes expiry timestamp",
+      "Verify has_permission checks expiry",
+      "Test expired permission is denied",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_123",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Session generator supports concurrent session limits",
+    "steps": [
+      "Create schema with auth.session: max_concurrent=3",
+      "Run schnitzel generate --target python",
+      "Verify create_session checks active session count",
+      "Verify oldest session is invalidated if limit exceeded",
+      "Test with 4 sessions - verify 1st is removed",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_124",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Session generator includes session hijacking protection",
+    "steps": [
+      "Create schema with auth.session configuration",
+      "Run schnitzel generate --target python",
+      "Verify session validates IP address consistency",
+      "Verify session validates user agent consistency",
+      "Test with changed IP - verify security warning or re-auth",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_125",
+    "category": "functional",
+    "priority": "P2",
+    "description": "MFA generator supports WebAuthn/FIDO2",
+    "steps": [
+      "Create schema with auth.mfa: methods=['webauthn']",
+      "Run schnitzel generate --target python",
+      "Verify WebAuthn registration flow exists",
+      "Verify WebAuthn authentication flow exists",
+      "Verify credential storage and validation",
+      "Run pytest - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_126",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Dart auth generator supports offline token validation",
+    "steps": [
+      "Create schema with auth.jwt configuration",
+      "Run schnitzel generate --target dart",
+      "Verify client-side JWT validation exists",
+      "Verify expired tokens are detected without server call",
+      "Verify invalid tokens are detected without server call",
+      "Run flutter test - test passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_127",
+    "category": "functional",
+    "priority": "P2",
+    "description": "Dart auth generator includes deep linking for OAuth callbacks",
+    "steps": [
+      "Create schema with auth.providers: ['google']",
+      "Run schnitzel generate --target dart",
+      "Verify app links / universal links configuration",
+      "Verify callback handler for deep link",
+      "Verify authorization code extraction from URL",
+      "Run flutter test - compiles successfully"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_128",
+    "category": "style",
+    "priority": "P0",
+    "description": "Generated Python auth code follows PEP 8 style guide",
+    "steps": [
+      "Create schema with full auth configuration",
+      "Run schnitzel generate --target python",
+      "Run black on generated auth files",
+      "Verify no formatting changes needed",
+      "Run flake8 - no violations",
+      "Run isort - imports are properly ordered"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_129",
+    "category": "style",
+    "priority": "P0",
+    "description": "Generated Python auth code has proper type hints",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate --target python",
+      "Verify all functions have type hints for parameters and return",
+      "Run mypy in strict mode - no type errors",
+      "Verify Optional types are used correctly",
+      "Verify Union types are used where appropriate"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_130",
+    "category": "style",
+    "priority": "P0",
+    "description": "Generated Python auth code includes docstrings",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate --target python",
+      "Verify all public functions have docstrings",
+      "Verify docstrings include parameters, return values, exceptions",
+      "Verify docstrings follow Google or NumPy style",
+      "Run pydocstyle - no violations"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_131",
+    "category": "style",
+    "priority": "P0",
+    "description": "Generated Python auth code has consistent error handling",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate --target python",
+      "Verify all exceptions are from FastAPI HTTPException",
+      "Verify error status codes are appropriate (401, 403, etc.)",
+      "Verify error messages are descriptive",
+      "Verify no bare except clauses"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_132",
+    "category": "style",
+    "priority": "P0",
+    "description": "Generated Dart auth code follows Dart style guide",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate --target dart",
+      "Run dart format on generated files",
+      "Verify no formatting changes needed",
+      "Run dart analyze - no style warnings",
+      "Verify camelCase naming conventions"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_133",
+    "category": "style",
+    "priority": "P0",
+    "description": "Generated Dart auth code uses proper null safety",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate --target dart",
+      "Verify all types are properly nullable or non-nullable",
+      "Verify null checks are in place where needed",
+      "Run dart analyze in strict mode - no null safety issues",
+      "Verify late keyword is used appropriately"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_134",
+    "category": "style",
+    "priority": "P0",
+    "description": "Generated Dart auth code includes documentation comments",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate --target dart",
+      "Verify all public classes have /// documentation",
+      "Verify all public methods have documentation",
+      "Verify documentation includes parameter descriptions",
+      "Run dartdoc - documentation builds successfully"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_135",
+    "category": "style",
+    "priority": "P1",
+    "description": "Generated auth code includes inline comments for complex logic",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate",
+      "Verify complex algorithms have explanatory comments",
+      "Verify security-critical sections are commented",
+      "Verify comments explain 'why' not just 'what'",
+      "Verify no commented-out code"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_136",
+    "category": "style",
+    "priority": "P1",
+    "description": "Generated auth code has consistent naming conventions",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate",
+      "Verify function names are descriptive verbs",
+      "Verify variable names are descriptive nouns",
+      "Verify constants are in UPPER_CASE (Python) or lowerCamelCase (Dart)",
+      "Verify class names are PascalCase"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_137",
+    "category": "style",
+    "priority": "P1",
+    "description": "Generated auth code avoids magic numbers and strings",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate",
+      "Verify no hardcoded numbers (use constants)",
+      "Verify no hardcoded strings (use constants or config)",
+      "Verify status codes are from named constants",
+      "Verify algorithm names are from enums or constants"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_138",
+    "category": "style",
+    "priority": "P1",
+    "description": "Generated auth code has proper file organization",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate",
+      "Verify imports are at the top",
+      "Verify constants are defined early",
+      "Verify classes are defined before functions that use them",
+      "Verify related functions are grouped together"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_139",
+    "category": "style",
+    "priority": "P2",
+    "description": "Generated auth code has proper logging statements",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate",
+      "Verify security events are logged (login, logout, failed auth)",
+      "Verify log levels are appropriate (info, warning, error)",
+      "Verify logs don't contain sensitive data (passwords, tokens)",
+      "Verify structured logging format"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_140",
+    "category": "style",
+    "priority": "P2",
+    "description": "Generated auth code includes security best practice comments",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate",
+      "Verify comments warn about security considerations",
+      "Verify comments explain token expiry choices",
+      "Verify comments explain hashing algorithms",
+      "Verify comments reference security standards (OAuth 2.0, JWT spec)"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_141",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Auth generators integrate with existing CLI structure",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/cli.py",
+      "Verify generate command calls auth generators",
+      "Verify auth section of schema is passed to generators",
+      "Verify generated files are placed in correct directories",
+      "Run schnitzel generate --help - auth options are documented"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_142",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Auth generator errors are handled gracefully",
+    "steps": [
+      "Create schema with invalid auth configuration",
+      "Run schnitzel generate",
+      "Verify clear error message is displayed",
+      "Verify error indicates which part of auth config is invalid",
+      "Verify generation stops without creating partial files",
+      "Verify exit code is non-zero"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_143",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Generated auth code includes environment variable validation",
+    "steps": [
+      "Create schema with auth configuration requiring env vars",
+      "Run schnitzel generate",
+      "Verify generated code checks for required env vars at startup",
+      "Verify clear error if env vars are missing",
+      "Verify error lists which env vars are required",
+      "Run pytest - validation works correctly"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_144",
+    "category": "functional",
+    "priority": "P0",
+    "description": "Auth generators support incremental generation",
+    "steps": [
+      "Create schema with partial auth config (only JWT)",
+      "Run schnitzel generate",
+      "Verify only JWT auth is generated",
+      "Add OAuth to schema",
+      "Run schnitzel generate again",
+      "Verify OAuth is added without breaking existing JWT code",
+      "Run pytest - all tests pass"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_145",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Auth generators create migration scripts for user table",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate",
+      "Verify Alembic migration is generated for auth fields",
+      "Verify migration adds: password_hash, mfa_secret, role columns",
+      "Verify migration adds oauth_providers table",
+      "Run alembic upgrade head - migration applies successfully"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_146",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Auth generators create database indexes for performance",
+    "steps": [
+      "Create schema with auth configuration",
+      "Run schnitzel generate",
+      "Verify index on users.email for login lookups",
+      "Verify index on oauth_providers.provider_user_id",
+      "Verify index on sessions.session_id",
+      "Run EXPLAIN ANALYZE - queries use indexes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_147",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Complete auth flow: Registration to authenticated request",
+    "steps": [
+      "Create schema with email_password provider and JWT config",
+      "Run schnitzel generate",
+      "Start test server",
+      "Call /auth/register endpoint with test credentials",
+      "Verify access_token and refresh_token are returned",
+      "Make authenticated request with access_token",
+      "Verify request succeeds",
+      "Make request without token - verify 401",
+      "Run integration test - passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_148",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Complete OAuth flow: Google login to authenticated request",
+    "steps": [
+      "Create schema with google provider and JWT config",
+      "Run schnitzel generate",
+      "Mock Google OAuth endpoints",
+      "Start test server",
+      "Call /auth/google endpoint",
+      "Verify redirect to Google OAuth URL",
+      "Mock callback with authorization code",
+      "Verify user is created/linked",
+      "Verify JWT tokens are returned",
+      "Make authenticated request - succeeds",
+      "Run integration test - passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_149",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Complete RBAC flow: Permission-based access control",
+    "steps": [
+      "Create schema with roles: [admin, user]",
+      "Admin has 'posts:*', user has 'posts:read'",
+      "Run schnitzel generate",
+      "Register two users, assign different roles",
+      "Create protected endpoint requiring 'posts:write'",
+      "Test with admin user - access granted",
+      "Test with regular user - 403 Forbidden",
+      "Run integration test - passes"
+    ],
+    "passes": false
+  },
+  {
+    "id": "auth_150",
+    "category": "functional",
+    "priority": "P1",
+    "description": "Complete MFA flow: Enrollment to login with MFA",
+    "steps": [
+      "Create schema with MFA enabled, methods=['totp']",
+      "Run schnitzel generate",
+      "Register user and login",
+      "Call /auth/mfa/enroll endpoint",
+      "Verify TOTP secret and QR code returned",
+      "Complete enrollment with valid TOTP code",
+      "Logout and login again",
+      "Verify MFA code is required",
+      "Provide valid TOTP code - access granted",
+      "Provide invalid code - access denied",
+      "Run integration test - passes"
+    ],
+    "passes": false
+  }
+]

@@ -215,6 +215,143 @@ class JobConfig(BaseModel):
 
 
 # =============================================================================
+# Auth & Security Configuration Models
+# =============================================================================
+
+class PasswordPolicy(BaseModel):
+    """Password policy configuration."""
+
+    min_length: int = 8
+    require_uppercase: bool = False
+    require_lowercase: bool = False
+    require_number: bool = False
+    require_special: bool = False
+    max_age_days: Optional[int] = None  # Password expiry
+
+    @field_validator("min_length")
+    @classmethod
+    def validate_min_length_positive(cls, v: int) -> int:
+        """Validate min_length is positive."""
+        if v < 1:
+            raise ValueError("min_length must be at least 1")
+        return v
+
+
+class JWTConfig(BaseModel):
+    """JWT token configuration."""
+
+    algorithm: Literal["HS256", "HS384", "HS512", "RS256", "RS384", "RS512", "ES256", "ES384", "ES512"] = "HS256"
+    access_expiry: int = 900  # 15 minutes in seconds
+    refresh_expiry: int = 2592000  # 30 days in seconds
+    secret_key_env: str = "JWT_SECRET_KEY"  # Environment variable name for secret
+    issuer: Optional[str] = None
+    audience: Optional[str] = None
+
+    @field_validator("access_expiry", "refresh_expiry")
+    @classmethod
+    def validate_expiry_positive(cls, v: int) -> int:
+        """Validate expiry times are positive."""
+        if v < 1:
+            raise ValueError("Expiry time must be at least 1 second")
+        return v
+
+
+class SessionConfig(BaseModel):
+    """Session management configuration."""
+
+    storage: Literal["redis", "memory", "database"] = "redis"
+    expiry: int = 3600  # 1 hour in seconds
+    sliding_window: bool = True  # Extend session on activity
+    multi_device: bool = True  # Allow multiple sessions per user
+    remember_me_duration: Optional[int] = None  # Extended session duration for "remember me"
+
+    @field_validator("expiry")
+    @classmethod
+    def validate_expiry_positive(cls, v: int) -> int:
+        """Validate expiry is positive."""
+        if v < 1:
+            raise ValueError("Session expiry must be at least 1 second")
+        return v
+
+
+class MFAConfig(BaseModel):
+    """Multi-factor authentication configuration."""
+
+    enabled: bool = False
+    required: bool = False  # Force all users to enable MFA
+    methods: List[Literal["totp", "sms", "email", "backup_codes"]] = PydanticField(default_factory=lambda: ["totp"])
+    backup_codes_count: int = 10
+    totp_issuer: Optional[str] = None  # Issuer name for TOTP apps
+
+    @field_validator("backup_codes_count")
+    @classmethod
+    def validate_backup_codes_count(cls, v: int) -> int:
+        """Validate backup codes count is reasonable."""
+        if v < 1:
+            raise ValueError("backup_codes_count must be at least 1")
+        if v > 100:
+            raise ValueError("backup_codes_count should not exceed 100")
+        return v
+
+
+class RoleConfig(BaseModel):
+    """Role definition for RBAC."""
+
+    name: str
+    description: Optional[str] = None
+    permissions: List[str] = PydanticField(default_factory=list)
+    inherits: Optional[List[str]] = None  # Roles to inherit permissions from
+
+    @field_validator("name")
+    @classmethod
+    def validate_name_not_empty(cls, v: str) -> str:
+        """Validate role name is not empty."""
+        if not v:
+            raise ValueError("Role name cannot be empty")
+        return v
+
+    @field_validator("permissions")
+    @classmethod
+    def validate_permissions_not_empty(cls, v: List[str]) -> List[str]:
+        """Validate at least one permission if inherits is not specified."""
+        # Note: Empty permissions is allowed if the role inherits from other roles
+        return v
+
+
+class AuthConfig(BaseModel):
+    """Authentication configuration."""
+
+    providers: List[Literal["email_password", "magic_link", "google", "apple", "github", "discord", "microsoft"]] = PydanticField(
+        default_factory=lambda: ["email_password"]
+    )
+    session: Optional[SessionConfig] = None
+    jwt: Optional[JWTConfig] = None
+    mfa: Optional[Union[Literal["optional", "required", "disabled"], MFAConfig]] = None
+    password_policy: Optional[PasswordPolicy] = None
+    oauth_callback_url: Optional[str] = None  # Base URL for OAuth callbacks
+
+    @field_validator("providers")
+    @classmethod
+    def validate_providers_not_empty(cls, v: List[str]) -> List[str]:
+        """Validate at least one provider is specified."""
+        if not v:
+            raise ValueError("At least one authentication provider must be specified")
+        return v
+
+    @model_validator(mode="after")
+    def validate_mfa_compatibility(self) -> "AuthConfig":
+        """Convert string mfa values to MFAConfig instances."""
+        if isinstance(self.mfa, str):
+            if self.mfa == "optional":
+                self.mfa = MFAConfig(enabled=True, required=False)
+            elif self.mfa == "required":
+                self.mfa = MFAConfig(enabled=True, required=True)
+            elif self.mfa == "disabled":
+                self.mfa = MFAConfig(enabled=False, required=False)
+        return self
+
+
+# =============================================================================
 # Root Schema Model
 # =============================================================================
 
@@ -227,8 +364,8 @@ class SchnitzelSchema(BaseModel):
     imports: Optional[List[str]] = None
     models: Dict[str, Model] = PydanticField(default_factory=dict)
     endpoints: Optional[Dict[str, Any]] = None
-    auth: Optional[Dict[str, Any]] = None
-    roles: Optional[Dict[str, Any]] = None
+    auth: Optional[AuthConfig] = None
+    roles: Optional[Dict[str, RoleConfig]] = None
     services: Optional[Dict[str, Any]] = None
     events: Optional[Dict[str, EventConfig]] = None
     streams: Optional[Dict[str, StreamConfig]] = None
@@ -257,9 +394,79 @@ class SchnitzelSchema(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def preprocess_schema_data(cls, data: Any) -> Any:
-        """Convert models, jobs, streams, and events dict structures to proper format before validation."""
+        """Convert models, jobs, streams, events, auth, and roles dict structures to proper format before validation."""
         if not isinstance(data, dict):
             return data
+
+        # Convert auth dict to AuthConfig instance
+        auth = data.get("auth")
+        if auth is not None and isinstance(auth, dict):
+            # Handle legacy session format where session is directly specified
+            auth_dict = auth.copy()
+
+            # Convert legacy session format: type, access_expiry, refresh_expiry at top level
+            if "type" in auth_dict and auth_dict["type"] == "jwt":
+                # Build JWT config from top-level fields
+                jwt_config = {}
+                if "access_expiry" in auth_dict:
+                    jwt_config["access_expiry"] = auth_dict.pop("access_expiry")
+                if "refresh_expiry" in auth_dict:
+                    jwt_config["refresh_expiry"] = auth_dict.pop("refresh_expiry")
+                if "algorithm" in auth_dict:
+                    jwt_config["algorithm"] = auth_dict.pop("algorithm")
+                auth_dict.pop("type")  # Remove type field
+
+                # Store in jwt subconfig if not already present
+                if "jwt" not in auth_dict and jwt_config:
+                    auth_dict["jwt"] = jwt_config
+
+            # Handle session config if present
+            if "session" in auth_dict and isinstance(auth_dict["session"], dict):
+                session_dict = auth_dict["session"].copy()
+                # Convert legacy session.type to jwt config
+                if session_dict.get("type") == "jwt":
+                    jwt_config = {}
+                    if "access_expiry" in session_dict:
+                        jwt_config["access_expiry"] = session_dict["access_expiry"]
+                    if "refresh_expiry" in session_dict:
+                        jwt_config["refresh_expiry"] = session_dict["refresh_expiry"]
+
+                    # Store JWT config if not already present
+                    if "jwt" not in auth_dict and jwt_config:
+                        auth_dict["jwt"] = jwt_config
+
+                    # Convert session to proper SessionConfig format
+                    session_config = {}
+                    if "expiry" in session_dict:
+                        session_config["expiry"] = session_dict["expiry"]
+                    # Default storage to redis for JWT sessions
+                    session_config["storage"] = "redis"
+                    auth_dict["session"] = session_config
+
+            try:
+                data["auth"] = AuthConfig(**auth_dict)
+            except Exception as e:
+                raise ValueError(f"Invalid auth configuration: {e}") from e
+
+        # Convert roles dict to RoleConfig instances
+        roles = data.get("roles")
+        if roles is not None and isinstance(roles, dict):
+            converted_roles = {}
+            for role_name, role_data in roles.items():
+                if isinstance(role_data, dict):
+                    role_dict = role_data.copy()
+                    # Add name if not present
+                    if "name" not in role_dict:
+                        role_dict["name"] = role_name
+                    try:
+                        converted_roles[role_name] = RoleConfig(**role_dict)
+                    except Exception as e:
+                        raise ValueError(
+                            f"Invalid role definition for '{role_name}': {e}"
+                        ) from e
+                else:
+                    converted_roles[role_name] = role_data
+            data["roles"] = converted_roles
 
         # Convert events dict to EventConfig instances
         events = data.get("events")

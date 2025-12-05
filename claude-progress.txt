@@ -544,3 +544,252 @@ Notes for Implementation:
 - Real-time features require Redis and Temporal servers for testing
 - Event types must match exactly between Python and Dart
 - BLoC pattern should follow flutter_bloc best practices
+
+=====================================
+MODULE 03: AUTH & SECURITY (INITIALIZED)
+=====================================
+
+Date: 2025-12-05
+Module: module_03_auth_security - Auth & Security
+Depends on: module_02_realtime_events (COMPLETE - 175/175 features passing)
+
+Completed:
+- Read app_spec_master.txt (tech stack: FastAPI, python-jose, passlib, flutter_secure_storage)
+- Read modules/module_03_auth_security.txt (auth & security features)
+- Merged master spec (tech stack, design) with module spec (auth generators)
+- Generated feature_list_module_03_auth_security.json with 150 test cases
+  - Functional: 137 tests
+  - Style: 13 tests
+
+Module Feature Breakdown:
+- Schema Extensions (5 tests): AuthConfig, JWTConfig, RoleConfig, SessionConfig, MFAConfig models
+- JWT Auth Generator (10 tests): Token generation, validation, claims, algorithms (HS256/RS256/ES256), FastAPI dependency
+- OAuth Integration Generator (8 tests): Google, Apple, Magic Link, Email/Password flows, callback handlers, user linking
+- RBAC Permission Generator (8 tests): Role definitions, permission checking, wildcards, scopes, role inheritance, FastAPI dependency
+- Session Management Generator (10 tests): Redis sessions, multi-device, expiry, sliding window, remember me, database/memory storage
+- MFA Generator (9 tests): TOTP generation/verification, QR codes, backup codes, enrollment flow, verification middleware
+- Dart Auth Client Generator (11 tests): Token storage, auto-refresh, AuthBloc, OAuth flows, logout, error handling
+- Integration Tests (28 tests): End-to-end flows for JWT, OAuth, RBAC, sessions, MFA, Dart client
+- Advanced Features (18 tests): Token revocation, PKCE, dynamic permissions, session tracking, SMS/email MFA, trusted devices, biometric auth
+- Optional Features (9 tests): Custom claims, Microsoft/GitHub OAuth, audit logs, time-based permissions, concurrent session limits, WebAuthn
+- Code Quality & Style (13 tests): PEP 8, type hints, docstrings, error handling, null safety, documentation
+- CLI Integration (5 tests): Generator integration, error handling, env var validation, incremental generation
+- Database Integration (3 tests): Migrations for auth tables, indexes for performance
+- Complete Flows (3 tests): Registration to authenticated request, Google OAuth flow, RBAC access control
+- Complex Workflow (1 test): MFA enrollment to login with MFA
+
+Test Complexity Distribution:
+- Short tests (2-5 steps): 52 tests - Quick validations
+- Medium tests (6-9 steps): 68 tests - Feature verification
+- Comprehensive tests (10+ steps): 30 tests - End-to-end workflows
+
+Priority Breakdown:
+- P0 (Critical - 76 tests): Schema models, core generators, templates, basic integration, security fundamentals
+- P1 (High - 55 tests): Advanced features, validation, error handling, multi-provider support
+- P2 (Medium - 19 tests): Edge cases, optional providers, polish, documentation
+
+Files to Create:
+
+Schema Extensions:
+- schnitzel-cli/src/schnitzel/schema/models.py (extend with AuthConfig, JWTConfig, RoleConfig, SessionConfig, MFAConfig)
+
+Python Generators:
+- schnitzel-cli/src/schnitzel/generators/python/auth/jwt.py
+- schnitzel-cli/src/schnitzel/generators/python/auth/oauth.py
+- schnitzel-cli/src/schnitzel/generators/python/auth/rbac.py
+- schnitzel-cli/src/schnitzel/generators/python/auth/sessions.py
+- schnitzel-cli/src/schnitzel/generators/python/auth/mfa.py
+
+Python Templates:
+- schnitzel-cli/src/schnitzel/templates/python/auth/jwt.py.j2
+- schnitzel-cli/src/schnitzel/templates/python/auth/oauth.py.j2
+- schnitzel-cli/src/schnitzel/templates/python/auth/rbac.py.j2
+- schnitzel-cli/src/schnitzel/templates/python/auth/sessions.py.j2
+- schnitzel-cli/src/schnitzel/templates/python/auth/mfa.py.j2
+
+Dart Generators:
+- schnitzel-cli/src/schnitzel/generators/dart/auth.py
+
+Dart Templates:
+- schnitzel-cli/src/schnitzel/templates/dart/auth/auth_client.dart.j2
+- schnitzel-cli/src/schnitzel/templates/dart/auth/token_storage.dart.j2
+- schnitzel-cli/src/schnitzel/templates/dart/auth/auth_interceptor.dart.j2
+- schnitzel-cli/src/schnitzel/templates/dart/auth/auth_bloc.dart.j2
+- schnitzel-cli/src/schnitzel/templates/dart/auth/oauth_handler.dart.j2
+
+Integration Tests:
+- schnitzel-cli/tests/integration/test_auth_generation.py
+
+Module Status: 0/150 features passing (0%)
+
+Dependencies:
+- Depends on: module_02_realtime_events (COMPLETE)
+- Uses: Schema parser, schema validator, all previous generators
+- Extends: Schema models, generators registry, CLI commands
+- Builds upon: FastAPI routes, SQLAlchemy ORM, Dart API client, BLoC state management
+- Required by: Future modules needing authentication and authorization
+
+Technology Stack for This Module:
+
+Backend Generation:
+- FastAPI for auth endpoints
+- python-jose for JWT generation and validation
+- passlib for password hashing (bcrypt/argon2)
+- pyotp for TOTP MFA
+- qrcode for TOTP QR code generation
+- Redis for session storage and token blacklist
+- SQLAlchemy for user/role/permission storage
+- Pydantic v2 for auth models and validation
+
+Frontend Generation:
+- Flutter/Dart
+- flutter_secure_storage for token storage
+- flutter_bloc for AuthBloc state management
+- Dio interceptor for auto token refresh
+- url_launcher for OAuth flows
+- sign_in_with_apple for Apple Sign In
+- local_auth for biometric authentication
+- freezed for immutable auth models
+
+Security Infrastructure:
+- JWT with HS256/RS256/ES256 algorithms
+- OAuth 2.0 flows (Google, Apple, Microsoft, GitHub)
+- RBAC with wildcard and scoped permissions
+- Redis-based session management
+- TOTP-based MFA with backup codes
+- Secure token storage on mobile devices
+
+CLI Tools:
+- Jinja2 for code templates
+- Typer for CLI commands
+- Rich for formatted output
+
+Testing:
+- pytest for integration tests
+- pyright for Python type checking
+- dart analyze for Dart validation
+- Mock OAuth providers for testing
+- Redis for session testing
+
+Files Created in This Session:
+- /Users/udi/work/moinsen/ideas/schnitzel/feature_list_module_03_auth_security.json (150 tests)
+- /Users/udi/work/moinsen/ideas/schnitzel/claude-progress.txt (updated)
+
+Next Steps:
+1. Database features already imported (150 features added to global database)
+
+2. Verify import:
+   autocoder-db stats --project /Users/udi/work/moinsen/ideas/schnitzel
+
+3. Begin implementation (when ready):
+   /auto-coder:run --module module_03_auth_security
+
+First Wave Should Focus On (10-12 features):
+1. auth_001: Schema models include AuthConfig for authentication configuration
+2. auth_002: Schema models include JWTConfig for JWT configuration
+3. auth_003: Schema models include RoleConfig for RBAC role definitions
+4. auth_004: Schema models include SessionConfig for session management
+5. auth_005: Schema models include MFAConfig for multi-factor authentication
+6. auth_006: JWT auth generator file exists with correct structure
+7. auth_007: JWT auth generator template exists
+8. auth_016: OAuth integration generator file exists with correct structure
+9. auth_025: RBAC permission generator file exists with correct structure
+10. auth_034: Session management generator file exists with correct structure
+11. auth_046: MFA generator file exists with correct structure
+12. auth_057: Dart auth client generator file exists with correct structure
+
+Success Criteria for Module 03:
+
+Authentication:
+- JWT auth flow works end-to-end (register, login, authenticated request)
+- Access tokens expire correctly and refresh tokens renew them
+- Token validation catches expired and invalid tokens
+- OAuth providers (Google, Apple) authenticate users correctly
+- Magic link email authentication works
+- Email/password authentication with secure password hashing
+
+Authorization:
+- RBAC restricts access correctly based on roles
+- Wildcard permissions (e.g., 'posts:*') work as expected
+- Scoped permissions (e.g., 'posts:read:own') check resource ownership
+- Role inheritance grants all parent role permissions
+- Permission checking integrates with FastAPI dependencies
+
+Session Management:
+- Redis sessions persist across requests
+- Multi-device support allows multiple active sessions
+- Session expiry and sliding window work correctly
+- Remember me extends session lifetime
+- Session invalidation (logout) works for single and all devices
+
+Multi-Factor Authentication:
+- TOTP enrollment generates secret and QR code
+- TOTP verification validates time-based codes
+- Backup codes work as fallback authentication
+- MFA middleware enforces second factor when enabled
+- MFA can be disabled with password confirmation
+
+Dart Client:
+- Token storage uses secure storage
+- Auto token refresh works transparently
+- AuthBloc manages authentication state correctly
+- OAuth flows work on mobile devices
+- Logout clears tokens and updates state
+
+Security:
+- Tokens use secure algorithms (no hardcoded secrets)
+- Passwords never appear in responses
+- Session IDs are random and secure
+- MFA codes are time-limited
+- OAuth flows include CSRF protection (state parameter)
+
+Code Quality:
+- All generated Python code passes pyright with no errors
+- All generated Dart code passes dart analyze with no errors
+- Auth code follows PEP 8 and Dart style guide
+- All functions have proper type hints and docstrings
+- Error handling uses appropriate HTTP status codes (401, 403)
+- No sensitive data in logs (passwords, tokens)
+
+Integration:
+- Full auth generation pipeline produces working code
+- End-to-end flows work from registration to authenticated requests
+- Type safety maintained between Python and Dart
+- All generators integrate with CLI commands
+- Database migrations create auth tables correctly
+
+Module Completion Estimate:
+- 150 tests total (within 100-200 range)
+- Estimated waves: 12-18 waves (8-12 tests per wave)
+- Expected completion: After all P0 and P1 tests pass
+- P2 tests (optional providers, advanced features) can be addressed in polish phase
+
+Implementation Order:
+Wave 1-2: Schema model extensions (AuthConfig, JWTConfig, RoleConfig, SessionConfig, MFAConfig)
+Wave 3-5: JWT auth generator and template (token generation, validation, FastAPI dependency)
+Wave 6-8: OAuth integration generator and templates (email/password, Google, Apple, magic link)
+Wave 9-11: RBAC permission generator and template (roles, permissions, wildcards, scopes)
+Wave 12-14: Session management generator and template (Redis, multi-device, expiry)
+Wave 15-17: MFA generator and template (TOTP, backup codes, enrollment)
+Wave 18-20: Dart auth client generator and templates (token storage, auto-refresh, AuthBloc, OAuth)
+Wave 21-24: Integration tests, database migrations, CLI updates, validation, polish
+
+Notes for Implementation:
+- Module 03 extends all previous modules - reuse existing generators
+- Security is critical - follow OWASP best practices
+- Schema models need new config classes for auth, JWT, roles, sessions, MFA
+- Focus on Jinja2 templates - they drive all code generation
+- Integration tests validate complete auth flows with real authentication
+- Test security rigorously - invalid tokens, expired sessions, permission denial
+- All generated code must compile and pass strict type checking
+- Use FoodieAI schema extended with auth configuration for testing
+- Auth features require Redis for sessions and token blacklist
+- OAuth testing requires mocking external providers (Google, Apple)
+- MFA testing requires time-based code generation (pyotp)
+- Dart client must handle token refresh transparently
+- AuthBloc should follow flutter_bloc best practices
+- Never log sensitive data (passwords, tokens, secrets)
+- Environment variables required: JWT_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, etc.
+- Password hashing must use bcrypt or argon2 (never plaintext)
+- Session IDs must use secure random generation (secrets module)
+- TOTP secrets must be encrypted before database storage
