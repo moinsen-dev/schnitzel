@@ -11,7 +11,7 @@
       "Verify model has two fields with correct names and types",
       "Verify no parse errors are raised"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -24,7 +24,7 @@
       "Verify error message is human-readable",
       "Verify parser doesn't crash"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -38,7 +38,7 @@
       "Verify relative paths are resolved correctly",
       "Verify no duplicate models exist"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -53,7 +53,7 @@
       "Verify no circular import issues",
       "Verify models from all levels are accessible"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -67,7 +67,7 @@
       "Verify error includes both file names",
       "Verify parser stops gracefully without infinite loop"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -82,7 +82,7 @@
       "Verify each model retains its original fields",
       "Verify relationships across feature boundaries work"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -95,7 +95,7 @@
       "Verify error message includes the importing file name",
       "Verify helpful suggestion to check file path"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -109,7 +109,7 @@
       "Verify error explains what's missing",
       "Verify Pydantic validation happens after YAML parse"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -122,7 +122,7 @@
       "Verify validator returns empty error list",
       "Verify schema is marked as valid"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -135,7 +135,7 @@
       "Verify error suggests valid alternatives (float, int)",
       "Verify error includes field name and model name"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -149,7 +149,7 @@
       "Verify error shows the relationship definition",
       "Verify error includes both model names (Post and User)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -163,7 +163,7 @@
       "Verify error shows the relationship definition",
       "Verify error includes relationship type (hasMany)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -177,7 +177,7 @@
       "Verify no circular dependency warning for valid relationship",
       "Verify relationship graph is built correctly"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -190,7 +190,7 @@
       "Verify error suggests correct name 'UserProfile'",
       "Verify error references naming convention rules"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -203,7 +203,7 @@
       "Verify error suggests correct name 'first_name'",
       "Verify error includes model name and field name"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -217,7 +217,7 @@
       "Verify error explains why this is problematic",
       "Verify error suggests breaking the cycle"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -231,7 +231,7 @@
       "Verify optional fields are recognized",
       "Verify validator tracks which fields are required"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -243,7 +243,7 @@
       "Verify unique constraint is recognized",
       "Verify validator tracks unique fields for database generation"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -256,7 +256,7 @@
       "Verify constraints are stored for code generation",
       "Verify validator tracks validation rules per field"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -269,7 +269,7 @@
       "Verify format constraints are recognized",
       "Verify supported formats are validated"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -284,7 +284,7 @@
       "Verify imports include UUID and datetime",
       "Run pyright on generated code and verify no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -301,7 +301,7 @@
       "Verify json_field maps to dict or Dict[str, Any]",
       "Verify all necessary imports are present"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -314,7 +314,7 @@
       "Verify bio field has default value None",
       "Verify Pydantic v2 syntax is used (not v1)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -328,7 +328,7 @@
       "Verify defaults are properly quoted for strings",
       "Verify defaults are unquoted for numbers"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -342,7 +342,7 @@
       "Verify Field is imported from pydantic",
       "Run pyright on generated code and verify no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -355,7 +355,7 @@
       "Verify forward reference is used if User is defined after Post",
       "Verify relationship is properly typed"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -368,7 +368,7 @@
       "Verify forward reference is used correctly",
       "Verify hasMany relationships are optional by default"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -382,7 +382,7 @@
       "Write test to instantiate model and call model_dump()",
       "Verify serialization works correctly"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -395,7 +395,7 @@
       "Verify existing file is overwritten with warning",
       "Verify file has proper header comment with generation timestamp"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -409,7 +409,7 @@
       "Verify no type errors in output",
       "Verify all type hints are correct"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -424,7 +424,7 @@
       "Verify toJson method exists",
       "Run dart analyze on generated code and verify no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -441,7 +441,7 @@
       "Verify json maps to Map<String, dynamic>",
       "Verify all imports are present (freezed, json_annotation)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -454,7 +454,7 @@
       "Verify required annotation is used for required fields",
       "Verify optional fields allow null in factory constructor"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -468,7 +468,7 @@
       "Verify Default is imported from freezed_annotation",
       "Verify factory constructor includes defaults"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -482,7 +482,7 @@
       "Verify toJson method exists and calls _$UserToJson(this)",
       "Verify json_annotation import is present"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -496,7 +496,7 @@
       "Verify copyWith returns new instance",
       "Verify original instance is immutable"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -509,7 +509,7 @@
       "Verify JSON serialization uses snake_case",
       "Verify Dart API uses camelCase"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -522,7 +522,7 @@
       "Verify file has proper header comment",
       "Verify file includes part directive for generated file"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -536,7 +536,7 @@
       "Verify no warnings or hints",
       "Verify all Dart conventions are followed"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -551,7 +551,7 @@
       "Verify schema.schnitzel.yaml exists in root",
       "Verify .gitignore is created"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -564,7 +564,7 @@
       "Verify minimal template includes only basic User model",
       "Verify schema can be parsed by SchemaParser"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -578,7 +578,7 @@
       "Verify template includes endpoints section",
       "Verify template includes services section"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -592,7 +592,7 @@
       "Verify command shows progress: 'Creating Flutter app...'",
       "Verify error handling if Flutter is not installed"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -606,7 +606,7 @@
       "Verify command shows progress: 'Creating Python backend...'",
       "Verify error handling if UV is not installed"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -620,7 +620,7 @@
       "Verify services have correct images and ports",
       "Verify volumes are configured for persistence"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -633,7 +633,7 @@
       "Verify Dart SDK constraints are correct",
       "Verify workspace resolution is configured"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -648,7 +648,7 @@
       "Verify uvicorn is listed",
       "Verify all required dependencies are present"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -662,7 +662,7 @@
       "Verify no files are modified in existing directory",
       "Verify exit code is non-zero"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -675,7 +675,7 @@
       "Verify success message is displayed at end",
       "Verify output uses Rich formatting (colors, styling)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -689,7 +689,7 @@
       "Verify generation proceeds",
       "Verify progress is shown for each step"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -703,7 +703,7 @@
       "Verify exit code is non-zero",
       "Verify no files are generated"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -717,7 +717,7 @@
       "Verify all generators run successfully",
       "Verify success message shown for all targets"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -731,7 +731,7 @@
       "Verify command output indicates Python-only generation",
       "Verify exit code is 0"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -745,7 +745,7 @@
       "Verify command output indicates Flutter-only generation",
       "Verify exit code is 0"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -759,7 +759,7 @@
       "Verify command output indicates Docker-only generation",
       "Verify exit code is 0"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -775,7 +775,7 @@
       "Verify command continues watching",
       "Stop watch process and verify clean exit"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -790,7 +790,7 @@
       "Verify command outputs: 'Dry run - no files written'",
       "Verify exit code is 0"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -804,7 +804,7 @@
       "Verify success indicators (checkmarks) for completed steps",
       "Verify final summary with counts (models generated, files written)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -818,7 +818,7 @@
       "Verify exit code is non-zero",
       "Verify helpful error message guides user to fix"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -832,7 +832,7 @@
       "Verify environment variables: POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD",
       "Verify volume is mounted for persistence"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -845,7 +845,7 @@
       "Verify extension setup runs on container start",
       "Verify extension is available before app starts"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -859,7 +859,7 @@
       "Verify volume is mounted for persistence",
       "Verify redis.conf is configured if needed"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -873,7 +873,7 @@
       "Verify healthcheck retries are configured",
       "Verify dependent services wait for healthy status"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -886,7 +886,7 @@
       "Verify healthcheck timeout is set",
       "Verify healthcheck retries are configured"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -899,7 +899,7 @@
       "Verify documentation explains env var usage",
       "Verify docker-compose.yaml validates correctly"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -912,7 +912,7 @@
       "Verify generator checks port availability before generating",
       "Verify error message is helpful if port conflict detected"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -925,7 +925,7 @@
       "Verify volume names are project-specific",
       "Verify volumes are listed in docker-compose.yaml volumes section"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -943,7 +943,7 @@
       "Verify pyright passes on Python code",
       "Verify dart analyze passes on Dart code"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -960,7 +960,7 @@
       "Run dart analyze on generated Dart code",
       "Verify no errors or warnings"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -974,7 +974,7 @@
       "Verify JSON round-trip: User.model_validate_json(json_str)",
       "Verify all fields serialize correctly"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -989,7 +989,7 @@
       "Call user.copyWith(name: 'Jane') and verify immutability",
       "Verify all fields serialize correctly"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1007,7 +1007,7 @@
       "Run: docker-compose down",
       "Verify clean shutdown"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1021,7 +1021,7 @@
       "Verify Rich formatting is applied to help text",
       "Verify version flag: schnitzel --version shows correct version"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1035,7 +1035,7 @@
       "Verify validation warns about empty schema",
       "Verify generation proceeds without errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1048,7 +1048,7 @@
       "Verify parser memory usage is reasonable",
       "Verify no performance degradation"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1061,7 +1061,7 @@
       "Verify error shows both definitions",
       "Verify error suggests renaming one model"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1074,7 +1074,7 @@
       "Verify error shows model name (User)",
       "Verify error suggests removing or renaming duplicate"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1087,7 +1087,7 @@
       "Verify model can be instantiated",
       "Verify pyright validation passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1100,7 +1100,7 @@
       "Verify junction table reference is noted in comment",
       "Verify generated code is valid"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1113,7 +1113,7 @@
       "Verify fromJson handles nested JSON",
       "Verify toJson outputs correct nested structure"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1126,7 +1126,7 @@
       "Verify JSON serialization handles enum values",
       "Verify dart analyze passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1140,7 +1140,7 @@
       "Verify project structure is recreated",
       "Verify exit code is 0"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1153,7 +1153,7 @@
       "Verify generation proceeds normally",
       "Verify output files are created in correct subdirectories"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1166,7 +1166,7 @@
       "Verify generation proceeds with custom schema",
       "Verify exit code is 0"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1178,7 +1178,7 @@
       "Verify generated code has fields in same order",
       "Verify field order consistency in both Python and Dart output"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1191,7 +1191,7 @@
       "Verify Python generator adds EmailStr type from Pydantic",
       "Verify Dart generator adds appropriate validation"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1204,7 +1204,7 @@
       "Verify Python generator adds HttpUrl type from Pydantic",
       "Verify Dart generator adds appropriate validation"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1217,7 +1217,7 @@
       "Verify UUID serialization works with Pydantic",
       "Verify generated code passes pyright"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1230,7 +1230,7 @@
       "Verify datetime serialization works with Pydantic",
       "Verify timezone handling is documented"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1243,7 +1243,7 @@
       "Verify fromJson parses ISO 8601 strings",
       "Verify toJson outputs ISO 8601 strings"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1256,7 +1256,7 @@
       "Verify error suggests using --schema flag to specify file",
       "Verify exit code is non-zero"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1269,7 +1269,7 @@
       "Verify verbose output helps debug issues",
       "Verify normal operation without --verbose is less verbose"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1282,7 +1282,7 @@
       "Verify quiet mode is suitable for CI/CD",
       "Verify exit code still reflects success/failure"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1295,7 +1295,7 @@
       "Verify port mapping is correct (host:container)",
       "Verify services start on custom ports"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1308,7 +1308,7 @@
       "Verify network allows inter-service communication",
       "Verify external access is properly configured"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1321,7 +1321,7 @@
       "Verify no errors from comments",
       "Verify schema is parsed correctly"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1334,7 +1334,7 @@
       "Verify PyYAML handles YAML features",
       "Verify final schema has expanded values"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1347,7 +1347,7 @@
       "Verify docstring warns about auto-generation",
       "Verify pyright accepts docstrings"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1360,7 +1360,7 @@
       "Verify doc comment warns about auto-generation",
       "Verify dart analyze accepts doc comments"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1373,7 +1373,7 @@
       "Verify header includes schema file reference",
       "Verify header explains how to regenerate"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1386,7 +1386,7 @@
       "Verify array serialization works",
       "Verify pyright validation passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1399,7 +1399,7 @@
       "Verify fromJson parses JSON arrays",
       "Verify dart analyze passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1412,7 +1412,7 @@
       "Verify nested array types are supported",
       "Verify validation fails for unsupported element types"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1427,7 +1427,7 @@
       "Verify type safety is maintained",
       "Verify no runtime errors when accessing relationships"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1444,7 +1444,7 @@
       "Verify Post model is generated in both languages",
       "Stop watch process"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1457,7 +1457,7 @@
       "Verify 'Stopping...' message is shown",
       "Verify exit code indicates interrupt"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1470,7 +1470,7 @@
       "Verify validator tracks indexed fields",
       "Verify index info is passed to generators for future migration generation"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1483,7 +1483,7 @@
       "Verify code passes without suppressing valid type errors",
       "Verify only unavoidable cases use type: ignore"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1496,7 +1496,7 @@
       "Verify code compiles after build_runner",
       "Verify imports work correctly"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1508,7 +1508,7 @@
       "Verify gitignore prevents committing generated files if configured",
       "Verify gitignore is appropriate for Schnitzel projects"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1522,7 +1522,7 @@
       "Verify README explains how to start Docker services",
       "Verify README includes links to documentation"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1536,7 +1536,7 @@
       "Verify user can review changes before proceeding",
       "Verify option to skip or overwrite"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1549,7 +1549,7 @@
       "Verify parser suggests upgrade path if needed",
       "Verify parsing proceeds if version is compatible"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -1563,7 +1563,7 @@
       "Verify layout is organized and easy to scan",
       "Verify Rich panels or tables are used appropriately"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -1577,7 +1577,7 @@
       "Verify output is organized and not cluttered",
       "Verify Rich formatting enhances readability"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -1591,7 +1591,7 @@
       "Verify error suggests solution",
       "Verify error message is easy to read and understand"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -1605,7 +1605,7 @@
       "Verify spacing follows PEP 8",
       "Verify code is readable and idiomatic"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -1619,7 +1619,7 @@
       "Verify code follows Effective Dart guidelines",
       "Verify code is readable and idiomatic"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -1633,7 +1633,7 @@
       "Verify no YAML style warnings",
       "Verify file is readable and maintainable"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -1647,7 +1647,7 @@
       "Verify output uses colors and formatting",
       "Verify user feels guided through the process"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -1660,7 +1660,7 @@
       "Verify consistent field ordering (id first, timestamps last)",
       "Verify code looks professionally generated"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -1673,7 +1673,7 @@
       "Verify consistent field ordering",
       "Verify code looks professionally generated"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -1686,7 +1686,7 @@
       "Verify output is styled with Rich",
       "Verify version matches pyproject.toml"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -1698,7 +1698,7 @@
       "Verify header comments use consistent style",
       "Verify headers are professional and informative"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1711,7 +1711,7 @@
       "Verify templates can be customized by users in future",
       "Verify template loading works in installed package (not just dev)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1723,7 +1723,7 @@
       "Verify template has access to schema models",
       "Verify template logic is clean and maintainable"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1736,7 +1736,7 @@
       "Run: uv pip compile pyproject.toml",
       "Verify dependency resolution succeeds"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1749,7 +1749,7 @@
       "Verify schnitzel command is available",
       "Verify command executes Typer app"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1762,7 +1762,7 @@
       "Verify imports work: from schnitzel.schema import parser",
       "Verify package can be published to PyPI"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1775,7 +1775,7 @@
       "Verify tests can load fixtures easily",
       "Verify fixtures can be extended for new tests"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1789,7 +1789,7 @@
       "Verify test cleans up temp files",
       "Verify test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1803,7 +1803,7 @@
       "Verify test demonstrates real-world usage",
       "Verify test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1823,7 +1823,7 @@
       "Clean up test project",
       "Verify end-to-end workflow succeeds"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1842,7 +1842,7 @@
       "Verify no import or reference errors",
       "Clean up test files"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1860,7 +1860,7 @@
       "Verify error messages reference correct validation rules",
       "Verify generated code passes type checking"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1879,7 +1879,7 @@
       "Test instantiation of related models",
       "Verify relationship navigation works"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1895,7 +1895,7 @@
       "Verify exit code is non-zero",
       "Restore template file"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1916,7 +1916,7 @@
       "Stop watch process",
       "Verify all changes were correctly generated"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1934,7 +1934,7 @@
       "Verify defaults are applied correctly",
       "Run type checkers on generated code"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1954,7 +1954,7 @@
       "Test connection to redis on port 6380",
       "Run: docker-compose down"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1973,7 +1973,7 @@
       "Verify all errors are user-friendly",
       "Verify exit codes are non-zero for errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -1992,7 +1992,7 @@
       "Run pyright on generated code",
       "Verify no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -2008,7 +2008,7 @@
       "Verify round-trip works correctly",
       "Run dart analyze and verify no warnings"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -2026,7 +2026,7 @@
       "Verify validation catches naming issues",
       "Verify all errors are clear and actionable"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -2043,7 +2043,7 @@
       "Verify file ownership is correct",
       "Verify no temporary files are left behind"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -2061,7 +2061,7 @@
       "Run pyright strict mode",
       "Verify code is Pydantic v2 compatible"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -2080,7 +2080,7 @@
       "Test JSON serialization via generated code",
       "Run dart analyze on all generated files"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -2099,7 +2099,7 @@
       "Run type checkers on large generated files",
       "Verify no performance degradation"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -2117,7 +2117,7 @@
       "Verify incremental generation saves time",
       "Verify output indicates which files were skipped/updated"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -2133,7 +2133,7 @@
       "Verify all validators work as expected",
       "Verify generated validators match schema definitions"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -2151,7 +2151,7 @@
       "Verify generation proceeds or fails appropriately",
       "Verify version check logic is correct"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -2168,7 +2168,7 @@
       "Verify variable names are descriptive",
       "Verify overall structure is professional"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -2185,7 +2185,7 @@
       "Verify field names use proper camelCase",
       "Verify overall structure is clean and professional"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -2201,7 +2201,7 @@
       "Verify help is easy to scan and understand",
       "Verify help guides users effectively"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -2216,7 +2216,7 @@
       "Verify errors don't include stack traces for user errors",
       "Verify technical errors include debug info when --verbose is used"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -2232,7 +2232,7 @@
       "Verify output feels polished and professional",
       "Compare with popular CLIs (npm, cargo) for quality"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "style",
@@ -2247,7 +2247,7 @@
       "Verify comments don't clutter code (balanced)",
       "Verify comments follow language conventions (# for Python, /// for Dart)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "functional",
@@ -2268,6 +2268,6 @@
       "Verify JSON serialization round-trip for all models",
       "Verify this represents a real-world schema successfully generated"
     ],
-    "passes": false
+    "passes": true
   }
 ]

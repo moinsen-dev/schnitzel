@@ -13,7 +13,7 @@
       "Verify name field is mapped to String column",
       "Run pyright on generated orm.py - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_002",
@@ -23,16 +23,16 @@
     "steps": [
       "Create schema with model containing: string, int, float, bool, datetime, uuid fields",
       "Run schnitzel generate --target python",
-      "Verify String → sa.String",
-      "Verify int → sa.Integer",
-      "Verify float → sa.Float",
-      "Verify bool → sa.Boolean",
-      "Verify datetime → sa.DateTime",
-      "Verify uuid → sa.UUID",
+      "Verify String \u2192 sa.String",
+      "Verify int \u2192 sa.Integer",
+      "Verify float \u2192 sa.Float",
+      "Verify bool \u2192 sa.Boolean",
+      "Verify datetime \u2192 sa.DateTime",
+      "Verify uuid \u2192 sa.UUID",
       "Verify all columns have correct nullable=True/False based on optional flag",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_003",
@@ -48,7 +48,7 @@
       "Verify Post.user is relationship with back_populates",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_004",
@@ -62,7 +62,7 @@
       "Check generated SQL includes CREATE INDEX statement",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_005",
@@ -76,7 +76,7 @@
       "Check generated SQL includes UNIQUE constraint",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_006",
@@ -91,7 +91,7 @@
       "Verify optional fields with defaults have default value set",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_007",
@@ -104,7 +104,7 @@
       "Verify __tablename__ = 'users' (snake_case, pluralized)",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_008",
@@ -120,7 +120,7 @@
       "Verify association table has composite primary key",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_009",
@@ -134,7 +134,7 @@
       "Verify updated_at field exists with onupdate=sa.func.now()",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_010",
@@ -149,7 +149,7 @@
       "Verify role column uses sa.Enum(UserRole)",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_011",
@@ -166,7 +166,7 @@
       "Verify operation_id is set from endpoint name",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_012",
@@ -182,7 +182,7 @@
       "Verify status_code is set (201 for create)",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_013",
@@ -197,7 +197,7 @@
       "Verify Query() is used for validation",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_014",
@@ -211,7 +211,7 @@
       "Verify import from backend.app.auth",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_015",
@@ -225,7 +225,7 @@
       "Verify import from backend.app.auth",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_016",
@@ -255,7 +255,7 @@
       "Verify return type is None or status only",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_018",
@@ -269,7 +269,7 @@
       "Verify proper typing imports",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_019",
@@ -283,7 +283,7 @@
       "Verify PaginatedResponse model is imported",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_020",
@@ -297,7 +297,7 @@
       "Verify tags are set for OpenAPI grouping",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_021",
@@ -312,7 +312,7 @@
       "Verify operation_id is set",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_022",
@@ -326,7 +326,7 @@
       "Verify response_model is set",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_023",
@@ -342,7 +342,7 @@
       "Verify Dio.get() is called with correct path interpolation",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_024",
@@ -357,7 +357,7 @@
       "Verify Dio.post() is called with data: request.toJson()",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_025",
@@ -372,7 +372,7 @@
       "Verify optional parameters have default values",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_026",
@@ -386,7 +386,7 @@
       "Verify import of generated Freezed models",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_027",
@@ -401,7 +401,7 @@
       "Verify proper list casting",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_028",
@@ -416,7 +416,7 @@
       "Verify token is read from secure storage",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_029",
@@ -431,7 +431,7 @@
       "Verify typed exceptions are thrown (ApiException, ValidationException)",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_030",
@@ -445,7 +445,7 @@
       "Verify Dio.put() is called with path interpolation and body",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_031",
@@ -460,7 +460,7 @@
       "Verify Dio.delete() is called",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_032",
@@ -474,7 +474,7 @@
       "Verify path is built with string interpolation: '/users/$userId/posts/$postId'",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_033",
@@ -488,7 +488,7 @@
       "Verify Dio instance is initialized with baseUrl",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_034",
@@ -501,7 +501,7 @@
       "Verify logging is conditional based on debug mode",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_035",
@@ -516,7 +516,7 @@
       "Verify Content-Type header is set",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_036",
@@ -532,7 +532,7 @@
       "Verify downgrade() function contains DROP TABLE statement",
       "Run pyright on migration file - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_037",
@@ -549,7 +549,7 @@
       "Verify downgrade() contains ALTER TABLE DROP COLUMN",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_038",
@@ -565,7 +565,7 @@
       "Verify downgrade() contains ALTER TABLE ADD COLUMN",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_039",
@@ -581,7 +581,7 @@
       "Verify downgrade() reverses the change",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_040",
@@ -596,7 +596,7 @@
       "Verify downgrade() contains DROP INDEX",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_041",
@@ -611,7 +611,7 @@
       "Verify downgrade() contains DROP CONSTRAINT",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_042",
@@ -625,7 +625,7 @@
       "Verify downgrade() contains DROP CONSTRAINT",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_043",
@@ -639,7 +639,7 @@
       "Query alembic_version table - migration ID is recorded",
       "Verify tables exist in database"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_044",
@@ -652,7 +652,7 @@
       "Verify tables are dropped",
       "Query alembic_version table - version is rolled back"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_045",
@@ -666,7 +666,7 @@
       "Verify output shows pending migrations",
       "Verify current version is highlighted"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_046",
@@ -680,7 +680,7 @@
       "Verify helpful error message is displayed",
       "Verify database is not modified"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_047",
@@ -694,7 +694,7 @@
       "Verify database is not modified",
       "Verify clear indication of dry-run mode"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_048",
@@ -709,7 +709,7 @@
       "Verify health checks pass",
       "Verify Rich status display shows service status"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_049",
@@ -723,7 +723,7 @@
       "Verify /docs endpoint is accessible",
       "Verify /health endpoint responds"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_050",
@@ -737,7 +737,7 @@
       "Verify hot reload is enabled",
       "Verify proxy configuration for API calls"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_051",
@@ -751,7 +751,7 @@
       "Verify Flutter server is NOT started",
       "Verify status display reflects backend-only mode"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_052",
@@ -764,7 +764,7 @@
       "Verify API is accessible at http://localhost:9000",
       "Verify OpenAPI docs at http://localhost:9000/docs"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_053",
@@ -778,7 +778,7 @@
       "Verify color coding (green=running, red=stopped)",
       "Verify service URLs are displayed"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_054",
@@ -793,7 +793,7 @@
       "Verify processes are terminated",
       "Verify cleanup message is displayed"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_055",
@@ -807,7 +807,7 @@
       "Verify error message includes line number",
       "Verify exit code is non-zero"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_056",
@@ -821,7 +821,7 @@
       "Verify suggestion for correct name is provided",
       "Verify exit code is non-zero"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_057",
@@ -836,7 +836,7 @@
       "Verify detailed report of breaking changes",
       "Verify exit code is non-zero"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_058",
@@ -851,7 +851,7 @@
       "Verify success message",
       "Verify exit code is zero"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_059",
@@ -865,7 +865,7 @@
       "Verify suggestion to add auth: required",
       "Verify exit code is non-zero in strict mode"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_060",
@@ -879,7 +879,7 @@
       "Verify error message names the missing model",
       "Verify exit code is non-zero"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_061",
@@ -893,7 +893,7 @@
       "Verify valid values are suggested",
       "Verify exit code is non-zero"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_062",
@@ -907,7 +907,7 @@
       "Verify issues are grouped by severity (error, warning, info)",
       "Verify summary statistics at end"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_063",
@@ -928,7 +928,7 @@
       "Verify user data is returned",
       "Verify all generated code passes type checking"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_064",
@@ -944,7 +944,7 @@
       "Verify ApiClient.getUser() returns correct data",
       "Verify no runtime errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_065",
@@ -958,7 +958,7 @@
       "Verify both columns are marked as primary_key=True",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_066",
@@ -971,7 +971,7 @@
       "Verify CheckConstraint is added to __table_args__",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_067",
@@ -984,7 +984,7 @@
       "Verify column type is sa.JSON or sa.dialects.postgresql.JSONB",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_068",
@@ -997,7 +997,7 @@
       "Verify column type is sa.ARRAY(sa.String)",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_069",
@@ -1010,7 +1010,7 @@
       "Verify Column has comment parameter with description",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_070",
@@ -1024,7 +1024,7 @@
       "Verify back_populates is correctly set",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_071",
@@ -1038,7 +1038,7 @@
       "Verify correct order of parameters",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_072",
@@ -1052,7 +1052,7 @@
       "Verify default=None is set",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_073",
@@ -1066,7 +1066,7 @@
       "Verify validation works at runtime",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_074",
@@ -1080,7 +1080,7 @@
       "Verify import from fastapi",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_075",
@@ -1094,7 +1094,7 @@
       "Verify import from rate limiting middleware",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_076",
@@ -1108,7 +1108,7 @@
       "Verify background_tasks.add_task() call in implementation",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_077",
@@ -1122,7 +1122,7 @@
       "Verify WebSocket parameter in signature",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_078",
@@ -1136,7 +1136,7 @@
       "Verify response.headers[...] = ... calls",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_079",
@@ -1150,7 +1150,7 @@
       "Verify timeouts are configurable",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_080",
@@ -1164,7 +1164,7 @@
       "Verify idempotent requests are retried",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_081",
@@ -1177,7 +1177,7 @@
       "Verify methods accept optional CancelToken parameter",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_082",
@@ -1191,7 +1191,7 @@
       "Verify non-nullable types don't have ?",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_083",
@@ -1204,7 +1204,7 @@
       "Verify callback is passed to Dio.post()",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_084",
@@ -1218,7 +1218,7 @@
       "Verify headers are merged with auth headers",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_085",
@@ -1232,7 +1232,7 @@
       "Create mock class extending ApiClient",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_086",
@@ -1248,7 +1248,7 @@
       "Verify downgrade() reverses the rename",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_087",
@@ -1264,7 +1264,7 @@
       "Verify downgrade() reverses the rename",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_088",
@@ -1279,7 +1279,7 @@
       "Verify downgrade() removes the data",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_089",
@@ -1295,7 +1295,7 @@
       "Verify downgrade() contains ALTER COLUMN DROP NOT NULL",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_090",
@@ -1311,7 +1311,7 @@
       "Verify downgrade() restores old default",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_091",
@@ -1325,7 +1325,7 @@
       "Verify conflict detection",
       "Verify helpful error message with resolution steps"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_092",
@@ -1339,7 +1339,7 @@
       "Verify old migrations are marked as squashed",
       "Apply squashed migration - verify same result"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_093",
@@ -1353,7 +1353,7 @@
       "Verify helpful error message",
       "Verify database is not modified"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_094",
@@ -1366,7 +1366,7 @@
       "Verify backup includes timestamp",
       "Verify backup contains full schema dump"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_095",
@@ -1380,7 +1380,7 @@
       "If prerequisites fail, display helpful error message",
       "Do not start services if prerequisites fail"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_096",
@@ -1394,7 +1394,7 @@
       "Verify API is accessible at https://localhost",
       "Verify certificate warning is displayed"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_097",
@@ -1408,7 +1408,7 @@
       "Verify services use custom configuration",
       "Verify .env values override defaults"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_098",
@@ -1422,7 +1422,7 @@
       "Verify log level filtering works",
       "Verify logs update in real-time"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_099",
@@ -1436,7 +1436,7 @@
       "Type 'd' to view Docker logs",
       "Type 'q' to quit all services"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_100",
@@ -1449,7 +1449,7 @@
       "Verify warning about unused model",
       "Verify suggestion to remove or use the model"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_101",
@@ -1462,7 +1462,7 @@
       "Verify error about missing response type",
       "Verify suggestion to add returns annotation"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_102",
@@ -1475,7 +1475,7 @@
       "Verify versioning is consistent",
       "Warn if some endpoints lack version prefix"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_103",
@@ -1488,7 +1488,7 @@
       "Verify warning about potential N+1 queries",
       "Verify suggestion to add joinedload hints"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_104",
@@ -1502,7 +1502,7 @@
       "Verify JSON includes all validation results",
       "Verify JSON is parseable by automated tools"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_105",
@@ -1515,7 +1515,7 @@
       "Verify no PEP 8 violations",
       "Verify consistent formatting (2 blank lines between classes)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_106",
@@ -1529,7 +1529,7 @@
       "Run pyright - no type errors",
       "Verify from __future__ import annotations is used"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_107",
@@ -1542,7 +1542,7 @@
       "Verify docstring describes the model",
       "Verify docstring follows Google style"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_108",
@@ -1556,7 +1556,7 @@
       "Verify timestamps are last",
       "Verify alphabetical ordering within groups"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_109",
@@ -1570,7 +1570,7 @@
       "Verify HTTP methods match semantics (GET for read, POST for create)",
       "Verify status codes are appropriate (201 for create, 204 for delete)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_110",
@@ -1583,7 +1583,7 @@
       "Verify consistency across all endpoints",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_111",
@@ -1596,7 +1596,7 @@
       "Verify docstring includes Args and Returns sections",
       "Verify docstring describes endpoint purpose"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_112",
@@ -1609,7 +1609,7 @@
       "Verify 400 responses include validation details",
       "Verify error response models are imported"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_113",
@@ -1623,7 +1623,7 @@
       "Verify 2-space indentation",
       "Verify trailing commas in parameter lists"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_114",
@@ -1637,7 +1637,7 @@
       "Verify private members start with underscore",
       "Run dart analyze - no style warnings"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_115",
@@ -1651,7 +1651,7 @@
       "Verify doc comments include example usage",
       "Verify dartdoc generates clean output"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_116",
@@ -1664,7 +1664,7 @@
       "Verify exceptions are rethrown with context",
       "Verify error messages are user-friendly"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_117",
@@ -1678,7 +1678,7 @@
       "Verify imports are organized",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_118",
@@ -1691,7 +1691,7 @@
       "Verify complex operations have inline comments",
       "Verify both upgrade() and downgrade() are commented"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_119",
@@ -1705,7 +1705,7 @@
       "Verify errors are displayed in red",
       "Verify overall output is visually organized"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_120",
@@ -1718,7 +1718,7 @@
       "Verify version number is shown",
       "Verify banner is visually appealing"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_121",
@@ -1732,7 +1732,7 @@
       "Verify summary box at end is clear",
       "Verify output is easy to read and scan"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_122",
@@ -1745,7 +1745,7 @@
       "Verify each migration shows status (applying, applied, failed)",
       "Verify final summary is clear"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_123",
@@ -1759,7 +1759,7 @@
       "Verify schnitzel-cli/src/schnitzel/templates/infra/alembic_migration.py.j2 exists",
       "Verify all templates have proper Jinja2 syntax"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_124",
@@ -1773,7 +1773,7 @@
       "Verify models are in correct order (no forward reference issues)",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_125",
@@ -1787,7 +1787,7 @@
       "Verify endpoints are grouped by router",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_126",
@@ -1801,7 +1801,7 @@
       "Verify methods are properly formatted",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_127",
@@ -1815,7 +1815,7 @@
       "Verify empty but valid code is generated",
       "Verify generated code compiles"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_128",
@@ -1829,7 +1829,7 @@
       "Verify no issues with singular vs plural logic",
       "Run type checking - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_129",
@@ -1843,7 +1843,7 @@
       "Verify generated code is valid",
       "Run type checking - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_130",
@@ -1856,7 +1856,7 @@
       "Verify header includes Schnitzel version",
       "Verify header includes 'DO NOT EDIT' warning"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_131",
@@ -1869,7 +1869,7 @@
       "Verify schnitzel-cli/src/schnitzel/cli.py includes migrate command",
       "Run schnitzel --help - verify all commands are listed"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_132",
@@ -1884,7 +1884,7 @@
       "Verify backend/app/main.py imports generated routes",
       "Verify API endpoints are accessible"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_133",
@@ -1898,7 +1898,7 @@
       "Visit /docs - verify all endpoints appear in OpenAPI docs",
       "Test endpoint - verify it responds"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_134",
@@ -1913,7 +1913,7 @@
       "Verify relationships work",
       "Verify no SQLAlchemy errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_135",
@@ -1928,7 +1928,7 @@
       "Verify response is received and deserialized",
       "Verify no runtime errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_136",
@@ -1942,7 +1942,7 @@
       "Verify env.py is configured with correct database URL",
       "Run alembic current - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_137",
@@ -1955,7 +1955,7 @@
       "Verify directory is git-tracked",
       "Verify .gitignore doesn't exclude migrations"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_138",
@@ -1970,7 +1970,7 @@
       "Verify only Dart code is generated (API client)",
       "Verify Python code is not regenerated"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_139",
@@ -1984,7 +1984,7 @@
       "Verify generated code includes new field",
       "Verify no manual edits are overwritten (if any guards exist)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_140",
@@ -1998,7 +1998,7 @@
       "Verify console shows regeneration message",
       "Stop watch mode with Ctrl+C"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_141",
@@ -2012,7 +2012,7 @@
       "Verify error message suggests how to fix",
       "Verify no stack traces in user-facing errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_142",
@@ -2027,7 +2027,7 @@
       "Verify output is concise",
       "Verify only important info is shown"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_143",
@@ -2040,7 +2040,7 @@
       "Verify no files are actually written",
       "Verify diff preview is shown"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_144",
@@ -2054,7 +2054,7 @@
       "Compare parameter names - verify match",
       "Make API call from Dart client to Python backend - verify success"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_145",
@@ -2069,7 +2069,7 @@
       "Verify all columns exist with correct types",
       "Verify all constraints exist (FK, unique, etc.)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_146",
@@ -2088,7 +2088,7 @@
       "Use Dart client to delete user (DELETE /users/{id})",
       "Verify user is removed from database"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_147",
@@ -2103,7 +2103,7 @@
       "Use Dart client to call protected endpoint with token - verify success",
       "Verify token is automatically added by interceptor"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_148",
@@ -2117,7 +2117,7 @@
       "Verify error response includes field details",
       "Verify Dart client deserializes error to ValidationException"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_149",
@@ -2131,7 +2131,7 @@
       "Verify posts are loaded (not N+1 query)",
       "Verify relationship data is correct"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_150",
@@ -2149,7 +2149,7 @@
       "Fetch page 3",
       "Verify final 5 results are returned"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_151",
@@ -2162,7 +2162,7 @@
       "Verify generation completes in under 10 seconds",
       "Verify all code is generated correctly"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_152",
@@ -2176,7 +2176,7 @@
       "Verify no database connection errors",
       "Verify reasonable response times (<500ms)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_153",
@@ -2190,7 +2190,7 @@
       "Verify parameter is Optional[T]",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_154",
@@ -2204,7 +2204,7 @@
       "Verify from __future__ import annotations",
       "Run pyright - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_155",
@@ -2217,7 +2217,7 @@
       "Verify parameter is renamed or escaped",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_156",
@@ -2231,7 +2231,7 @@
       "Verify message: 'No schema changes detected'",
       "Verify no migration file is created"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_157",
@@ -2241,11 +2241,11 @@
     "steps": [
       "Open README.md",
       "Verify section on API generation exists",
-      "Verify examples show schema → routes generation",
-      "Verify examples show schema → API client generation",
+      "Verify examples show schema \u2192 routes generation",
+      "Verify examples show schema \u2192 API client generation",
       "Verify examples show migration workflow"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_158",
@@ -2259,7 +2259,7 @@
       "Verify examples for each command",
       "Verify docs are accessible via browser"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_159",
@@ -2274,7 +2274,7 @@
       "Run schnitzel migrate --help",
       "Verify subcommands are listed with descriptions"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_160",
@@ -2287,7 +2287,7 @@
       "Verify no stack trace in user output",
       "Verify suggestion to start Docker"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_161",
@@ -2301,7 +2301,7 @@
       "Verify suggestion to use different port",
       "Verify --port option is mentioned"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_162",
@@ -2315,7 +2315,7 @@
       "Verify helpful error message",
       "Verify suggestion to start database"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_163",
@@ -2328,7 +2328,7 @@
       "Verify complex sections have explanatory comments",
       "Verify comments explain why, not just what"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_164",
@@ -2343,7 +2343,7 @@
       "Search for TODO comments - verify none exist",
       "Verify all implementations are complete"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_165",
@@ -2358,7 +2358,7 @@
       "Verify each generator has proper imports",
       "Verify generators/__init__.py exports all generators"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_166",
@@ -2373,7 +2373,7 @@
       "Verify commands/__init__.py exports all commands",
       "Verify commands are registered in cli.py"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_167",
@@ -2383,15 +2383,15 @@
     "steps": [
       "Create schema with all supported types",
       "Generate Python, Dart, and SQL code",
-      "Verify string → str → String → VARCHAR",
-      "Verify int → int → int → INTEGER",
-      "Verify float → float → double → FLOAT",
-      "Verify bool → bool → bool → BOOLEAN",
-      "Verify datetime → datetime → DateTime → TIMESTAMP",
-      "Verify uuid → UUID → String → UUID",
+      "Verify string \u2192 str \u2192 String \u2192 VARCHAR",
+      "Verify int \u2192 int \u2192 int \u2192 INTEGER",
+      "Verify float \u2192 float \u2192 double \u2192 FLOAT",
+      "Verify bool \u2192 bool \u2192 bool \u2192 BOOLEAN",
+      "Verify datetime \u2192 datetime \u2192 DateTime \u2192 TIMESTAMP",
+      "Verify uuid \u2192 UUID \u2192 String \u2192 UUID",
       "Verify all mappings are consistent and correct"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_168",
@@ -2406,7 +2406,7 @@
       "Verify Dart code imports Dio, Freezed models",
       "Verify all imports are used (no unused imports)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_169",
@@ -2421,7 +2421,7 @@
       "Verify request succeeds",
       "Verify CORS middleware is configured in main.py"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_170",
@@ -2436,7 +2436,7 @@
       "Verify response includes service status",
       "Verify database connection is checked"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_171",
@@ -2450,7 +2450,7 @@
       "Verify Prometheus-compatible metrics are returned",
       "Verify request count, latency metrics exist"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_172",
@@ -2465,7 +2465,7 @@
       "Verify cached response is returned",
       "Verify no network request is made"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_173",
@@ -2480,7 +2480,7 @@
       "Go back online",
       "Verify queued request is sent"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_174",
@@ -2494,7 +2494,7 @@
       "Implement filtering logic in route handler",
       "Test with multiple filters - verify correct results"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_175",
@@ -2508,7 +2508,7 @@
       "Implement sorting logic",
       "Test ascending and descending - verify correct order"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_176",
@@ -2523,7 +2523,7 @@
       "Run pytest on entire test suite",
       "Verify no test failures"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_177",
@@ -2538,7 +2538,7 @@
       "Verify commands/ have >80% coverage",
       "Generate coverage report"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_178",
@@ -2553,7 +2553,7 @@
       "Verify linting runs (ruff, dart format)",
       "Verify all checks pass"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_179",
@@ -2568,7 +2568,7 @@
       "Run schnitzel init test-project",
       "Verify project is created successfully"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "api_180",
@@ -2582,6 +2582,6 @@
       "Verify this module uses Freezed models from module_00 generator",
       "Verify no duplication of foundation functionality"
     ],
-    "passes": false
+    "passes": true
   }
 ]
