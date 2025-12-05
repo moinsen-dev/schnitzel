@@ -39,6 +39,7 @@ class RoleRegistry:
         """Initialize the role registry."""
         self._roles: dict[str, Role] = {}
         self._permission_cache: dict[str, Set[str]] = {}
+        self._user_permissions: dict[str, Set[str]] = {}  # user_id -> set of permissions
 
     def register_role(self, role: Role) -> None:
         """
@@ -128,7 +129,139 @@ class RoleRegistry:
 
         return all_permissions
 
-    def check_permission(self, user_roles: List[str], permission: str) -> bool:
+    def add_permission_to_role(self, role_name: str, permission: str) -> bool:
+        """
+        Dynamically add a permission to a role at runtime.
+
+        This allows for runtime modification of role permissions. Changes take
+        effect immediately and are reflected in all permission checks.
+
+        Args:
+            role_name: Name of the role to modify
+            permission: Permission string to add (e.g., "users:write")
+
+        Returns:
+            True if permission was added, False if role doesn't exist
+
+        Example:
+            >>> registry.add_permission_to_role("moderator", "posts:delete")
+            True
+            >>> # Permission is now available immediately
+            >>> has_permission(["moderator"], "posts:delete")
+            True
+        """
+        role = self.get_role(role_name)
+        if not role:
+            return False
+
+        # Add permission if not already present
+        if permission not in role.permissions:
+            role.permissions.append(permission)
+            # Clear cache to ensure changes take effect immediately
+            self._permission_cache.clear()
+
+        return True
+
+    def remove_permission_from_role(self, role_name: str, permission: str) -> bool:
+        """
+        Dynamically remove a permission from a role at runtime.
+
+        This allows for runtime modification of role permissions. Changes take
+        effect immediately and are reflected in all permission checks.
+
+        Args:
+            role_name: Name of the role to modify
+            permission: Permission string to remove (e.g., "users:write")
+
+        Returns:
+            True if permission was removed, False if role doesn't exist or permission not found
+
+        Example:
+            >>> registry.remove_permission_from_role("moderator", "posts:delete")
+            True
+            >>> # Permission is now unavailable immediately
+            >>> has_permission(["moderator"], "posts:delete")
+            False
+        """
+        role = self.get_role(role_name)
+        if not role:
+            return False
+
+        # Remove permission if present
+        if permission in role.permissions:
+            role.permissions.remove(permission)
+            # Clear cache to ensure changes take effect immediately
+            self._permission_cache.clear()
+            return True
+
+        return False
+
+    def grant_permission_to_user(self, user_id: str, permission: str) -> None:
+        """
+        Grant a permission directly to a user, beyond their role permissions.
+
+        This allows users to have additional permissions that are not part of their
+        assigned roles. User-specific permissions take precedence and are checked
+        alongside role-based permissions.
+
+        Args:
+            user_id: Unique identifier for the user
+            permission: Permission string to grant (e.g., "admin:override")
+
+        Example:
+            >>> registry.grant_permission_to_user("user-123", "reports:view_sensitive")
+            >>> # User now has this permission regardless of their role
+            >>> has_permission(user_id="user-123", user_roles=["user"], permission="reports:view_sensitive")
+            True
+        """
+        if user_id not in self._user_permissions:
+            self._user_permissions[user_id] = set()
+        self._user_permissions[user_id].add(permission)
+
+    def revoke_permission_from_user(self, user_id: str, permission: str) -> bool:
+        """
+        Revoke a user-specific permission.
+
+        Removes a permission that was granted directly to the user. Does not affect
+        permissions granted through roles.
+
+        Args:
+            user_id: Unique identifier for the user
+            permission: Permission string to revoke
+
+        Returns:
+            True if permission was revoked, False if user had no such permission
+
+        Example:
+            >>> registry.revoke_permission_from_user("user-123", "reports:view_sensitive")
+            True
+        """
+        if user_id in self._user_permissions and permission in self._user_permissions[user_id]:
+            self._user_permissions[user_id].discard(permission)
+            # Clean up empty sets
+            if not self._user_permissions[user_id]:
+                del self._user_permissions[user_id]
+            return True
+        return False
+
+    def get_user_specific_permissions(self, user_id: str) -> Set[str]:
+        """
+        Get all permissions granted directly to a user (not through roles).
+
+        Args:
+            user_id: Unique identifier for the user
+
+        Returns:
+            Set of user-specific permission strings
+
+        Example:
+            >>> perms = registry.get_user_specific_permissions("user-123")
+            >>> "reports:view_sensitive" in perms
+            True
+        """
+        return self._user_permissions.get(user_id, set()).copy()
+
+    def check_permission(self, user_roles: List[str], permission: str, user_id: Optional[str] = None) -> bool:
         """
         Check if any of the user's roles grants a specific permission.
 
@@ -136,10 +269,12 @@ class RoleRegistry:
         - Wildcard permissions: "*" grants all permissions
         - Scoped permissions: "resource:action:scope" format
         - Partial wildcards: "users:*", "users:read:*"
+        - User-specific permissions: Checks permissions granted directly to the user
 
         Args:
             user_roles: List of role names assigned to the user
             permission: Permission string to check (e.g., "users:read:own")
+            user_id: Optional user ID to check user-specific permissions (auth_108)
 
         Returns:
             True if user has the permission, False otherwise
@@ -149,7 +284,23 @@ class RoleRegistry:
             True
             >>> registry.check_permission(["user"], "users:delete")
             False
+            >>> # With user-specific permissions
+            >>> registry.check_permission(["user"], "reports:view", user_id="user-123")
+            True  # if user-123 has been granted this permission directly
         """
+        # Check user-specific permissions first (auth_108)
+        if user_id and user_id in self._user_permissions:
+            user_specific_perms = self._user_permissions[user_id]
+            # Check for global wildcard
+            if "*" in user_specific_perms:
+                return True
+            # Check for exact match
+            if permission in user_specific_perms:
+                return True
+            # Check for wildcard matches in user-specific permissions
+            if self._check_wildcard_permission(permission, user_specific_perms):
+                return True
+
         if not user_roles:
             return False
 
@@ -168,10 +319,26 @@ class RoleRegistry:
             return True
 
         # Check for wildcard matches
+        if self._check_wildcard_permission(permission, user_permissions):
+            return True
+
+        return False
+
+    def _check_wildcard_permission(self, permission: str, permission_set: Set[str]) -> bool:
+        """
+        Check if a permission matches any wildcard patterns in a permission set.
+
+        Args:
+            permission: Permission to check (e.g., "users:read:own")
+            permission_set: Set of permissions that may contain wildcards
+
+        Returns:
+            True if permission matches any wildcard pattern, False otherwise
+        """
         # Split permission into parts (e.g., "users:read:own" -> ["users", "read", "own"])
         permission_parts = permission.split(":")
 
-        for user_perm in user_permissions:
+        for user_perm in permission_set:
             if "*" in user_perm:
                 # Check if wildcard permission matches
                 user_perm_parts = user_perm.split(":")
@@ -214,13 +381,16 @@ registry.register_role(Role(
 # Permission Checking Functions
 # =============================================================================
 
-def has_permission(user_roles: List[str], permission: str) -> bool:
+def has_permission(user_roles: List[str], permission: str, user_id: Optional[str] = None) -> bool:
     """
     Check if user has a specific permission.
+
+    Checks both role-based permissions and user-specific permissions (auth_108).
 
     Args:
         user_roles: List of role names assigned to the user
         permission: Permission string to check (e.g., "users:read")
+        user_id: Optional user ID to check user-specific permissions
 
     Returns:
         True if user has the permission, False otherwise
@@ -230,8 +400,11 @@ def has_permission(user_roles: List[str], permission: str) -> bool:
         True
         >>> has_permission(["user"], "users:delete")
         False
+        >>> # With user-specific permission
+        >>> has_permission(["user"], "reports:view", user_id="user-123")
+        True  # if granted directly to user-123
     """
-    return registry.check_permission(user_roles, permission)
+    return registry.check_permission(user_roles, permission, user_id)
 
 
 def has_any_permission(user_roles: List[str], permissions: List[str]) -> bool:
@@ -278,26 +451,147 @@ def has_all_permissions(user_roles: List[str], permissions: List[str]) -> bool:
     return True
 
 
-def get_user_permissions(user_roles: List[str]) -> Set[str]:
+def get_user_permissions(user_roles: List[str], user_id: Optional[str] = None) -> Set[str]:
     """
-    Get all permissions granted to a user through their roles.
+    Get all permissions granted to a user through their roles and user-specific grants.
 
     Args:
         user_roles: List of role names assigned to the user
+        user_id: Optional user ID to include user-specific permissions
 
     Returns:
-        Set of all permission strings
+        Set of all permission strings (role-based + user-specific)
 
     Example:
         >>> permissions = get_user_permissions(["moderator"])
         >>> "users:read" in permissions
+        True
+        >>> # With user-specific permissions
+        >>> permissions = get_user_permissions(["moderator"], user_id="user-123")
+        >>> "reports:view_sensitive" in permissions  # if granted to user-123
         True
     """
     all_permissions = set()
     for role_name in user_roles:
         role_permissions = registry.get_all_permissions(role_name)
         all_permissions.update(role_permissions)
+
+    # Add user-specific permissions (auth_108)
+    if user_id:
+        user_specific = registry.get_user_specific_permissions(user_id)
+        all_permissions.update(user_specific)
+
     return all_permissions
+
+
+# =============================================================================
+# Dynamic Permission Management (auth_107, auth_108)
+# =============================================================================
+
+def add_permission_to_role(role_name: str, permission: str) -> bool:
+    """
+    Dynamically add a permission to a role at runtime (auth_107).
+
+    Changes take effect immediately and are reflected in all permission checks.
+
+    Args:
+        role_name: Name of the role to modify
+        permission: Permission string to add (e.g., "users:write")
+
+    Returns:
+        True if permission was added, False if role doesn't exist
+
+    Example:
+        >>> add_permission_to_role("moderator", "posts:delete")
+        True
+        >>> # Permission is now available immediately
+        >>> has_permission(["moderator"], "posts:delete")
+        True
+    """
+    return registry.add_permission_to_role(role_name, permission)
+
+
+def remove_permission_from_role(role_name: str, permission: str) -> bool:
+    """
+    Dynamically remove a permission from a role at runtime (auth_107).
+
+    Changes take effect immediately and are reflected in all permission checks.
+
+    Args:
+        role_name: Name of the role to modify
+        permission: Permission string to remove (e.g., "users:write")
+
+    Returns:
+        True if permission was removed, False if role doesn't exist or permission not found
+
+    Example:
+        >>> remove_permission_from_role("moderator", "posts:delete")
+        True
+        >>> # Permission is now unavailable immediately
+        >>> has_permission(["moderator"], "posts:delete")
+        False
+    """
+    return registry.remove_permission_from_role(role_name, permission)
+
+
+def grant_permission_to_user(user_id: str, permission: str) -> None:
+    """
+    Grant a permission directly to a user, beyond their role permissions (auth_108).
+
+    This allows users to have additional permissions that are not part of their
+    assigned roles. User-specific permissions take precedence and are checked
+    alongside role-based permissions.
+
+    Args:
+        user_id: Unique identifier for the user
+        permission: Permission string to grant (e.g., "admin:override")
+
+    Example:
+        >>> grant_permission_to_user("user-123", "reports:view_sensitive")
+        >>> # User now has this permission regardless of their role
+        >>> has_permission(["user"], "reports:view_sensitive", user_id="user-123")
+        True
+    """
+    registry.grant_permission_to_user(user_id, permission)
+
+
+def revoke_permission_from_user(user_id: str, permission: str) -> bool:
+    """
+    Revoke a user-specific permission (auth_108).
+
+    Removes a permission that was granted directly to the user. Does not affect
+    permissions granted through roles.
+
+    Args:
+        user_id: Unique identifier for the user
+        permission: Permission string to revoke
+
+    Returns:
+        True if permission was revoked, False if user had no such permission
+
+    Example:
+        >>> revoke_permission_from_user("user-123", "reports:view_sensitive")
+        True
+    """
+    return registry.revoke_permission_from_user(user_id, permission)
+
+
+def get_user_specific_permissions(user_id: str) -> Set[str]:
+    """
+    Get all permissions granted directly to a user (not through roles) (auth_108).
+
+    Args:
+        user_id: Unique identifier for the user
+
+    Returns:
+        Set of user-specific permission strings
+
+    Example:
+        >>> perms = get_user_specific_permissions("user-123")
+        >>> "reports:view_sensitive" in perms
+        True
+    """
+    return registry.get_user_specific_permissions(user_id)
 
 
 # =============================================================================

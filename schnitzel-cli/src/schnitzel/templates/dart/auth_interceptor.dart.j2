@@ -54,6 +54,9 @@ class AuthInterceptor extends Interceptor {
     DioException err,
     ErrorInterceptorHandler handler,
   ) async {
+    // Enhance error with user-friendly message
+    final enhancedError = _enhanceErrorMessage(err);
+
     // Check if error is 401 Unauthorized
     if (err.response?.statusCode == 401) {
       // Don't retry auth endpoints
@@ -62,14 +65,14 @@ class AuthInterceptor extends Interceptor {
         if (err.requestOptions.path.contains('refresh')) {
           await _handleAuthenticationFailure();
         }
-        return handler.next(err);
+        return handler.next(enhancedError);
       }
 
       // Check if we've exceeded max refresh attempts (prevent infinite loops)
       if (_refreshAttempts >= _maxRefreshAttempts) {
         await _handleAuthenticationFailure();
         _refreshAttempts = 0; // Reset for next session
-        return handler.next(err);
+        return handler.next(enhancedError);
       }
 
       // Try to refresh token
@@ -89,16 +92,16 @@ class AuthInterceptor extends Interceptor {
           final response = await _dio.fetch(options);
           return handler.resolve(response);
         } catch (e) {
-          return handler.next(err);
+          return handler.next(enhancedError);
         }
       } else {
         // Token refresh failed - handle authentication failure
         await _handleAuthenticationFailure();
-        return handler.next(err);
+        return handler.next(enhancedError);
       }
     }
 
-    return handler.next(err);
+    return handler.next(enhancedError);
   }
 
   /// Refresh access token using refresh token
@@ -189,6 +192,75 @@ class AuthInterceptor extends Interceptor {
     ];
 
     return authPaths.any((authPath) => path.contains(authPath));
+  }
+
+  /// Enhance DioException with user-friendly error messages
+  DioException _enhanceErrorMessage(DioException error) {
+    String message;
+
+    // Check for network-related errors
+    switch (error.type) {
+      case DioExceptionType.connectionTimeout:
+        message = 'Connection timeout. Please check your internet connection and try again.';
+        break;
+      case DioExceptionType.sendTimeout:
+        message = 'Request timeout. The server is taking too long to respond.';
+        break;
+      case DioExceptionType.receiveTimeout:
+        message = 'Response timeout. The server is taking too long to respond.';
+        break;
+      case DioExceptionType.connectionError:
+        message = 'Network error. Please check your internet connection and try again.';
+        break;
+      case DioExceptionType.badCertificate:
+        message = 'Security error. Could not verify server certificate.';
+        break;
+      case DioExceptionType.cancel:
+        message = 'Request was cancelled.';
+        break;
+      default:
+        // Handle server response errors
+        if (error.response != null) {
+          final statusCode = error.response!.statusCode;
+          final responseData = error.response!.data;
+
+          // Try to extract error message from response
+          String? errorMessage;
+          if (responseData is Map<String, dynamic>) {
+            errorMessage = responseData['error'] as String? ??
+                          responseData['message'] as String? ??
+                          responseData['detail'] as String?;
+          }
+
+          // Return specific messages based on status code
+          if (statusCode == 400) {
+            message = errorMessage ?? 'Invalid request. Please check your input.';
+          } else if (statusCode == 401) {
+            message = errorMessage ?? 'Authentication failed. Please log in again.';
+          } else if (statusCode == 403) {
+            message = errorMessage ?? 'Access forbidden. You do not have permission.';
+          } else if (statusCode == 404) {
+            message = errorMessage ?? 'Resource not found.';
+          } else if (statusCode == 429) {
+            message = 'Too many requests. Please try again later.';
+          } else if (statusCode != null && statusCode >= 500) {
+            message = 'Server error. Please try again later.';
+          } else {
+            message = errorMessage ?? error.message ?? 'An error occurred';
+          }
+        } else {
+          message = error.message ?? 'An error occurred';
+        }
+    }
+
+    // Create a new DioException with the enhanced message
+    return DioException(
+      requestOptions: error.requestOptions,
+      response: error.response,
+      type: error.type,
+      error: error.error,
+      message: message,
+    );
   }
 }
 

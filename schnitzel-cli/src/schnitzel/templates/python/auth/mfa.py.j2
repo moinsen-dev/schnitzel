@@ -662,6 +662,657 @@ def verify_user_password(user_id: str, password: str) -> bool:
 
 
 # =============================================================================
+# SMS-based MFA (auth_111)
+# =============================================================================
+
+def send_sms_code(phone_number: str, user_id: str) -> str:
+    """Send SMS-based MFA code to user's phone.
+
+    Generates a 6-digit code, stores it with a 5-minute TTL, and sends it
+    via SMS service (Twilio/AWS SNS). This is a placeholder implementation
+    that should be connected to your actual SMS service.
+
+    Args:
+        phone_number: User's phone number in E.164 format (e.g., +1234567890)
+        user_id: User's unique identifier for tracking
+
+    Returns:
+        Code identifier/session ID for verification
+
+    Raises:
+        ValueError: If phone_number is invalid
+        Exception: If SMS sending fails
+
+    Example:
+        >>> code_session_id = send_sms_code("+1234567890", "user-123")
+        >>> # User receives: "Your verification code is 123456"
+        >>> # Store code_session_id for verification
+
+    Implementation Notes:
+        - Connect to Twilio: from twilio.rest import Client
+        - Or AWS SNS: import boto3; sns = boto3.client('sns')
+        - Store code in Redis with 5-minute TTL
+        - Hash the code before storage for security
+    """
+    if not phone_number or not phone_number.startswith('+'):
+        raise ValueError("Phone number must be in E.164 format (e.g., +1234567890)")
+
+    # Generate 6-digit code
+    code = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+
+    # Generate session ID for this code
+    session_id = secrets.token_urlsafe(32)
+
+    # Hash the code for secure storage
+    code_hash = hashlib.sha256(code.encode('utf-8')).hexdigest()
+
+    # TODO: Store in Redis with 5-minute TTL
+    # redis_client.setex(f"sms_code:{session_id}", 300, code_hash)
+    # Also store: phone_number, user_id, attempts_remaining=3
+
+    # TODO: Send SMS via Twilio or AWS SNS
+    # Example Twilio:
+    # client = Client(account_sid, auth_token)
+    # message = client.messages.create(
+    #     body=f"Your verification code is {code}",
+    #     from_=twilio_phone_number,
+    #     to=phone_number
+    # )
+
+    # Example AWS SNS:
+    # sns = boto3.client('sns')
+    # response = sns.publish(
+    #     PhoneNumber=phone_number,
+    #     Message=f"Your verification code is {code}"
+    # )
+
+    # For now, log the code (REMOVE IN PRODUCTION!)
+    print(f"[DEV MODE] SMS code for {phone_number}: {code}")
+
+    return session_id
+
+
+def verify_sms_code(session_id: str, code: str) -> bool:
+    """Verify SMS-based MFA code.
+
+    Validates the SMS code against the stored hash with rate limiting
+    and automatic expiry after 5 minutes.
+
+    Args:
+        session_id: Session ID returned from send_sms_code
+        code: 6-digit code provided by user
+
+    Returns:
+        True if code is valid, False otherwise
+
+    Security Features:
+        - 5-minute TTL for codes
+        - Rate limiting (max 3 attempts)
+        - Constant-time comparison to prevent timing attacks
+        - Code is deleted after successful verification
+
+    Example:
+        >>> session_id = send_sms_code("+1234567890", "user-123")
+        >>> # User enters code
+        >>> if verify_sms_code(session_id, "123456"):
+        ...     print("SMS MFA verified!")
+        ... else:
+        ...     print("Invalid code")
+    """
+    if not session_id or not code:
+        return False
+
+    if not code.isdigit() or len(code) != 6:
+        return False
+
+    # Hash the provided code
+    code_hash = hashlib.sha256(code.encode('utf-8')).hexdigest()
+
+    # TODO: Retrieve from Redis
+    # stored_data = redis_client.get(f"sms_code:{session_id}")
+    # if not stored_data:
+    #     return False  # Code expired or doesn't exist
+
+    # Parse stored data
+    # stored_hash = stored_data['hash']
+    # attempts_remaining = stored_data.get('attempts_remaining', 0)
+
+    # Check attempts
+    # if attempts_remaining <= 0:
+    #     redis_client.delete(f"sms_code:{session_id}")
+    #     return False
+
+    # Constant-time comparison
+    # is_valid = secrets.compare_digest(code_hash, stored_hash)
+
+    # if is_valid:
+    #     redis_client.delete(f"sms_code:{session_id}")  # One-time use
+    #     return True
+    # else:
+    #     # Decrement attempts
+    #     stored_data['attempts_remaining'] -= 1
+    #     redis_client.setex(f"sms_code:{session_id}", 300, stored_data)
+    #     return False
+
+    # Placeholder return (implement Redis logic above)
+    raise NotImplementedError(
+        "SMS code verification requires Redis integration. "
+        "Implement Redis storage and retrieval logic in send_sms_code and verify_sms_code."
+    )
+
+
+# =============================================================================
+# Email-based MFA (auth_112)
+# =============================================================================
+
+def send_email_code(email: str, user_id: str, ttl_minutes: int = 10) -> str:
+    """Send email-based MFA code to user's email.
+
+    Generates a 6-digit code, stores it with configurable TTL (default 10 minutes),
+    and sends it via email service. This is a placeholder implementation that should
+    be connected to your actual email service.
+
+    Args:
+        email: User's email address
+        user_id: User's unique identifier for tracking
+        ttl_minutes: Time-to-live for the code in minutes (default: 10)
+
+    Returns:
+        Code identifier/session ID for verification
+
+    Raises:
+        ValueError: If email is invalid
+        Exception: If email sending fails
+
+    Example:
+        >>> code_session_id = send_email_code("user@example.com", "user-123")
+        >>> # User receives email with code
+        >>> # Store code_session_id for verification
+
+    Implementation Notes:
+        - Connect to SMTP server or email service (SendGrid, AWS SES, Mailgun)
+        - Store code in Redis with configurable TTL
+        - Hash the code before storage for security
+        - Include branded email template
+    """
+    if not email or '@' not in email:
+        raise ValueError("Invalid email address")
+
+    # Generate 6-digit code
+    code = ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+
+    # Generate session ID for this code
+    session_id = secrets.token_urlsafe(32)
+
+    # Hash the code for secure storage
+    code_hash = hashlib.sha256(code.encode('utf-8')).hexdigest()
+
+    # Calculate TTL in seconds
+    ttl_seconds = ttl_minutes * 60
+
+    # TODO: Store in Redis with TTL
+    # redis_client.setex(f"email_code:{session_id}", ttl_seconds, code_hash)
+    # Also store: email, user_id, attempts_remaining=3
+
+    # TODO: Send email via email service
+    # Example with SMTP:
+    # import smtplib
+    # from email.mime.text import MIMEText
+    # msg = MIMEText(f"Your verification code is {code}")
+    # msg['Subject'] = 'Your MFA Code'
+    # msg['From'] = 'noreply@example.com'
+    # msg['To'] = email
+    # with smtplib.SMTP('smtp.example.com', 587) as server:
+    #     server.starttls()
+    #     server.login(smtp_user, smtp_password)
+    #     server.send_message(msg)
+
+    # Example with SendGrid:
+    # import sendgrid
+    # sg = sendgrid.SendGridAPIClient(api_key=os.environ.get('SENDGRID_API_KEY'))
+    # data = {
+    #     "personalizations": [{"to": [{"email": email}]}],
+    #     "from": {"email": "noreply@example.com"},
+    #     "subject": "Your MFA Code",
+    #     "content": [{"type": "text/plain", "value": f"Your verification code is {code}"}]
+    # }
+    # response = sg.client.mail.send.post(request_body=data)
+
+    # For now, log the code (REMOVE IN PRODUCTION!)
+    print(f"[DEV MODE] Email code for {email}: {code}")
+
+    return session_id
+
+
+def verify_email_code(session_id: str, code: str) -> bool:
+    """Verify email-based MFA code.
+
+    Validates the email code against the stored hash with rate limiting
+    and automatic expiry based on TTL.
+
+    Args:
+        session_id: Session ID returned from send_email_code
+        code: 6-digit code provided by user
+
+    Returns:
+        True if code is valid, False otherwise
+
+    Security Features:
+        - Configurable TTL (default 10 minutes)
+        - Rate limiting (max 3 attempts)
+        - Constant-time comparison to prevent timing attacks
+        - Code is deleted after successful verification
+
+    Example:
+        >>> session_id = send_email_code("user@example.com", "user-123")
+        >>> # User enters code from email
+        >>> if verify_email_code(session_id, "123456"):
+        ...     print("Email MFA verified!")
+        ... else:
+        ...     print("Invalid code")
+    """
+    if not session_id or not code:
+        return False
+
+    if not code.isdigit() or len(code) != 6:
+        return False
+
+    # Hash the provided code
+    code_hash = hashlib.sha256(code.encode('utf-8')).hexdigest()
+
+    # TODO: Retrieve from Redis
+    # stored_data = redis_client.get(f"email_code:{session_id}")
+    # if not stored_data:
+    #     return False  # Code expired or doesn't exist
+
+    # Parse stored data
+    # stored_hash = stored_data['hash']
+    # attempts_remaining = stored_data.get('attempts_remaining', 0)
+
+    # Check attempts
+    # if attempts_remaining <= 0:
+    #     redis_client.delete(f"email_code:{session_id}")
+    #     return False
+
+    # Constant-time comparison
+    # is_valid = secrets.compare_digest(code_hash, stored_hash)
+
+    # if is_valid:
+    #     redis_client.delete(f"email_code:{session_id}")  # One-time use
+    #     return True
+    # else:
+    #     # Decrement attempts
+    #     stored_data['attempts_remaining'] -= 1
+    #     redis_client.setex(f"email_code:{session_id}", stored_data['ttl'], stored_data)
+    #     return False
+
+    # Placeholder return (implement Redis logic above)
+    raise NotImplementedError(
+        "Email code verification requires Redis integration. "
+        "Implement Redis storage and retrieval logic in send_email_code and verify_email_code."
+    )
+
+
+# =============================================================================
+# Trusted Devices (auth_113)
+# =============================================================================
+
+def trust_device(user_id: str, device_id: str, device_name: Optional[str] = None) -> bool:
+    """Trust a device for a user to skip MFA.
+
+    Stores device information so that future logins from this device
+    don't require MFA verification. Useful for user convenience while
+    maintaining security.
+
+    Args:
+        user_id: User's unique identifier
+        device_id: Unique device identifier (browser fingerprint, device UUID)
+        device_name: Optional human-readable device name (e.g., "iPhone 13", "Chrome on MacBook")
+
+    Returns:
+        True if device was successfully trusted
+
+    Raises:
+        ValueError: If user_id or device_id is empty
+
+    Security Considerations:
+        - Device IDs should be cryptographically unique
+        - Consider limiting number of trusted devices per user
+        - Consider expiry for trusted devices (e.g., 90 days)
+        - Store device metadata (IP, user agent) for audit
+
+    Example:
+        >>> device_id = "browser-fingerprint-abc123"
+        >>> trust_device("user-123", device_id, "Chrome on MacBook Pro")
+        >>> # Future logins from this device skip MFA
+    """
+    if not user_id or not device_id:
+        raise ValueError("user_id and device_id are required")
+
+    # TODO: Store in database
+    # await db.execute(
+    #     "INSERT INTO trusted_devices (user_id, device_id, device_name, created_at) "
+    #     "VALUES (:user_id, :device_id, :device_name, :created_at) "
+    #     "ON CONFLICT (user_id, device_id) DO UPDATE SET last_used_at = :created_at",
+    #     {
+    #         "user_id": user_id,
+    #         "device_id": device_id,
+    #         "device_name": device_name,
+    #         "created_at": datetime.utcnow()
+    #     }
+    # )
+
+    # Optional: Limit number of trusted devices per user
+    # device_count = await db.fetch_val(
+    #     "SELECT COUNT(*) FROM trusted_devices WHERE user_id = :user_id",
+    #     {"user_id": user_id}
+    # )
+    # if device_count > 5:  # Max 5 trusted devices
+    #     # Remove oldest device
+    #     await db.execute(
+    #         "DELETE FROM trusted_devices WHERE user_id = :user_id "
+    #         "AND device_id = (SELECT device_id FROM trusted_devices "
+    #         "WHERE user_id = :user_id ORDER BY last_used_at ASC LIMIT 1)",
+    #         {"user_id": user_id}
+    #     )
+
+    raise NotImplementedError(
+        "trust_device must be implemented by the application. "
+        "Store device_id in trusted_devices table in your database."
+    )
+
+
+def is_device_trusted(user_id: str, device_id: str) -> bool:
+    """Check if a device is trusted for a user.
+
+    Verifies if the device has been previously trusted and hasn't expired.
+    If trusted, MFA verification can be skipped.
+
+    Args:
+        user_id: User's unique identifier
+        device_id: Device identifier to check
+
+    Returns:
+        True if device is trusted and hasn't expired, False otherwise
+
+    Example:
+        >>> device_id = request.cookies.get("device_id")
+        >>> if is_device_trusted("user-123", device_id):
+        ...     # Skip MFA verification
+        ...     pass
+        ... else:
+        ...     # Require MFA verification
+        ...     pass
+    """
+    if not user_id or not device_id:
+        return False
+
+    # TODO: Query database
+    # result = await db.fetch_one(
+    #     "SELECT created_at FROM trusted_devices "
+    #     "WHERE user_id = :user_id AND device_id = :device_id",
+    #     {"user_id": user_id, "device_id": device_id}
+    # )
+
+    # if not result:
+    #     return False
+
+    # Optional: Check expiry (e.g., 90 days)
+    # created_at = result['created_at']
+    # if datetime.utcnow() - created_at > timedelta(days=90):
+    #     # Device trust expired
+    #     await db.execute(
+    #         "DELETE FROM trusted_devices WHERE user_id = :user_id AND device_id = :device_id",
+    #         {"user_id": user_id, "device_id": device_id}
+    #     )
+    #     return False
+
+    # Update last_used_at
+    # await db.execute(
+    #     "UPDATE trusted_devices SET last_used_at = :now "
+    #     "WHERE user_id = :user_id AND device_id = :device_id",
+    #     {"user_id": user_id, "device_id": device_id, "now": datetime.utcnow()}
+    # )
+
+    # return True
+
+    raise NotImplementedError(
+        "is_device_trusted must be implemented by the application. "
+        "Check if device_id exists in trusted_devices table."
+    )
+
+
+def untrust_device(user_id: str, device_id: str) -> bool:
+    """Remove a device from the trusted devices list.
+
+    Revokes trust for a specific device, requiring MFA verification
+    for future logins from that device.
+
+    Args:
+        user_id: User's unique identifier
+        device_id: Device identifier to untrust
+
+    Returns:
+        True if device was successfully untrusted
+
+    Example:
+        >>> # User wants to remove "Old iPhone" from trusted devices
+        >>> untrust_device("user-123", "device-old-iphone")
+    """
+    if not user_id or not device_id:
+        return False
+
+    # TODO: Delete from database
+    # result = await db.execute(
+    #     "DELETE FROM trusted_devices WHERE user_id = :user_id AND device_id = :device_id",
+    #     {"user_id": user_id, "device_id": device_id}
+    # )
+    # return result.rowcount > 0
+
+    raise NotImplementedError(
+        "untrust_device must be implemented by the application. "
+        "Delete device_id from trusted_devices table in your database."
+    )
+
+
+def get_trusted_devices(user_id: str) -> list[dict]:
+    """Get list of all trusted devices for a user.
+
+    Returns information about all devices that are currently trusted,
+    useful for displaying in user's security settings.
+
+    Args:
+        user_id: User's unique identifier
+
+    Returns:
+        List of trusted device dictionaries with keys:
+        - device_id: Unique device identifier
+        - device_name: Human-readable device name
+        - created_at: When device was trusted
+        - last_used_at: Last time device was used
+
+    Example:
+        >>> devices = get_trusted_devices("user-123")
+        >>> for device in devices:
+        ...     print(f"{device['device_name']} - Last used: {device['last_used_at']}")
+    """
+    if not user_id:
+        return []
+
+    # TODO: Query database
+    # results = await db.fetch_all(
+    #     "SELECT device_id, device_name, created_at, last_used_at "
+    #     "FROM trusted_devices WHERE user_id = :user_id "
+    #     "ORDER BY last_used_at DESC",
+    #     {"user_id": user_id}
+    # )
+    # return [dict(row) for row in results]
+
+    raise NotImplementedError(
+        "get_trusted_devices must be implemented by the application. "
+        "Query trusted_devices table in your database."
+    )
+
+
+# =============================================================================
+# MFA Recovery Flow (auth_114)
+# =============================================================================
+
+def recover_mfa(user_id: str, identity_token: str) -> dict[str, Any]:
+    """Recover MFA access when user loses authenticator device.
+
+    Initiates MFA recovery flow that requires strong identity verification
+    (e.g., email confirmation, security questions, support ticket).
+    Generates new TOTP secret and invalidates old backup codes.
+
+    Args:
+        user_id: User's unique identifier
+        identity_token: Token proving user's identity (from email link, security questions, etc.)
+
+    Returns:
+        Dictionary containing:
+        - secret: New TOTP secret
+        - uri: New provisioning URI for QR code
+        - qr_code: New QR code image bytes
+        - backup_codes: New backup codes (plaintext, show once)
+
+    Raises:
+        ValueError: If identity_token is invalid or expired
+        HTTPException(403): If identity verification fails
+
+    Security Considerations:
+        - Require strong identity verification (not just password)
+        - Consider manual review for high-value accounts
+        - Log recovery attempts for audit
+        - Notify user via all channels (email, SMS)
+        - Consider temporary account restrictions during recovery
+
+    Example:
+        >>> # Step 1: User requests recovery via email
+        >>> send_recovery_email(user_id, email)
+        >>>
+        >>> # Step 2: User clicks link in email with identity_token
+        >>> recovery_data = recover_mfa(user_id, identity_token)
+        >>>
+        >>> # Return new QR code and backup codes
+        >>> return {
+        ...     "qr_code": base64.b64encode(recovery_data["qr_code"]).decode(),
+        ...     "backup_codes": recovery_data["backup_codes"]
+        ... }
+    """
+    if not user_id or not identity_token:
+        raise ValueError("user_id and identity_token are required")
+
+    # TODO: Verify identity_token
+    # - Check token is valid and not expired
+    # - Verify token belongs to this user
+    # - Check token hasn't been used before (one-time use)
+    # stored_token = redis_client.get(f"mfa_recovery:{user_id}")
+    # if not stored_token or not secrets.compare_digest(identity_token, stored_token):
+    #     raise HTTPException(status_code=403, detail="Invalid or expired recovery token")
+
+    # Generate new TOTP secret
+    secret = generate_totp_secret()
+
+    # Get user email for TOTP URI
+    # user = await db.fetch_one("SELECT email FROM users WHERE id = :user_id", {"user_id": user_id})
+    # email = user['email']
+
+    # Generate new provisioning URI and QR code
+    email = "user@example.com"  # TODO: Get from database
+    uri = generate_totp_uri(secret, email)
+    qr_code = generate_qr_code(uri)
+
+    # Generate new backup codes
+    backup_codes = generate_backup_codes()
+    hashed_codes = hash_backup_codes(backup_codes)
+
+    # TODO: Update database - invalidate old secret and backup codes, store new ones
+    # await db.execute(
+    #     "UPDATE users SET "
+    #     "mfa_secret = :secret, "
+    #     "backup_codes = :backup_codes, "
+    #     "mfa_recovery_count = mfa_recovery_count + 1, "
+    #     "mfa_recovered_at = :now "
+    #     "WHERE id = :user_id",
+    #     {
+    #         "user_id": user_id,
+    #         "secret": secret,
+    #         "backup_codes": json.dumps(hashed_codes),
+    #         "now": datetime.utcnow()
+    #     }
+    # )
+
+    # Delete recovery token (one-time use)
+    # redis_client.delete(f"mfa_recovery:{user_id}")
+
+    # TODO: Send notification to user about MFA recovery
+    # send_security_alert_email(email, "MFA has been recovered and reset")
+
+    # TODO: Log security event
+    # log_security_event(user_id, "MFA_RECOVERED", {"timestamp": datetime.utcnow()})
+
+    return {
+        "secret": secret,
+        "uri": uri,
+        "qr_code": qr_code,
+        "backup_codes": backup_codes,  # Return plaintext codes to show user once
+    }
+
+
+def initiate_mfa_recovery(user_id: str, email: str) -> str:
+    """Initiate MFA recovery by sending recovery link to user's email.
+
+    First step in MFA recovery flow. Sends an email with a time-limited
+    recovery link that the user must click to prove their identity.
+
+    Args:
+        user_id: User's unique identifier
+        email: User's email address (must match account)
+
+    Returns:
+        Recovery session ID for tracking
+
+    Raises:
+        ValueError: If email doesn't match user account
+        Exception: If email sending fails
+
+    Example:
+        >>> # User clicks "Lost my authenticator device"
+        >>> recovery_id = initiate_mfa_recovery("user-123", "user@example.com")
+        >>> # Email sent with recovery link
+    """
+    if not user_id or not email:
+        raise ValueError("user_id and email are required")
+
+    # TODO: Verify email matches user account
+    # user = await db.fetch_one("SELECT email FROM users WHERE id = :user_id", {"user_id": user_id})
+    # if user['email'] != email:
+    #     raise ValueError("Email does not match user account")
+
+    # Generate recovery token
+    recovery_token = secrets.token_urlsafe(32)
+
+    # TODO: Store in Redis with 30-minute TTL
+    # redis_client.setex(f"mfa_recovery:{user_id}", 1800, recovery_token)
+
+    # TODO: Send recovery email with link
+    # recovery_url = f"https://example.com/auth/mfa/recover?token={recovery_token}&user={user_id}"
+    # send_email(
+    #     to=email,
+    #     subject="MFA Recovery Request",
+    #     body=f"Click this link to recover your MFA: {recovery_url}\n"
+    #          f"This link expires in 30 minutes.\n"
+    #          f"If you didn't request this, please contact support immediately."
+    # )
+
+    # For now, log the token (REMOVE IN PRODUCTION!)
+    print(f"[DEV MODE] MFA recovery token for {email}: {recovery_token}")
+
+    return recovery_token
+
+
+# =============================================================================
 # MFA Enrollment Flow (auth_053)
 # =============================================================================
 

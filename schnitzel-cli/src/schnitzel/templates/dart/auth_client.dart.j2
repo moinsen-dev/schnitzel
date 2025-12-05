@@ -2,6 +2,7 @@
 
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:local_auth/local_auth.dart';
 import 'token_storage.dart';
 {% if auth_config.has_google or auth_config.has_apple or auth_config.has_magic_link %}
 import 'oauth_handler.dart';
@@ -48,21 +49,25 @@ class AuthResult {
 class AuthClient {
   final Dio _dio;
   final TokenStorage _tokenStorage;
+  final LocalAuthentication _localAuth;
 {% if auth_config.has_google or auth_config.has_apple or auth_config.has_magic_link %}
   final OAuthHandler _oauthHandler;
 {% endif %}
 
   String? _currentAccessToken;
   String? _currentRefreshToken;
+  bool _biometricEnabled = false;
 
   AuthClient({
     required Dio dio,
     TokenStorage? tokenStorage,
+    LocalAuthentication? localAuth,
 {% if auth_config.has_google or auth_config.has_apple or auth_config.has_magic_link %}
     OAuthHandler? oauthHandler,
 {% endif %}
   })  : _dio = dio,
-        _tokenStorage = tokenStorage ?? TokenStorage(){% if auth_config.has_google or auth_config.has_apple or auth_config.has_magic_link %},
+        _tokenStorage = tokenStorage ?? TokenStorage(),
+        _localAuth = localAuth ?? LocalAuthentication(){% if auth_config.has_google or auth_config.has_apple or auth_config.has_magic_link %},
         _oauthHandler = oauthHandler ?? OAuthHandler(){% endif %};
 
   /// Check if user is currently authenticated
@@ -145,8 +150,7 @@ class AuthClient {
         return AuthResult.failure('Login failed with status ${response.statusCode}');
       }
     } on DioException catch (e) {
-      final errorMessage = e.response?.data?['error'] ?? e.message ?? 'Login failed';
-      return AuthResult.failure(errorMessage);
+      return AuthResult.failure(_handleDioError(e, 'Login failed'));
     } catch (e) {
       return AuthResult.failure('Unexpected error: $e');
     }
@@ -198,8 +202,7 @@ class AuthClient {
         return AuthResult.failure('Registration failed with status ${response.statusCode}');
       }
     } on DioException catch (e) {
-      final errorMessage = e.response?.data?['error'] ?? e.message ?? 'Registration failed';
-      return AuthResult.failure(errorMessage);
+      return AuthResult.failure(_handleDioError(e, 'Registration failed'));
     } catch (e) {
       return AuthResult.failure('Unexpected error: $e');
     }
@@ -247,8 +250,7 @@ class AuthClient {
         return AuthResult.failure('Token refresh failed with status ${response.statusCode}');
       }
     } on DioException catch (e) {
-      final errorMessage = e.response?.data?['error'] ?? e.message ?? 'Token refresh failed';
-      return AuthResult.failure(errorMessage);
+      return AuthResult.failure(_handleDioError(e, 'Token refresh failed'));
     } catch (e) {
       return AuthResult.failure('Unexpected error: $e');
     }
@@ -403,4 +405,293 @@ class AuthClient {
     }
   }
 {% endif %}
+
+  // =============================================================================
+  // Biometric Authentication (auth_115)
+  // =============================================================================
+
+  /// Check if biometric authentication is available on this device
+  ///
+  /// Returns true if the device supports biometrics (fingerprint, Face ID, etc.)
+  /// and at least one biometric is enrolled.
+  Future<bool> canAuthenticateWithBiometrics() async {
+    try {
+      final canCheckBiometrics = await _localAuth.canCheckBiometrics;
+      if (!canCheckBiometrics) {
+        return false;
+      }
+
+      final availableBiometrics = await _localAuth.getAvailableBiometrics();
+      return availableBiometrics.isNotEmpty;
+    } catch (e) {
+      print('Error checking biometric availability: $e');
+      return false;
+    }
+  }
+
+  /// Get list of available biometric types
+  ///
+  /// Returns list of BiometricType (face, fingerprint, iris, weak, strong)
+  Future<List<BiometricType>> getAvailableBiometrics() async {
+    try {
+      return await _localAuth.getAvailableBiometrics();
+    } catch (e) {
+      print('Error getting available biometrics: $e');
+      return [];
+    }
+  }
+
+  /// Enable biometric authentication for this app
+  ///
+  /// Enables biometric unlock for stored tokens. User must authenticate
+  /// with biometrics to access their tokens in the future.
+  ///
+  /// Returns true if biometric authentication was successfully enabled.
+  Future<bool> enableBiometricAuth() async {
+    try {
+      // Check if biometrics are available
+      final canAuthenticate = await canAuthenticateWithBiometrics();
+      if (!canAuthenticate) {
+        return false;
+      }
+
+      // Verify user has valid tokens stored
+      final hasTokens = await _tokenStorage.hasTokens();
+      if (!hasTokens) {
+        return false;
+      }
+
+      // Authenticate user with biometrics to enable the feature
+      final authenticated = await _localAuth.authenticate(
+        localizedReason: 'Enable biometric authentication for this app',
+        options: const AuthenticationOptions(
+          stickyAuth: true,
+          biometricOnly: true,
+        ),
+      );
+
+      if (authenticated) {
+        _biometricEnabled = true;
+        // TODO: Store biometric preference in secure storage
+        // await _storage.write(key: 'biometric_enabled', value: 'true');
+        return true;
+      }
+
+      return false;
+    } catch (e) {
+      print('Error enabling biometric auth: $e');
+      return false;
+    }
+  }
+
+  /// Disable biometric authentication
+  Future<void> disableBiometricAuth() async {
+    _biometricEnabled = false;
+    // TODO: Remove biometric preference from secure storage
+    // await _storage.delete(key: 'biometric_enabled');
+  }
+
+  /// Check if biometric authentication is currently enabled
+  Future<bool> isBiometricAuthEnabled() async {
+    // TODO: Read from secure storage
+    // final value = await _storage.read(key: 'biometric_enabled');
+    // return value == 'true';
+    return _biometricEnabled;
+  }
+
+  /// Authenticate with biometrics to unlock stored tokens
+  ///
+  /// Uses device biometrics (fingerprint, Face ID, etc.) to authenticate
+  /// the user and retrieve stored access/refresh tokens. This provides
+  /// a secure and convenient way to re-authenticate without entering
+  /// email/password.
+  ///
+  /// Returns AuthResult with tokens if authentication succeeds.
+  ///
+  /// Example:
+  /// ```dart
+  /// final result = await authClient.authenticateWithBiometrics();
+  /// if (result.success) {
+  ///   // User authenticated, tokens are loaded
+  ///   print('Welcome back!');
+  /// } else {
+  ///   // Authentication failed, show login screen
+  ///   print('Please login with your credentials');
+  /// }
+  /// ```
+  Future<AuthResult> authenticateWithBiometrics({
+    String localizedReason = 'Authenticate to access your account',
+  }) async {
+    try {
+      // Check if biometric auth is enabled
+      final biometricEnabled = await isBiometricAuthEnabled();
+      if (!biometricEnabled) {
+        return AuthResult.failure('Biometric authentication is not enabled');
+      }
+
+      // Check if biometrics are available
+      final canAuthenticate = await canAuthenticateWithBiometrics();
+      if (!canAuthenticate) {
+        return AuthResult.failure('Biometric authentication is not available on this device');
+      }
+
+      // Authenticate with biometrics
+      final authenticated = await _localAuth.authenticate(
+        localizedReason: localizedReason,
+        options: const AuthenticationOptions(
+          stickyAuth: true,
+          biometricOnly: true,
+        ),
+      );
+
+      if (!authenticated) {
+        return AuthResult.failure('Biometric authentication failed');
+      }
+
+      // Authentication succeeded - retrieve stored tokens
+      final accessToken = await _tokenStorage.getAccessToken();
+      final refreshToken = await _tokenStorage.getRefreshToken();
+
+      if (accessToken == null || refreshToken == null) {
+        return AuthResult.failure('No tokens found. Please login again.');
+      }
+
+      // Load tokens into memory
+      _currentAccessToken = accessToken;
+      _currentRefreshToken = refreshToken;
+
+      // Optionally verify token is still valid with backend
+      // You might want to check token expiry or do a quick validation call
+
+      return AuthResult.success(
+        accessToken: accessToken,
+        refreshToken: refreshToken,
+      );
+    } catch (e) {
+      return AuthResult.failure('Biometric authentication error: $e');
+    }
+  }
+
+  /// Quick biometric re-authentication for sensitive operations
+  ///
+  /// Use this for sensitive operations like changing password, viewing
+  /// sensitive data, or making payments. This doesn't retrieve tokens,
+  /// just verifies the user's identity.
+  ///
+  /// Returns true if authentication succeeds.
+  Future<bool> verifyIdentityWithBiometrics({
+    String localizedReason = 'Verify your identity to continue',
+  }) async {
+    try {
+      final canAuthenticate = await canAuthenticateWithBiometrics();
+      if (!canAuthenticate) {
+        return false;
+      }
+
+      return await _localAuth.authenticate(
+        localizedReason: localizedReason,
+        options: const AuthenticationOptions(
+          stickyAuth: true,
+          biometricOnly: true,
+        ),
+      );
+    } catch (e) {
+      print('Error verifying identity with biometrics: $e');
+      return false;
+    }
+  }
+
+  /// Stop ongoing authentication (if any)
+  Future<void> stopAuthentication() async {
+    try {
+      await _localAuth.stopAuthentication();
+    } catch (e) {
+      print('Error stopping authentication: $e');
+    }
+  }
+
+  // =============================================================================
+  // Error Handling
+  // =============================================================================
+
+  /// Handle Dio errors and provide user-friendly error messages
+  String _handleDioError(DioException error, String defaultMessage) {
+    // Check for network-related errors
+    if (error.type == DioExceptionType.connectionTimeout) {
+      return 'Connection timeout. Please check your internet connection and try again.';
+    }
+
+    if (error.type == DioExceptionType.sendTimeout) {
+      return 'Request timeout. The server is taking too long to respond.';
+    }
+
+    if (error.type == DioExceptionType.receiveTimeout) {
+      return 'Response timeout. The server is taking too long to respond.';
+    }
+
+    if (error.type == DioExceptionType.connectionError) {
+      return 'Network error. Please check your internet connection and try again.';
+    }
+
+    if (error.type == DioExceptionType.badCertificate) {
+      return 'Security error. Could not verify server certificate.';
+    }
+
+    if (error.type == DioExceptionType.cancel) {
+      return 'Request was cancelled.';
+    }
+
+    // Handle server response errors
+    if (error.response != null) {
+      final statusCode = error.response!.statusCode;
+      final responseData = error.response!.data;
+
+      // Try to extract error message from response
+      String? errorMessage;
+      if (responseData is Map<String, dynamic>) {
+        errorMessage = responseData['error'] as String? ??
+                      responseData['message'] as String? ??
+                      responseData['detail'] as String?;
+      }
+
+      // Return specific messages based on status code
+      if (statusCode == 400) {
+        return errorMessage ?? 'Invalid request. Please check your input.';
+      }
+
+      if (statusCode == 401) {
+        return errorMessage ?? 'Authentication failed. Please check your credentials.';
+      }
+
+      if (statusCode == 403) {
+        return errorMessage ?? 'Access forbidden. You do not have permission.';
+      }
+
+      if (statusCode == 404) {
+        return errorMessage ?? 'Resource not found.';
+      }
+
+      if (statusCode == 409) {
+        return errorMessage ?? 'Conflict. This resource already exists.';
+      }
+
+      if (statusCode == 422) {
+        return errorMessage ?? 'Validation error. Please check your input.';
+      }
+
+      if (statusCode == 429) {
+        return 'Too many requests. Please try again later.';
+      }
+
+      if (statusCode != null && statusCode >= 500) {
+        return 'Server error. Please try again later.';
+      }
+
+      // Return error message from response or default
+      return errorMessage ?? '$defaultMessage (Status: $statusCode)';
+    }
+
+    // Fallback to error message or default
+    return error.message ?? defaultMessage;
+  }
 }

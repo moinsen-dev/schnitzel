@@ -104,6 +104,7 @@ class SessionStore:
         device_name: Optional[str] = None,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
+        device_id: Optional[str] = None,
     ) -> str:
         """Create a new session with unique session ID.
 
@@ -123,13 +124,20 @@ class SessionStore:
         browser sessions via secure cookies.
         {% endif %}
 
+        Session activity tracking (auth_109):
+        - ip_address: Client IP for security auditing
+        - user_agent: Browser/client identification
+        - device_id: Unique device identifier for tracking across sessions
+        - last_activity: Timestamp of most recent session access
+
         Args:
             user_id: User identifier to associate with session
             data: Optional additional session data to store
             remember_me: If True, use extended remember_me_duration for TTL
             device_name: Optional device name for multi-device tracking (e.g., "iPhone 12")
-            ip_address: Optional IP address for security auditing
-            user_agent: Optional User-Agent string for device identification
+            ip_address: Optional IP address for security auditing (auth_109)
+            user_agent: Optional User-Agent string for device identification (auth_109)
+            device_id: Optional unique device identifier (auth_109)
 
         Returns:
             Unique session ID
@@ -144,7 +152,8 @@ class SessionStore:
             ...     remember_me=True,
             ...     device_name="Chrome on MacBook",
             ...     ip_address="192.168.1.100",
-            ...     user_agent="Mozilla/5.0..."
+            ...     user_agent="Mozilla/5.0...",
+            ...     device_id="device-uuid-123"
             ... )
         """
         # Generate unique session ID (32 bytes = 43 characters base64url)
@@ -155,17 +164,21 @@ class SessionStore:
             "user_id": user_id,
             "created_at": datetime.utcnow().isoformat(),
             "last_accessed": datetime.utcnow().isoformat(),
+            "last_activity": datetime.utcnow().isoformat(),  # auth_109
         }
 
-        # Add device metadata for multi-device support
+        # Add device metadata for multi-device support and activity tracking (auth_109)
         {% if session_config.multi_device %}
         if device_name:
             session_data["device_name"] = device_name
+        {% endif %}
+        # Always track these for session activity (auth_109)
         if ip_address:
             session_data["ip_address"] = ip_address
         if user_agent:
             session_data["user_agent"] = user_agent
-        {% endif %}
+        if device_id:
+            session_data["device_id"] = device_id
 
         # Merge additional data
         if data:
@@ -197,22 +210,33 @@ class SessionStore:
 
         return session_id
 
-    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session(self, session_id: str, include_expiry_info: bool = False) -> Optional[Dict[str, Any]]:
         """Retrieve session data by session ID.
 
         If sliding_window is enabled, automatically refreshes the session TTL
         to extend the session lifetime.
 
+        Session timeout warnings (auth_110):
+        When include_expiry_info=True, adds 'time_until_expiry' field with
+        seconds remaining before session expires. Useful for showing timeout
+        warnings to users.
+
         Args:
             session_id: Session identifier
+            include_expiry_info: If True, include time_until_expiry in response (auth_110)
 
         Returns:
             Session data as dictionary, or None if session not found or expired
+            If include_expiry_info=True, includes 'time_until_expiry' (seconds)
 
         Example:
             >>> data = store.get_session("abc123...")
             >>> if data:
             ...     print(f"User ID: {data['user_id']}")
+            >>> # With expiry info for timeout warnings
+            >>> data = store.get_session("abc123...", include_expiry_info=True)
+            >>> if data:
+            ...     print(f"Session expires in {data['time_until_expiry']} seconds")
         """
         key = self._get_session_key(session_id)
 
@@ -221,20 +245,31 @@ class SessionStore:
             if not session_json:
                 return None
 
+            # Get TTL before any updates (auth_110)
+            ttl = self.redis.ttl(key)
+            if ttl <= 0:
+                return None
+
             # Parse session data
             session_data = json.loads(session_json)
 
-            # Update last accessed timestamp
+            # Update last accessed and last activity timestamps (auth_109)
             session_data["last_accessed"] = datetime.utcnow().isoformat()
+            session_data["last_activity"] = datetime.utcnow().isoformat()
+
+            # Add expiry information if requested (auth_110)
+            if include_expiry_info:
+                session_data["time_until_expiry"] = ttl
 
             # Refresh session TTL if sliding window is enabled
             if session_config.sliding_window:
                 self.refresh_session(session_id)
+                # Update TTL in response if we just refreshed
+                if include_expiry_info:
+                    session_data["time_until_expiry"] = session_config.expiry
             else:
                 # Still update the last_accessed timestamp even without sliding window
-                ttl = self.redis.ttl(key)
-                if ttl > 0:
-                    self.redis.setex(key, ttl, json.dumps(session_data))
+                self.redis.setex(key, ttl, json.dumps(session_data))
 
             return session_data
 
@@ -349,6 +384,48 @@ class SessionStore:
         except RedisError:
             return False
 
+    def extend_session(self, session_id: str, additional_seconds: Optional[int] = None) -> bool:
+        """Extend session TTL by specified duration (auth_110).
+
+        This allows clients to extend session lifetime when user is active,
+        useful for implementing "keep me logged in" or timeout warning dialogs.
+
+        Args:
+            session_id: Session identifier
+            additional_seconds: Seconds to add to current TTL. If None, resets to full expiry.
+
+        Returns:
+            True if session was extended, False if session not found
+
+        Example:
+            >>> # Extend by 5 minutes when user dismisses timeout warning
+            >>> store.extend_session("abc123...", additional_seconds=300)
+            >>> # Reset to full expiry duration
+            >>> store.extend_session("abc123...")
+        """
+        key = self._get_session_key(session_id)
+
+        try:
+            # Check if session exists
+            if not self.redis.exists(key):
+                return False
+
+            if additional_seconds is None:
+                # Reset to full expiry duration
+                self.redis.expire(key, session_config.expiry)
+            else:
+                # Get current TTL and add additional time
+                current_ttl = self.redis.ttl(key)
+                if current_ttl <= 0:
+                    return False
+                new_ttl = current_ttl + additional_seconds
+                self.redis.expire(key, new_ttl)
+
+            return True
+
+        except RedisError:
+            return False
+
     def get_user_sessions(self, user_id: str) -> list[str]:
         """Get all active session IDs for a user.
 
@@ -399,6 +476,58 @@ class SessionStore:
 
         except RedisError:
             return []
+
+    def get_user_sessions_details(self, user_id: str) -> list[Dict[str, Any]]:
+        """Get detailed information about all active sessions for a user (auth_109).
+
+        Returns full session data including activity tracking information:
+        - session_id: Unique session identifier
+        - ip_address: Client IP address
+        - user_agent: Browser/client user agent
+        - device_id: Unique device identifier
+        - device_name: Human-readable device name
+        - created_at: When session was created
+        - last_activity: When session was last accessed
+        - time_until_expiry: Seconds until session expires
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            List of session detail dictionaries
+
+        Example:
+            >>> sessions = store.get_user_sessions_details("user-123")
+            >>> for session in sessions:
+            ...     print(f"Device: {session.get('device_name', 'Unknown')}")
+            ...     print(f"IP: {session.get('ip_address', 'N/A')}")
+            ...     print(f"Last active: {session.get('last_activity')}")
+            ...     print(f"Expires in: {session.get('time_until_expiry')} seconds")
+        """
+        if not session_config.multi_device:
+            return []
+
+        session_ids = self.get_user_sessions(user_id)
+        session_details = []
+
+        for session_id in session_ids:
+            # Get session with expiry info
+            session_data = self.get_session(session_id, include_expiry_info=True)
+            if session_data:
+                # Add session_id to the data
+                session_info = {
+                    "session_id": session_id,
+                    "ip_address": session_data.get("ip_address"),
+                    "user_agent": session_data.get("user_agent"),
+                    "device_id": session_data.get("device_id"),
+                    "device_name": session_data.get("device_name"),
+                    "created_at": session_data.get("created_at"),
+                    "last_activity": session_data.get("last_activity"),
+                    "time_until_expiry": session_data.get("time_until_expiry"),
+                }
+                session_details.append(session_info)
+
+        return session_details
 
     def delete_user_sessions(self, user_id: str) -> int:
         """Delete all sessions for a user.
@@ -492,6 +621,7 @@ class DatabaseSessionStore:
         device_name: Optional[str] = None,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
+        device_id: Optional[str] = None,
     ) -> str:
         """Create a new session in the database.
 
@@ -500,8 +630,9 @@ class DatabaseSessionStore:
             data: Optional additional session data
             remember_me: If True, use extended TTL
             device_name: Optional device name
-            ip_address: Optional IP address
-            user_agent: Optional User-Agent string
+            ip_address: Optional IP address (auth_109)
+            user_agent: Optional User-Agent string (auth_109)
+            device_id: Optional unique device identifier (auth_109)
 
         Returns:
             Unique session ID
@@ -512,16 +643,20 @@ class DatabaseSessionStore:
             "user_id": user_id,
             "created_at": datetime.utcnow().isoformat(),
             "last_accessed": datetime.utcnow().isoformat(),
+            "last_activity": datetime.utcnow().isoformat(),  # auth_109
         }
 
         {% if session_config.multi_device %}
         if device_name:
             session_data["device_name"] = device_name
+        {% endif %}
+        # Always track these for session activity (auth_109)
         if ip_address:
             session_data["ip_address"] = ip_address
         if user_agent:
             session_data["user_agent"] = user_agent
-        {% endif %}
+        if device_id:
+            session_data["device_id"] = device_id
 
         if data:
             session_data.update(data)
@@ -551,11 +686,12 @@ class DatabaseSessionStore:
         finally:
             db.close()
 
-    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session(self, session_id: str, include_expiry_info: bool = False) -> Optional[Dict[str, Any]]:
         """Retrieve session from database.
 
         Args:
             session_id: Session identifier
+            include_expiry_info: If True, include time_until_expiry (auth_110)
 
         Returns:
             Session data or None if not found/expired
@@ -572,12 +708,21 @@ class DatabaseSessionStore:
 
             session_data = json.loads(session_model.data)
             session_data["last_accessed"] = datetime.utcnow().isoformat()
+            session_data["last_activity"] = datetime.utcnow().isoformat()  # auth_109
+
+            # Calculate time until expiry (auth_110)
+            if include_expiry_info:
+                time_remaining = (session_model.expires_at - datetime.utcnow()).total_seconds()
+                session_data["time_until_expiry"] = max(0, int(time_remaining))
 
             # Update last_accessed and refresh expiry if sliding window enabled
             {% if session_config.sliding_window %}
             session_model.data = json.dumps(session_data)
             session_model.expires_at = datetime.utcnow() + timedelta(seconds=session_config.expiry)
             db.commit()
+            # Update expiry info after refresh
+            if include_expiry_info:
+                session_data["time_until_expiry"] = session_config.expiry
             {% endif %}
 
             return session_data
@@ -656,6 +801,38 @@ class DatabaseSessionStore:
         finally:
             db.close()
 
+    def extend_session(self, session_id: str, additional_seconds: Optional[int] = None) -> bool:
+        """Extend session expiry by specified duration (auth_110).
+
+        Args:
+            session_id: Session identifier
+            additional_seconds: Seconds to add to current expiry. If None, resets to full expiry.
+
+        Returns:
+            True if session was extended, False if not found
+        """
+        db = self.SessionLocal()
+        try:
+            session_model = db.query(SessionModel).filter(
+                SessionModel.id == session_id,
+                SessionModel.expires_at > datetime.utcnow()
+            ).first()
+
+            if not session_model:
+                return False
+
+            if additional_seconds is None:
+                # Reset to full expiry duration
+                session_model.expires_at = datetime.utcnow() + timedelta(seconds=session_config.expiry)
+            else:
+                # Add additional time to current expiry
+                session_model.expires_at = session_model.expires_at + timedelta(seconds=additional_seconds)
+
+            db.commit()
+            return True
+        finally:
+            db.close()
+
     def get_user_sessions(self, user_id: str) -> list[str]:
         """Get all active session IDs for a user from database.
 
@@ -675,6 +852,39 @@ class DatabaseSessionStore:
             return [s.id for s in sessions]
         finally:
             db.close()
+        {% else %}
+        return []
+        {% endif %}
+
+    def get_user_sessions_details(self, user_id: str) -> list[Dict[str, Any]]:
+        """Get detailed information about all active sessions for a user (auth_109).
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            List of session detail dictionaries
+        """
+        {% if session_config.multi_device %}
+        session_ids = self.get_user_sessions(user_id)
+        session_details = []
+
+        for session_id in session_ids:
+            session_data = self.get_session(session_id, include_expiry_info=True)
+            if session_data:
+                session_info = {
+                    "session_id": session_id,
+                    "ip_address": session_data.get("ip_address"),
+                    "user_agent": session_data.get("user_agent"),
+                    "device_id": session_data.get("device_id"),
+                    "device_name": session_data.get("device_name"),
+                    "created_at": session_data.get("created_at"),
+                    "last_activity": session_data.get("last_activity"),
+                    "time_until_expiry": session_data.get("time_until_expiry"),
+                }
+                session_details.append(session_info)
+
+        return session_details
         {% else %}
         return []
         {% endif %}
@@ -755,6 +965,7 @@ class MemorySessionStore:
         device_name: Optional[str] = None,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
+        device_id: Optional[str] = None,
     ) -> str:
         """Create a new session in memory.
 
@@ -763,8 +974,9 @@ class MemorySessionStore:
             data: Optional additional session data
             remember_me: If True, use extended TTL
             device_name: Optional device name
-            ip_address: Optional IP address
-            user_agent: Optional User-Agent string
+            ip_address: Optional IP address (auth_109)
+            user_agent: Optional User-Agent string (auth_109)
+            device_id: Optional unique device identifier (auth_109)
 
         Returns:
             Unique session ID
@@ -775,16 +987,20 @@ class MemorySessionStore:
             "user_id": user_id,
             "created_at": datetime.utcnow().isoformat(),
             "last_accessed": datetime.utcnow().isoformat(),
+            "last_activity": datetime.utcnow().isoformat(),  # auth_109
         }
 
         {% if session_config.multi_device %}
         if device_name:
             session_data["device_name"] = device_name
+        {% endif %}
+        # Always track these for session activity (auth_109)
         if ip_address:
             session_data["ip_address"] = ip_address
         if user_agent:
             session_data["user_agent"] = user_agent
-        {% endif %}
+        if device_id:
+            session_data["device_id"] = device_id
 
         if data:
             session_data.update(data)
@@ -811,11 +1027,12 @@ class MemorySessionStore:
 
         return session_id
 
-    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session(self, session_id: str, include_expiry_info: bool = False) -> Optional[Dict[str, Any]]:
         """Retrieve session from memory.
 
         Args:
             session_id: Session identifier
+            include_expiry_info: If True, include time_until_expiry (auth_110)
 
         Returns:
             Session data or None if not found/expired
@@ -831,17 +1048,28 @@ class MemorySessionStore:
             self.delete_session(session_id)
             return None
 
-        # Update last accessed
+        # Update last accessed and last activity (auth_109)
         session_data["last_accessed"] = datetime.utcnow().isoformat()
+        session_data["last_activity"] = datetime.utcnow().isoformat()
+
+        # Calculate time until expiry (auth_110)
+        time_until_expiry = None
+        if include_expiry_info:
+            time_remaining = (expires_at - datetime.utcnow()).total_seconds()
+            time_until_expiry = max(0, int(time_remaining))
 
         # Refresh expiry if sliding window enabled
         {% if session_config.sliding_window %}
         new_expires_at = datetime.utcnow() + timedelta(seconds=session_config.expiry)
         session_data["_expires_at"] = new_expires_at.isoformat()
+        if include_expiry_info:
+            time_until_expiry = session_config.expiry
         {% endif %}
 
         # Return copy without internal fields
         result = {k: v for k, v in session_data.items() if not k.startswith("_")}
+        if include_expiry_info:
+            result["time_until_expiry"] = time_until_expiry
         return result
 
     def update_session(self, session_id: str, data: Dict[str, Any]) -> bool:
@@ -916,6 +1144,36 @@ class MemorySessionStore:
         session_data["_expires_at"] = new_expires_at.isoformat()
         return True
 
+    def extend_session(self, session_id: str, additional_seconds: Optional[int] = None) -> bool:
+        """Extend session expiry by specified duration (auth_110).
+
+        Args:
+            session_id: Session identifier
+            additional_seconds: Seconds to add to current expiry. If None, resets to full expiry.
+
+        Returns:
+            True if session was extended, False if not found
+        """
+        session_data = self._sessions.get(session_id)
+        if not session_data:
+            return False
+
+        # Check if still valid
+        expires_at = datetime.fromisoformat(session_data["_expires_at"])
+        if datetime.utcnow() > expires_at:
+            self.delete_session(session_id)
+            return False
+
+        if additional_seconds is None:
+            # Reset to full expiry duration
+            new_expires_at = datetime.utcnow() + timedelta(seconds=session_config.expiry)
+        else:
+            # Add additional time to current expiry
+            new_expires_at = expires_at + timedelta(seconds=additional_seconds)
+
+        session_data["_expires_at"] = new_expires_at.isoformat()
+        return True
+
     def get_user_sessions(self, user_id: str) -> list[str]:
         """Get all active session IDs for a user from memory.
 
@@ -945,6 +1203,39 @@ class MemorySessionStore:
                 self._user_sessions[user_id].discard(session_id)
 
         return active_sessions
+        {% else %}
+        return []
+        {% endif %}
+
+    def get_user_sessions_details(self, user_id: str) -> list[Dict[str, Any]]:
+        """Get detailed information about all active sessions for a user (auth_109).
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            List of session detail dictionaries
+        """
+        {% if session_config.multi_device %}
+        session_ids = self.get_user_sessions(user_id)
+        session_details = []
+
+        for session_id in session_ids:
+            session_data = self.get_session(session_id, include_expiry_info=True)
+            if session_data:
+                session_info = {
+                    "session_id": session_id,
+                    "ip_address": session_data.get("ip_address"),
+                    "user_agent": session_data.get("user_agent"),
+                    "device_id": session_data.get("device_id"),
+                    "device_name": session_data.get("device_name"),
+                    "created_at": session_data.get("created_at"),
+                    "last_activity": session_data.get("last_activity"),
+                    "time_until_expiry": session_data.get("time_until_expiry"),
+                }
+                session_details.append(session_info)
+
+        return session_details
         {% else %}
         return []
         {% endif %}

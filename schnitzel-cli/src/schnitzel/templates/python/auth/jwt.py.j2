@@ -2,14 +2,19 @@
 
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
-{% if jwt_config.algorithm.startswith('RS') %}
+{% if jwt_config.algorithm.startswith('RS') or jwt_config.algorithm.startswith('ES') %}
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
+{% endif %}
+{% if jwt_config.algorithm.startswith('ES') %}
+from cryptography.hazmat.primitives.asymmetric import ec
 {% endif %}
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from pydantic import BaseModel
+from redis import Redis
+from redis.exceptions import RedisError
 
 
 # =============================================================================
@@ -92,6 +97,120 @@ def load_public_key(key_path: str) -> bytes:
         encoding=serialization.Encoding.PEM,
         format=serialization.SubjectPublicKeyInfo()
     )
+{% endif %}
+
+{% if jwt_config.algorithm.startswith('ES') %}
+# =============================================================================
+# ECDSA Key Loading (for ES256, ES384, ES512)
+# =============================================================================
+
+def load_private_key(key_path: str) -> bytes:
+    """Load ECDSA private key from file for token signing.
+
+    Args:
+        key_path: Path to PEM-encoded ECDSA private key file
+
+    Returns:
+        Private key in PEM format as bytes
+
+    Example:
+        >>> private_key = load_private_key("keys/private_ec.pem")
+
+    Note:
+        For ES256, use NIST P-256 curve (secp256r1 / prime256v1)
+        For ES384, use NIST P-384 curve (secp384r1)
+        For ES512, use NIST P-521 curve (secp521r1)
+    """
+    with open(key_path, "rb") as key_file:
+        private_key = serialization.load_pem_private_key(
+            key_file.read(),
+            password=None,
+            backend=default_backend()
+        )
+    return private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+
+
+def load_public_key(key_path: str) -> bytes:
+    """Load ECDSA public key from file for token verification.
+
+    Args:
+        key_path: Path to PEM-encoded ECDSA public key file
+
+    Returns:
+        Public key in PEM format as bytes
+
+    Example:
+        >>> public_key = load_public_key("keys/public_ec.pem")
+    """
+    with open(key_path, "rb") as key_file:
+        public_key = serialization.load_pem_public_key(
+            key_file.read(),
+            backend=default_backend()
+        )
+    return public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.SubjectPublicKeyInfo()
+    )
+
+
+def generate_ecdsa_keypair() -> tuple[bytes, bytes]:
+    """Generate a new ECDSA key pair for JWT signing.
+
+    Returns:
+        Tuple of (private_key_pem, public_key_pem)
+
+    Example:
+        >>> private_pem, public_pem = generate_ecdsa_keypair()
+        >>> # Save to files
+        >>> with open("keys/private_ec.pem", "wb") as f:
+        ...     f.write(private_pem)
+        >>> with open("keys/public_ec.pem", "wb") as f:
+        ...     f.write(public_pem)
+
+    Note:
+        This generates keys for the configured algorithm:
+        - ES256 uses NIST P-256 curve (secp256r1)
+        - ES384 uses NIST P-384 curve (secp384r1)
+        - ES512 uses NIST P-521 curve (secp521r1)
+    """
+    # Select curve based on algorithm
+    {% if jwt_config.algorithm == 'ES256' %}
+    curve = ec.SECP256R1()
+    {% elif jwt_config.algorithm == 'ES384' %}
+    curve = ec.SECP384R1()
+    {% elif jwt_config.algorithm == 'ES512' %}
+    curve = ec.SECP521R1()
+    {% else %}
+    # Default to P-256 for ES256
+    curve = ec.SECP256R1()
+    {% endif %}
+
+    # Generate private key
+    private_key = ec.generate_private_key(curve, default_backend())
+
+    # Extract public key
+    public_key = private_key.public_key()
+
+    # Serialize to PEM format
+    private_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+
+    public_pem = public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.SubjectPublicKeyInfo()
+    )
+
+    return private_pem, public_pem
+{% endif %}
+
+{% if jwt_config.algorithm.startswith('RS') or jwt_config.algorithm.startswith('ES') %}
 
 
 # Cache for loaded keys (load once, reuse)
@@ -191,6 +310,7 @@ def create_access_token(
     roles: Optional[list[str]] = None,
     permissions: Optional[list[str]] = None,
     user_id: Optional[str] = None,
+    custom_claims: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Create a JWT access token.
 
@@ -202,6 +322,7 @@ def create_access_token(
         roles: Optional list of user roles to include in token
         permissions: Optional list of user permissions to include in token
         user_id: Optional explicit user_id claim
+        custom_claims: Optional dictionary of additional custom claims to include in token
 
     Returns:
         Encoded JWT token string
@@ -219,6 +340,12 @@ def create_access_token(
         ...     expires_delta=timedelta(hours=1)
         ... )
         >>> # Token valid for 1 hour
+        >>>
+        >>> token = create_access_token(
+        ...     {"sub": "user@example.com"},
+        ...     custom_claims={"department": "engineering", "employee_id": "E12345"}
+        ... )
+        >>> # Token with custom claims
     """
     to_encode = data.copy()
 
@@ -242,6 +369,10 @@ def create_access_token(
     if user_id is not None:
         to_encode["user_id"] = user_id
 
+    # Add custom claims (before issuer/audience to allow standard claims to take precedence)
+    if custom_claims:
+        to_encode.update(custom_claims)
+
     # Add issuer and audience if configured
     if jwt_config.issuer:
         to_encode["iss"] = jwt_config.issuer
@@ -249,7 +380,7 @@ def create_access_token(
         to_encode["aud"] = jwt_config.audience
 
     # Get signing key based on algorithm
-    {% if jwt_config.algorithm.startswith('RS') %}
+    {% if jwt_config.algorithm.startswith('RS') or jwt_config.algorithm.startswith('ES') %}
     signing_key = get_private_key()
     {% else %}
     signing_key = jwt_config.secret_key
@@ -305,7 +436,7 @@ def create_refresh_token(data: dict, user_id: Optional[str] = None) -> str:
         to_encode["aud"] = jwt_config.audience
 
     # Get signing key based on algorithm
-    {% if jwt_config.algorithm.startswith('RS') %}
+    {% if jwt_config.algorithm.startswith('RS') or jwt_config.algorithm.startswith('ES') %}
     signing_key = get_private_key()
     {% else %}
     signing_key = jwt_config.secret_key
@@ -322,14 +453,226 @@ def create_refresh_token(data: dict, user_id: Optional[str] = None) -> str:
 
 
 # =============================================================================
+# Token Revocation with Redis Blacklist
+# =============================================================================
+
+# Redis client for token blacklist (optional, configure as needed)
+_redis_client: Optional[Redis] = None
+
+
+def get_redis_client() -> Redis:
+    """Get or create Redis client for token revocation.
+
+    Returns:
+        Redis client instance
+
+    Note:
+        Configure Redis connection via environment variables:
+        - REDIS_HOST (default: localhost)
+        - REDIS_PORT (default: 6379)
+        - REDIS_DB (default: 0)
+        - REDIS_PASSWORD (optional)
+    """
+    global _redis_client
+    if _redis_client is None:
+        import os
+        _redis_client = Redis(
+            host=os.getenv("REDIS_HOST", "localhost"),
+            port=int(os.getenv("REDIS_PORT", "6379")),
+            db=int(os.getenv("REDIS_DB", "0")),
+            password=os.getenv("REDIS_PASSWORD"),
+            decode_responses=True,
+        )
+    return _redis_client
+
+
+def revoke_token(token: str, reason: Optional[str] = None) -> bool:
+    """Revoke a JWT token by adding it to the Redis blacklist.
+
+    Tokens are stored in Redis with TTL matching their expiration time,
+    so they automatically expire from the blacklist when they would
+    naturally expire anyway.
+
+    Args:
+        token: JWT token string to revoke
+        reason: Optional reason for revocation (stored with token)
+
+    Returns:
+        True if token was successfully revoked, False otherwise
+
+    Raises:
+        RedisError: If Redis operation fails
+
+    Example:
+        >>> revoke_token(refresh_token, reason="User logout")
+        >>> # Token is now blacklisted and cannot be used
+        >>>
+        >>> revoke_token(access_token, reason="Security breach detected")
+        >>> # Immediately invalidate compromised token
+
+    Note:
+        Revoking a token does not affect other tokens for the same user.
+        To log out a user completely, revoke both their access and refresh tokens.
+    """
+    try:
+        redis = get_redis_client()
+
+        # Decode token to get expiration (no verification needed for revocation)
+        try:
+            payload = jwt.decode(
+                token,
+                options={"verify_signature": False},
+            )
+        except JWTError:
+            # Invalid token format, can't revoke
+            return False
+
+        # Calculate TTL from token expiration
+        exp = payload.get("exp")
+        if not exp:
+            # No expiration, use default TTL of 1 day
+            ttl = 86400
+        else:
+            now = datetime.utcnow().timestamp()
+            ttl = int(exp - now)
+
+            # If token already expired, no need to blacklist
+            if ttl <= 0:
+                return True
+
+        # Store in Redis with key: "revoked_token:{token_jti}"
+        # Use token itself as key if no jti claim
+        token_id = payload.get("jti", token[:32])  # Use first 32 chars if no jti
+        redis_key = f"revoked_token:{token_id}"
+
+        # Store with metadata
+        revocation_data = {
+            "revoked_at": datetime.utcnow().isoformat(),
+            "reason": reason or "User initiated",
+            "sub": payload.get("sub"),
+            "type": payload.get("type"),
+        }
+
+        # Use SETEX to set key with TTL
+        redis.setex(
+            redis_key,
+            ttl,
+            str(revocation_data)
+        )
+
+        return True
+
+    except RedisError as e:
+        # Log error (you may want to use a proper logger)
+        print(f"Redis error during token revocation: {e}")
+        raise
+
+
+def is_token_revoked(token: str) -> bool:
+    """Check if a token has been revoked.
+
+    Args:
+        token: JWT token string to check
+
+    Returns:
+        True if token is revoked, False otherwise
+
+    Example:
+        >>> if is_token_revoked(token):
+        ...     raise HTTPException(status_code=401, detail="Token has been revoked")
+    """
+    try:
+        redis = get_redis_client()
+
+        # Decode token without verification to get jti
+        try:
+            payload = jwt.decode(
+                token,
+                options={"verify_signature": False},
+            )
+        except JWTError:
+            # Invalid token format
+            return False
+
+        # Check if token is in blacklist
+        token_id = payload.get("jti", token[:32])
+        redis_key = f"revoked_token:{token_id}"
+
+        return redis.exists(redis_key) > 0
+
+    except RedisError as e:
+        # Log error
+        print(f"Redis error during token revocation check: {e}")
+        # Fail open: if Redis is down, don't block all requests
+        # You may want to change this behavior based on security requirements
+        return False
+
+
+def revoke_all_user_tokens(user_id: str, ttl: int = 86400) -> bool:
+    """Revoke all tokens for a specific user.
+
+    This is useful for forced logout or security incidents.
+
+    Args:
+        user_id: User identifier (from token 'sub' claim)
+        ttl: Time to live for revocation (default: 24 hours)
+
+    Returns:
+        True if successful
+
+    Example:
+        >>> revoke_all_user_tokens("user-123")
+        >>> # All tokens for user-123 are now invalid
+
+    Note:
+        This sets a user-level revocation flag. The verify_token function
+        must check both individual token revocation and user-level revocation.
+    """
+    try:
+        redis = get_redis_client()
+        redis_key = f"revoked_user:{user_id}"
+
+        # Store revocation timestamp
+        revocation_data = {
+            "revoked_at": datetime.utcnow().isoformat(),
+            "reason": "All user tokens revoked",
+        }
+
+        redis.setex(redis_key, ttl, str(revocation_data))
+        return True
+
+    except RedisError as e:
+        print(f"Redis error during user token revocation: {e}")
+        raise
+
+
+def is_user_revoked(user_id: str) -> bool:
+    """Check if all tokens for a user have been revoked.
+
+    Args:
+        user_id: User identifier
+
+    Returns:
+        True if user's tokens are revoked
+    """
+    try:
+        redis = get_redis_client()
+        redis_key = f"revoked_user:{user_id}"
+        return redis.exists(redis_key) > 0
+    except RedisError:
+        return False
+
+
+# =============================================================================
 # JWT Token Verification
 # =============================================================================
 
-def verify_token(token: str) -> dict:
+def verify_token(token: str, check_revocation: bool = True) -> dict:
     """Verify and decode a JWT token.
 
     Args:
         token: JWT token string to verify and decode
+        check_revocation: Whether to check if token is revoked (default: True)
 
     Returns:
         Dictionary containing the decoded token claims
@@ -337,6 +680,7 @@ def verify_token(token: str) -> dict:
     Raises:
         JWTError: If the token is invalid, expired, or malformed
         ValueError: If the token type is not recognized
+        HTTPException: If the token has been revoked
 
     Example:
         >>> try:
@@ -349,7 +693,7 @@ def verify_token(token: str) -> dict:
     """
     try:
         # Get verification key based on algorithm
-        {% if jwt_config.algorithm.startswith('RS') %}
+        {% if jwt_config.algorithm.startswith('RS') or jwt_config.algorithm.startswith('ES') %}
         verification_key = get_public_key()
         {% else %}
         verification_key = jwt_config.secret_key
@@ -379,6 +723,25 @@ def verify_token(token: str) -> dict:
         token_type = payload.get("type")
         if token_type not in ("access", "refresh"):
             raise ValueError(f"Invalid token type: {token_type}")
+
+        # Check if token is revoked (if enabled)
+        if check_revocation:
+            # Check individual token revocation
+            if is_token_revoked(token):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been revoked",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            # Check user-level revocation
+            user_id = payload.get("sub")
+            if user_id and is_user_revoked(user_id):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="All tokens for this user have been revoked",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
         return payload
 
@@ -513,7 +876,12 @@ def extract_claims_from_token(token: str, claim_keys: list[str]) -> Dict[str, An
 # =============================================================================
 
 class TokenPayload(BaseModel):
-    """Model for decoded token payload."""
+    """Model for decoded token payload.
+
+    This model supports custom claims through Pydantic's extra fields.
+    Any additional claims in the token will be available as attributes.
+    """
+    model_config = {"extra": "allow"}
 
     sub: str
     exp: int

@@ -24,6 +24,15 @@ Required Environment Variables:
     APPLE_PRIVATE_KEY: Apple private key (if using Apple)
     APPLE_REDIRECT_URI: Apple redirect URI (if using Apple)
 
+    MICROSOFT_CLIENT_ID: Microsoft OAuth client ID (if using Microsoft)
+    MICROSOFT_CLIENT_SECRET: Microsoft OAuth client secret (if using Microsoft)
+    MICROSOFT_REDIRECT_URI: Microsoft OAuth redirect URI (if using Microsoft)
+    MICROSOFT_TENANT: Microsoft tenant (default: common, can be: common, organizations, consumers, or tenant ID)
+
+    GITHUB_CLIENT_ID: GitHub OAuth client ID (if using GitHub)
+    GITHUB_CLIENT_SECRET: GitHub OAuth client secret (if using GitHub)
+    GITHUB_REDIRECT_URI: GitHub OAuth redirect URI (if using GitHub)
+
     MAGIC_LINK_SECRET: Secret for magic link tokens (if using magic links)
     MAGIC_LINK_EXPIRY_MINUTES: Magic link expiration (default: 15)
 
@@ -37,6 +46,8 @@ Required Environment Variables:
 import os
 import secrets
 import smtplib
+import base64
+import hashlib
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -48,6 +59,8 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
+from redis import Redis
+from redis.exceptions import RedisError
 
 
 # =============================================================================
@@ -74,6 +87,17 @@ class OAuthConfig(BaseModel):
     apple_key_id: str = os.getenv("APPLE_KEY_ID", "")
     apple_private_key: str = os.getenv("APPLE_PRIVATE_KEY", "")
     apple_redirect_uri: str = os.getenv("APPLE_REDIRECT_URI", "{{ oauth_config.callback_url }}/apple")
+
+    # Microsoft OAuth
+    microsoft_client_id: str = os.getenv("MICROSOFT_CLIENT_ID", "")
+    microsoft_client_secret: str = os.getenv("MICROSOFT_CLIENT_SECRET", "")
+    microsoft_redirect_uri: str = os.getenv("MICROSOFT_REDIRECT_URI", "{{ oauth_config.callback_url }}/microsoft")
+    microsoft_tenant: str = os.getenv("MICROSOFT_TENANT", "common")  # common, organizations, consumers, or tenant ID
+
+    # GitHub OAuth
+    github_client_id: str = os.getenv("GITHUB_CLIENT_ID", "")
+    github_client_secret: str = os.getenv("GITHUB_CLIENT_SECRET", "")
+    github_redirect_uri: str = os.getenv("GITHUB_REDIRECT_URI", "{{ oauth_config.callback_url }}/github")
 
     # Magic Link
     magic_link_secret: str = os.getenv("MAGIC_LINK_SECRET", "change-this-secret-in-production")
@@ -734,6 +758,264 @@ def _generate_apple_client_secret() -> str:
 {% endif %}
 
 # =============================================================================
+# Microsoft OAuth Flow
+# =============================================================================
+{% if oauth_config.has_microsoft %}
+
+def get_microsoft_auth_url(state: Optional[str] = None) -> str:
+    """Generate Microsoft OAuth authorization URL.
+
+    Args:
+        state: Optional state parameter for CSRF protection. If None, generates random state.
+
+    Returns:
+        Authorization URL string
+
+    Example:
+        >>> auth_url = get_microsoft_auth_url(state="random-state-123")
+        >>> # Redirect user to auth_url
+    """
+    if state is None:
+        state = secrets.token_urlsafe(32)
+
+    params = {
+        "client_id": oauth_config.microsoft_client_id,
+        "redirect_uri": oauth_config.microsoft_redirect_uri,
+        "response_type": "code",
+        "response_mode": "query",
+        "scope": "openid email profile User.Read",
+        "state": state,
+    }
+
+    base_url = f"https://login.microsoftonline.com/{oauth_config.microsoft_tenant}/oauth2/v2.0/authorize"
+    return f"{base_url}?{urlencode(params)}"
+
+
+async def microsoft_callback(code: str) -> Dict[str, Any]:
+    """Exchange authorization code for access token and fetch user info.
+
+    Creates or retrieves user account and returns JWT tokens.
+
+    Args:
+        code: Authorization code from Microsoft OAuth callback
+
+    Returns:
+        Dictionary containing user info and JWT tokens
+
+    Raises:
+        httpx.HTTPError: If token exchange or user info request fails
+
+    Example:
+        >>> result = await microsoft_callback(code="auth-code-123")
+        >>> print(result["user"]["email"])
+        >>> access_token = result["access_token"]
+    """
+    # Exchange code for tokens
+    token_url = f"https://login.microsoftonline.com/{oauth_config.microsoft_tenant}/oauth2/v2.0/token"
+    token_data = {
+        "code": code,
+        "client_id": oauth_config.microsoft_client_id,
+        "client_secret": oauth_config.microsoft_client_secret,
+        "redirect_uri": oauth_config.microsoft_redirect_uri,
+        "grant_type": "authorization_code",
+    }
+
+    async with httpx.AsyncClient() as client:
+        # Get tokens
+        token_response = await client.post(token_url, data=token_data)
+        token_response.raise_for_status()
+        tokens = token_response.json()
+
+        # Get user info from Microsoft Graph API
+        user_info = await get_microsoft_user_info(tokens["access_token"])
+
+        # Create or get user and generate JWT tokens
+        result = get_or_create_user(
+            provider="microsoft",
+            email=user_info["email"],
+            provider_id=user_info["id"]
+        )
+
+        return result
+
+
+async def get_microsoft_user_info(access_token: str) -> Dict[str, Any]:
+    """Fetch user information from Microsoft Graph API using access token.
+
+    Args:
+        access_token: Microsoft OAuth access token
+
+    Returns:
+        Dictionary with user info (id, email, displayName, etc.)
+
+    Raises:
+        httpx.HTTPError: If user info request fails
+
+    Example:
+        >>> user_info = await get_microsoft_user_info(access_token)
+        >>> print(f"User: {user_info['displayName']} ({user_info['email']})")
+    """
+    userinfo_url = "https://graph.microsoft.com/v1.0/me"
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(userinfo_url, headers=headers)
+        response.raise_for_status()
+        user_data = response.json()
+
+        # Normalize the response to match our user model
+        return {
+            "id": user_data.get("id"),
+            "email": user_data.get("mail") or user_data.get("userPrincipalName"),
+            "name": user_data.get("displayName"),
+            "given_name": user_data.get("givenName"),
+            "family_name": user_data.get("surname"),
+        }
+
+{% endif %}
+
+# =============================================================================
+# GitHub OAuth Flow
+# =============================================================================
+{% if oauth_config.has_github %}
+
+def get_github_auth_url(state: Optional[str] = None) -> str:
+    """Generate GitHub OAuth authorization URL.
+
+    Args:
+        state: Optional state parameter for CSRF protection. If None, generates random state.
+
+    Returns:
+        Authorization URL string
+
+    Example:
+        >>> auth_url = get_github_auth_url(state="random-state-123")
+        >>> # Redirect user to auth_url
+    """
+    if state is None:
+        state = secrets.token_urlsafe(32)
+
+    params = {
+        "client_id": oauth_config.github_client_id,
+        "redirect_uri": oauth_config.github_redirect_uri,
+        "scope": "user:email",
+        "state": state,
+    }
+
+    base_url = "https://github.com/login/oauth/authorize"
+    return f"{base_url}?{urlencode(params)}"
+
+
+async def github_callback(code: str) -> Dict[str, Any]:
+    """Exchange authorization code for access token and fetch user info.
+
+    Creates or retrieves user account and returns JWT tokens.
+
+    Args:
+        code: Authorization code from GitHub OAuth callback
+
+    Returns:
+        Dictionary containing user info and JWT tokens
+
+    Raises:
+        httpx.HTTPError: If token exchange or user info request fails
+
+    Example:
+        >>> result = await github_callback(code="auth-code-123")
+        >>> print(result["user"]["email"])
+        >>> access_token = result["access_token"]
+    """
+    # Exchange code for tokens
+    token_url = "https://github.com/login/oauth/access_token"
+    token_data = {
+        "code": code,
+        "client_id": oauth_config.github_client_id,
+        "client_secret": oauth_config.github_client_secret,
+        "redirect_uri": oauth_config.github_redirect_uri,
+    }
+
+    async with httpx.AsyncClient() as client:
+        # Get tokens (GitHub returns form-encoded response by default, request JSON)
+        token_response = await client.post(
+            token_url,
+            data=token_data,
+            headers={"Accept": "application/json"}
+        )
+        token_response.raise_for_status()
+        tokens = token_response.json()
+
+        # Get user info from GitHub API
+        user_info = await get_github_user_info(tokens["access_token"])
+
+        # Create or get user and generate JWT tokens
+        result = get_or_create_user(
+            provider="github",
+            email=user_info["email"],
+            provider_id=user_info["id"]
+        )
+
+        return result
+
+
+async def get_github_user_info(access_token: str) -> Dict[str, Any]:
+    """Fetch user information from GitHub API using access token.
+
+    Args:
+        access_token: GitHub OAuth access token
+
+    Returns:
+        Dictionary with user info (id, email, login, name, etc.)
+
+    Raises:
+        httpx.HTTPError: If user info request fails
+
+    Example:
+        >>> user_info = await get_github_user_info(access_token)
+        >>> print(f"User: {user_info['name']} (@{user_info['login']})")
+    """
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    async with httpx.AsyncClient() as client:
+        # Get user profile
+        user_response = await client.get("https://api.github.com/user", headers=headers)
+        user_response.raise_for_status()
+        user_data = user_response.json()
+
+        # Get user emails (GitHub user endpoint may not include email)
+        email = user_data.get("email")
+        if not email:
+            emails_response = await client.get("https://api.github.com/user/emails", headers=headers)
+            emails_response.raise_for_status()
+            emails = emails_response.json()
+
+            # Find primary verified email
+            for email_obj in emails:
+                if email_obj.get("primary") and email_obj.get("verified"):
+                    email = email_obj.get("email")
+                    break
+
+            # Fallback to first verified email
+            if not email:
+                for email_obj in emails:
+                    if email_obj.get("verified"):
+                        email = email_obj.get("email")
+                        break
+
+        return {
+            "id": str(user_data.get("id")),
+            "email": email,
+            "login": user_data.get("login"),
+            "name": user_data.get("name"),
+            "avatar_url": user_data.get("avatar_url"),
+            "bio": user_data.get("bio"),
+        }
+
+{% endif %}
+
+# =============================================================================
 # Magic Link Email Flow
 # =============================================================================
 {% if oauth_config.has_magic_link %}
@@ -920,11 +1202,165 @@ If you didn't request this link, you can safely ignore this email.
 {% endif %}
 
 # =============================================================================
+# OAuth State Management (CSRF Protection) - auth_105
+# =============================================================================
+
+# Redis client for OAuth state storage (optional, configure as needed)
+_oauth_redis_client: Optional[Redis] = None
+
+
+def get_oauth_redis_client() -> Redis:
+    """Get or create Redis client for OAuth state storage.
+
+    Returns:
+        Redis client instance
+
+    Note:
+        Configure Redis connection via environment variables:
+        - REDIS_HOST (default: localhost)
+        - REDIS_PORT (default: 6379)
+        - REDIS_DB (default: 0)
+        - REDIS_PASSWORD (optional)
+    """
+    global _oauth_redis_client
+    if _oauth_redis_client is None:
+        _oauth_redis_client = Redis(
+            host=os.getenv("REDIS_HOST", "localhost"),
+            port=int(os.getenv("REDIS_PORT", "6379")),
+            db=int(os.getenv("REDIS_DB", "0")),
+            password=os.getenv("REDIS_PASSWORD"),
+            decode_responses=True,
+        )
+    return _oauth_redis_client
+
+
+def generate_oauth_state(provider: str, ttl: int = 300) -> str:
+    """Generate and store OAuth state parameter for CSRF protection.
+
+    State is stored in Redis with TTL (default 5 minutes) to prevent
+    replay attacks and clean up stale states automatically.
+
+    Args:
+        provider: OAuth provider name (google, apple, github, etc.)
+        ttl: Time to live in seconds (default: 300 = 5 minutes)
+
+    Returns:
+        State token string (URL-safe random token)
+
+    Raises:
+        RedisError: If Redis storage fails
+
+    Example:
+        >>> state = generate_oauth_state("google")
+        >>> auth_url = get_google_auth_url(state=state)
+        >>> # User is redirected to auth_url
+        >>> # On callback, validate state with validate_oauth_state_redis()
+
+    Note:
+        The state is automatically deleted from Redis after TTL expires
+        or after successful validation.
+    """
+    try:
+        redis = get_oauth_redis_client()
+
+        # Generate cryptographically secure random state
+        state = secrets.token_urlsafe(32)
+
+        # Store state in Redis with TTL
+        redis_key = f"oauth_state:{state}"
+        state_data = {
+            "provider": provider,
+            "created_at": datetime.utcnow().isoformat(),
+        }
+
+        # Use SETEX to set key with expiry
+        redis.setex(redis_key, ttl, str(state_data))
+
+        return state
+
+    except RedisError as e:
+        print(f"Redis error during OAuth state generation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate OAuth state"
+        )
+
+
+def validate_oauth_state_redis(state: str, expected_provider: Optional[str] = None) -> bool:
+    """Validate OAuth state parameter from callback against stored state in Redis.
+
+    Checks that:
+    1. State exists in Redis (not expired, not reused)
+    2. State matches expected provider (if specified)
+
+    After validation, the state is deleted to prevent replay attacks.
+
+    Args:
+        state: State parameter from OAuth callback
+        expected_provider: Expected OAuth provider (optional validation)
+
+    Returns:
+        True if state is valid
+
+    Raises:
+        HTTPException: If state is invalid or expired
+
+    Example:
+        >>> # In callback handler:
+        >>> validate_oauth_state_redis(state, expected_provider="google")
+        >>> # Proceed with OAuth code exchange
+
+    Security:
+        - Automatically deletes state after validation (single-use)
+        - States expire after TTL (default 5 minutes)
+        - Prevents replay attacks and CSRF
+    """
+    try:
+        redis = get_oauth_redis_client()
+
+        # Check if state exists in Redis
+        redis_key = f"oauth_state:{state}"
+        state_data = redis.get(redis_key)
+
+        if not state_data:
+            # State not found or expired
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired OAuth state parameter"
+            )
+
+        # Validate provider if specified
+        if expected_provider:
+            # Parse state data (stored as string representation of dict)
+            if expected_provider not in str(state_data):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"OAuth state does not match expected provider: {expected_provider}"
+                )
+
+        # Delete state to prevent replay attacks (single-use token)
+        redis.delete(redis_key)
+
+        return True
+
+    except RedisError as e:
+        print(f"Redis error during OAuth state validation: {e}")
+        # Fail secure: if Redis is down, reject the state
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to validate OAuth state"
+        )
+
+
+# =============================================================================
 # Utility Functions
 # =============================================================================
 
 def validate_oauth_state(provided_state: str, stored_state: str) -> bool:
-    """Validate OAuth state parameter for CSRF protection.
+    """Validate OAuth state parameter for CSRF protection (simple constant-time comparison).
+
+    This is a basic validation for session-based state storage.
+    For production with Redis, use generate_oauth_state() and validate_oauth_state_redis().
 
     Args:
         provided_state: State parameter from OAuth callback
@@ -942,6 +1378,160 @@ def validate_oauth_state(provided_state: str, stored_state: str) -> bool:
         ...     pass
     """
     return secrets.compare_digest(provided_state, stored_state)
+
+
+# =============================================================================
+# PKCE (Proof Key for Code Exchange) for Mobile Apps (auth_106)
+# =============================================================================
+
+def generate_pkce_code_verifier() -> str:
+    """Generate a PKCE code verifier for mobile OAuth flows.
+
+    The code verifier is a high-entropy cryptographic random string using
+    unreserved characters [A-Z] / [a-z] / [0-9] / "-" / "." / "_" / "~"
+    with a minimum length of 43 characters and maximum length of 128 characters.
+
+    Returns:
+        Base64url-encoded code verifier (43-128 characters)
+
+    Example:
+        >>> code_verifier = generate_pkce_code_verifier()
+        >>> # Store code_verifier securely in session/secure storage
+        >>> # Use generate_pkce_code_challenge(code_verifier) for auth request
+    """
+    # Generate 32 random bytes (will be ~43 chars when base64url encoded)
+    code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8')
+    # Remove padding
+    return code_verifier.rstrip('=')
+
+
+def generate_pkce_code_challenge(code_verifier: str, method: str = "S256") -> str:
+    """Generate a PKCE code challenge from a code verifier.
+
+    Supports two methods:
+    - S256: SHA256 hash of the verifier (recommended, more secure)
+    - plain: Verifier itself (not recommended, use only if S256 not supported)
+
+    Args:
+        code_verifier: The code verifier to transform
+        method: Challenge method - "S256" (default) or "plain"
+
+    Returns:
+        Base64url-encoded code challenge
+
+    Raises:
+        ValueError: If method is not "S256" or "plain"
+
+    Example:
+        >>> verifier = generate_pkce_code_verifier()
+        >>> challenge = generate_pkce_code_challenge(verifier, method="S256")
+        >>> # Include challenge in authorization URL
+        >>> # Store verifier securely for token exchange
+    """
+    if method == "S256":
+        # SHA256 hash of the code verifier
+        digest = hashlib.sha256(code_verifier.encode('utf-8')).digest()
+        # Base64url encode without padding
+        challenge = base64.urlsafe_b64encode(digest).decode('utf-8').rstrip('=')
+        return challenge
+    elif method == "plain":
+        # Plain method: challenge = verifier
+        return code_verifier
+    else:
+        raise ValueError(f"Invalid PKCE method: {method}. Must be 'S256' or 'plain'")
+
+
+def validate_pkce_code_verifier(code_verifier: str, code_challenge: str, method: str = "S256") -> bool:
+    """Validate a PKCE code verifier against the stored code challenge.
+
+    This function should be called in the OAuth callback to verify that the
+    code_verifier provided by the client matches the code_challenge that was
+    used during the initial authorization request.
+
+    Args:
+        code_verifier: Code verifier from client (token exchange request)
+        code_challenge: Code challenge from initial auth request (stored server-side)
+        method: Challenge method used - "S256" (default) or "plain"
+
+    Returns:
+        True if verifier is valid, False otherwise
+
+    Example:
+        >>> # In authorization endpoint:
+        >>> verifier = generate_pkce_code_verifier()
+        >>> challenge = generate_pkce_code_challenge(verifier)
+        >>> # Store challenge with auth code
+        >>>
+        >>> # In token exchange endpoint:
+        >>> if validate_pkce_code_verifier(provided_verifier, stored_challenge):
+        ...     # Proceed with token exchange
+        ...     pass
+    """
+    try:
+        computed_challenge = generate_pkce_code_challenge(code_verifier, method)
+        return secrets.compare_digest(computed_challenge, code_challenge)
+    except Exception:
+        return False
+
+
+def _store_pkce_verifier(session_key: str, code_verifier: str) -> None:
+    """Store PKCE code verifier securely for later validation.
+
+    This is a stub function that should be implemented with your secure storage layer
+    (Redis, encrypted session storage, etc.). The verifier must be stored securely
+    as it proves the client's identity.
+
+    Args:
+        session_key: Unique key to identify this OAuth flow (e.g., state parameter)
+        code_verifier: The code verifier to store securely
+
+    Implementation guide:
+        - Use Redis with short TTL (5-10 minutes)
+        - Or use encrypted session storage
+        - Or use secure cookie with HttpOnly, Secure, SameSite flags
+        - Ensure verifier is deleted after successful token exchange
+
+    Example Redis implementation:
+        >>> import redis
+        >>> redis_client = redis.Redis()
+        >>> def _store_pkce_verifier(session_key: str, code_verifier: str) -> None:
+        ...     # Store with 10 minute expiry
+        ...     redis_client.setex(f"pkce_verifier:{session_key}", 600, code_verifier)
+    """
+    # TODO: Implement with your secure storage layer
+    raise NotImplementedError(
+        "_store_pkce_verifier() must be implemented with your secure storage layer. "
+        "See function docstring for implementation guide."
+    )
+
+
+def _retrieve_pkce_verifier(session_key: str) -> Optional[str]:
+    """Retrieve stored PKCE code verifier for validation.
+
+    This is a stub function that should be implemented with your secure storage layer.
+
+    Args:
+        session_key: Unique key to identify this OAuth flow (e.g., state parameter)
+
+    Returns:
+        The stored code verifier, or None if not found or expired
+
+    Example Redis implementation:
+        >>> import redis
+        >>> redis_client = redis.Redis()
+        >>> def _retrieve_pkce_verifier(session_key: str) -> Optional[str]:
+        ...     verifier = redis_client.get(f"pkce_verifier:{session_key}")
+        ...     if verifier:
+        ...         # Delete after retrieval (single use)
+        ...         redis_client.delete(f"pkce_verifier:{session_key}")
+        ...         return verifier.decode('utf-8')
+        ...     return None
+    """
+    # TODO: Implement with your secure storage layer
+    raise NotImplementedError(
+        "_retrieve_pkce_verifier() must be implemented with your secure storage layer. "
+        "See function docstring for implementation guide."
+    )
 
 
 # =============================================================================
@@ -1112,6 +1702,116 @@ async def apple_callback_endpoint(code: str, id_token: Optional[str] = None, sta
     #         raise HTTPException(status_code=400, detail="Invalid state parameter")
 
     result = await apple_callback(code, id_token)
+    return TokenResponse(
+        access_token=result["access_token"],
+        refresh_token=result["refresh_token"]
+    )
+
+{% endif %}
+
+{% if oauth_config.has_microsoft %}
+@auth_router.get("/microsoft")
+async def microsoft_auth_redirect():
+    """Redirect to Microsoft OAuth authorization page.
+
+    Returns:
+        Redirect response to Microsoft OAuth URL
+
+    Example:
+        GET /auth/microsoft
+        -> Redirects to Microsoft authorization page
+    """
+    from fastapi.responses import RedirectResponse
+
+    # Generate state for CSRF protection
+    state = secrets.token_urlsafe(32)
+
+    # TODO: Store state in session/redis for validation in callback
+    # Example: redis_client.setex(f"oauth_state:{state}", 300, "microsoft")
+
+    auth_url = get_microsoft_auth_url(state=state)
+    return RedirectResponse(url=auth_url)
+
+
+@auth_router.get("/microsoft/callback", response_model=TokenResponse)
+async def microsoft_callback_endpoint(code: str, state: str) -> TokenResponse:
+    """Handle Microsoft OAuth callback.
+
+    Args:
+        code: Authorization code from Microsoft
+        state: State parameter for CSRF protection
+
+    Returns:
+        TokenResponse with access_token and refresh_token
+
+    Raises:
+        HTTPException: 400 if state is invalid or code exchange fails
+
+    Example:
+        GET /auth/microsoft/callback?code=...&state=...
+    """
+    # TODO: Validate state parameter against stored value
+    # Example:
+    # stored_state = redis_client.get(f"oauth_state:{state}")
+    # if not stored_state or not validate_oauth_state(state, stored_state.decode()):
+    #     raise HTTPException(status_code=400, detail="Invalid state parameter")
+
+    result = await microsoft_callback(code)
+    return TokenResponse(
+        access_token=result["access_token"],
+        refresh_token=result["refresh_token"]
+    )
+
+{% endif %}
+
+{% if oauth_config.has_github %}
+@auth_router.get("/github")
+async def github_auth_redirect():
+    """Redirect to GitHub OAuth authorization page.
+
+    Returns:
+        Redirect response to GitHub OAuth URL
+
+    Example:
+        GET /auth/github
+        -> Redirects to GitHub authorization page
+    """
+    from fastapi.responses import RedirectResponse
+
+    # Generate state for CSRF protection
+    state = secrets.token_urlsafe(32)
+
+    # TODO: Store state in session/redis for validation in callback
+    # Example: redis_client.setex(f"oauth_state:{state}", 300, "github")
+
+    auth_url = get_github_auth_url(state=state)
+    return RedirectResponse(url=auth_url)
+
+
+@auth_router.get("/github/callback", response_model=TokenResponse)
+async def github_callback_endpoint(code: str, state: str) -> TokenResponse:
+    """Handle GitHub OAuth callback.
+
+    Args:
+        code: Authorization code from GitHub
+        state: State parameter for CSRF protection
+
+    Returns:
+        TokenResponse with access_token and refresh_token
+
+    Raises:
+        HTTPException: 400 if state is invalid or code exchange fails
+
+    Example:
+        GET /auth/github/callback?code=...&state=...
+    """
+    # TODO: Validate state parameter against stored value
+    # Example:
+    # stored_state = redis_client.get(f"oauth_state:{state}")
+    # if not stored_state or not validate_oauth_state(state, stored_state.decode()):
+    #     raise HTTPException(status_code=400, detail="Invalid state parameter")
+
+    result = await github_callback(code)
     return TokenResponse(
         access_token=result["access_token"],
         refresh_token=result["refresh_token"]
