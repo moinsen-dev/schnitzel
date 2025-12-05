@@ -30,31 +30,45 @@ class FastAPIRouteGenerator:
         """
         self.imports = set()
         self.model_imports = set()
+        self.orm_imports = set()
         self.has_rate_limiting = False
+        self.has_crud = False
 
-        # Check if schema has endpoints
-        if not schema.endpoints:
+        # Check if we have any CRUD models
+        crud_models = self._get_crud_models(schema)
+        has_crud_models = bool(crud_models)
+
+        # Check if schema has endpoints or CRUD models
+        if not schema.endpoints and not has_crud_models:
             return self._generate_empty_routes()
 
         # Parse endpoints and generate routes
         route_functions = []
-        for path, methods in schema.endpoints.items():
-            # Handle path parameters (e.g., /users/{id})
-            path_params = self._extract_path_params(path)
 
-            # Get shared parameters for this path
-            shared_params = methods.get("params", {}) if isinstance(methods, dict) else {}
+        # Generate routes from explicit endpoint definitions
+        if schema.endpoints:
+            for path, methods in schema.endpoints.items():
+                # Handle path parameters (e.g., /users/{id})
+                path_params = self._extract_path_params(path)
 
-            # Generate routes for each HTTP method
-            for method_name, endpoint_def in methods.items():
-                if method_name == "params":
-                    continue  # Skip shared params
+                # Get shared parameters for this path
+                shared_params = methods.get("params", {}) if isinstance(methods, dict) else {}
 
-                if isinstance(endpoint_def, dict):
-                    route_code = self._generate_route_function(
-                        path, method_name, endpoint_def, path_params, shared_params
-                    )
-                    route_functions.append(route_code)
+                # Generate routes for each HTTP method
+                for method_name, endpoint_def in methods.items():
+                    if method_name == "params":
+                        continue  # Skip shared params
+
+                    if isinstance(endpoint_def, dict):
+                        route_code = self._generate_route_function(
+                            path, method_name, endpoint_def, path_params, shared_params
+                        )
+                        route_functions.append(route_code)
+
+        # Generate CRUD routes from models with crud: true
+        for model_name, model in crud_models.items():
+            crud_routes = self._generate_crud_routes(model_name, model)
+            route_functions.extend(crud_routes)
 
         # Add rate limiting helper if any endpoint uses rate limiting
         rate_limit_helper = ""
@@ -68,10 +82,21 @@ class FastAPIRouteGenerator:
         imports_code = "\n".join(sorted(self.imports))
 
         # Add model imports if any
-        # Use relative import from same directory (routes.py and models.py are both in backend/app/)
+        # Use relative import from parent directory (routes.py is in generated/, models.py is in app/)
         if self.model_imports:
             model_imports_str = ", ".join(sorted(self.model_imports))
-            imports_code += f"\nfrom .models import {model_imports_str}"  # noqa: E402
+            imports_code += f"\nfrom ..models import {model_imports_str}"  # noqa: E402
+
+        # Add ORM imports for CRUD operations
+        if self.orm_imports:
+            orm_imports_str = ", ".join(sorted(self.orm_imports))
+            imports_code += f"\nfrom .orm import {orm_imports_str}"  # noqa: E402
+
+        # Add database session import for CRUD operations
+        if self.has_crud:
+            imports_code += "\nfrom ..database import get_db"  # noqa: E402
+            imports_code += "\nfrom sqlalchemy.ext.asyncio import AsyncSession"  # noqa: E402
+            imports_code += "\nfrom sqlalchemy import select"  # noqa: E402
 
         routes_code = "\n\n".join(route_functions)
 
@@ -598,6 +623,12 @@ class FastAPIRouteGenerator:
             # Remove the separate WebSocket import
             self.imports.discard("from fastapi import WebSocket")
 
+        # Check if HTTPException was added during generation
+        if any("from fastapi import HTTPException" in imp for imp in self.imports):
+            fastapi_imports.add("HTTPException")
+            # Remove the separate HTTPException import
+            self.imports.discard("from fastapi import HTTPException")
+
         # Add merged FastAPI import
         self.imports.add(f"from fastapi import {', '.join(sorted(fastapi_imports))}")
 
@@ -701,6 +732,203 @@ class FastAPIRouteGenerator:
 limiter = Limiter(key_func=get_remote_address)
 """
         return limiter_code
+
+    def _get_crud_models(self, schema: SchnitzelSchema) -> Dict[str, Any]:
+        """Get models that have crud enabled.
+
+        Args:
+            schema: The Schnitzel schema
+
+        Returns:
+            Dictionary of model name to model definition for models with crud enabled
+        """
+        crud_models = {}
+        if schema.models:
+            for model_name, model in schema.models.items():
+                if model.crud:
+                    crud_models[model_name] = model
+        return crud_models
+
+    def _generate_crud_routes(self, model_name: str, model: Any) -> List[str]:
+        """Generate CRUD routes for a model.
+
+        Args:
+            model_name: Name of the model (e.g., "User")
+            model: Model definition
+
+        Returns:
+            List of generated route function code strings
+        """
+        routes = []
+
+        # Determine which CRUD operations to generate
+        if model.crud is True:
+            operations = ["list", "get", "create", "update", "delete"]
+        elif isinstance(model.crud, list):
+            operations = model.crud
+        else:
+            return routes
+
+        # Generate plural resource name (User -> users)
+        resource_name = self._pluralize(self._to_snake_case(model_name))
+
+        # Find primary key field
+        pk_field = "id"
+        pk_type = "UUID"
+        for field_name, field_def in model.fields.items():
+            if field_def.primary:
+                pk_field = field_name
+                pk_type = self._get_python_type(field_def.type)
+                break
+
+        # Add model import for Pydantic model
+        self.model_imports.add(model_name)
+
+        # Add ORM model import
+        orm_class_name = f"{model_name}ORM"
+        self.orm_imports.add(orm_class_name)
+
+        # Mark that we have CRUD operations
+        self.has_crud = True
+
+        # Generate each CRUD operation
+        if "list" in operations:
+            routes.append(self._generate_list_route(model_name, resource_name, orm_class_name))
+
+        if "get" in operations:
+            routes.append(self._generate_get_route(model_name, resource_name, orm_class_name, pk_field, pk_type))
+
+        if "create" in operations:
+            routes.append(self._generate_create_route(model_name, resource_name, orm_class_name))
+
+        if "update" in operations:
+            routes.append(self._generate_update_route(model_name, resource_name, orm_class_name, pk_field, pk_type))
+
+        if "delete" in operations:
+            routes.append(self._generate_delete_route(model_name, resource_name, orm_class_name, pk_field, pk_type))
+
+        return routes
+
+    def _generate_list_route(self, model_name: str, resource_name: str, orm_class_name: str) -> str:
+        """Generate GET /resources - List all with pagination."""
+        self.imports.add("from fastapi import Query")
+        self.imports.add("from fastapi import Depends")
+
+        return f'''@router.get("/{resource_name}", status_code=200, operation_id="list_{resource_name}")
+async def list_{resource_name}(
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(20, ge=1, le=100, description="Items per page"),
+    db: AsyncSession = Depends(get_db),
+) -> list[{model_name}]:
+    """List all {resource_name} with pagination."""
+    offset = (page - 1) * limit
+    result = await db.execute(select({orm_class_name}).offset(offset).limit(limit))
+    rows = result.scalars().all()
+    return [{model_name}.model_validate(row, from_attributes=True) for row in rows]'''
+
+    def _generate_get_route(self, model_name: str, resource_name: str, orm_class_name: str, pk_field: str = "id", pk_type: str = "UUID") -> str:
+        """Generate GET /resources/{id} - Get single resource."""
+        self.imports.add("from fastapi import HTTPException")
+        self.imports.add("from fastapi import Depends")
+
+        return f'''@router.get("/{resource_name}/{{{pk_field}}}", status_code=200, operation_id="get_{self._to_snake_case(model_name)}")
+async def get_{self._to_snake_case(model_name)}(
+    {pk_field}: {pk_type},
+    db: AsyncSession = Depends(get_db),
+) -> {model_name}:
+    """Get a single {self._to_snake_case(model_name)} by {pk_field}."""
+    result = await db.execute(select({orm_class_name}).where({orm_class_name}.{pk_field} == {pk_field}))
+    row = result.scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="{model_name} not found")
+    return {model_name}.model_validate(row, from_attributes=True)'''
+
+    def _generate_create_route(self, model_name: str, resource_name: str, orm_class_name: str) -> str:
+        """Generate POST /resources - Create new resource."""
+        self.imports.add("from fastapi import Depends")
+
+        return f'''@router.post("/{resource_name}", status_code=201, operation_id="create_{self._to_snake_case(model_name)}")
+async def create_{self._to_snake_case(model_name)}(
+    body: {model_name},
+    db: AsyncSession = Depends(get_db),
+) -> {model_name}:
+    """Create a new {self._to_snake_case(model_name)}."""
+    orm_obj = {orm_class_name}(**body.model_dump())
+    db.add(orm_obj)
+    await db.flush()
+    await db.refresh(orm_obj)
+    return {model_name}.model_validate(orm_obj, from_attributes=True)'''
+
+    def _generate_update_route(self, model_name: str, resource_name: str, orm_class_name: str, pk_field: str = "id", pk_type: str = "UUID") -> str:
+        """Generate PUT /resources/{id} - Update existing resource."""
+        self.imports.add("from fastapi import HTTPException")
+        self.imports.add("from fastapi import Depends")
+
+        return f'''@router.put("/{resource_name}/{{{pk_field}}}", status_code=200, operation_id="update_{self._to_snake_case(model_name)}")
+async def update_{self._to_snake_case(model_name)}(
+    {pk_field}: {pk_type},
+    body: {model_name},
+    db: AsyncSession = Depends(get_db),
+) -> {model_name}:
+    """Update an existing {self._to_snake_case(model_name)}."""
+    result = await db.execute(select({orm_class_name}).where({orm_class_name}.{pk_field} == {pk_field}))
+    orm_obj = result.scalar_one_or_none()
+    if not orm_obj:
+        raise HTTPException(status_code=404, detail="{model_name} not found")
+    for key, value in body.model_dump(exclude_unset=True).items():
+        setattr(orm_obj, key, value)
+    await db.flush()
+    await db.refresh(orm_obj)
+    return {model_name}.model_validate(orm_obj, from_attributes=True)'''
+
+    def _generate_delete_route(self, model_name: str, resource_name: str, orm_class_name: str, pk_field: str = "id", pk_type: str = "UUID") -> str:
+        """Generate DELETE /resources/{id} - Delete resource."""
+        self.imports.add("from fastapi import HTTPException")
+        self.imports.add("from fastapi import Depends")
+
+        return f'''@router.delete("/{resource_name}/{{{pk_field}}}", status_code=204, operation_id="delete_{self._to_snake_case(model_name)}")
+async def delete_{self._to_snake_case(model_name)}(
+    {pk_field}: {pk_type},
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete a {self._to_snake_case(model_name)}."""
+    result = await db.execute(select({orm_class_name}).where({orm_class_name}.{pk_field} == {pk_field}))
+    orm_obj = result.scalar_one_or_none()
+    if not orm_obj:
+        raise HTTPException(status_code=404, detail="{model_name} not found")
+    await db.delete(orm_obj)
+    await db.flush()'''
+
+    def _to_snake_case(self, name: str) -> str:
+        """Convert PascalCase or camelCase to snake_case.
+
+        Args:
+            name: Name in PascalCase or camelCase
+
+        Returns:
+            Name in snake_case
+        """
+        import re
+        # Insert underscore before uppercase letters and convert to lowercase
+        s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+        return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+    def _pluralize(self, name: str) -> str:
+        """Simple pluralization for resource names.
+
+        Args:
+            name: Singular name
+
+        Returns:
+            Pluralized name
+        """
+        # Simple English pluralization rules
+        if name.endswith('y') and len(name) > 1 and name[-2] not in 'aeiou':
+            return name[:-1] + 'ies'
+        elif name.endswith(('s', 'x', 'z', 'ch', 'sh')):
+            return name + 'es'
+        else:
+            return name + 's'
 
 
 # Backward-compatible alias

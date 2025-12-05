@@ -1,0 +1,219 @@
+# =============================================================================
+# PROMPT DUEL - Competitive Prompt Engineering Game (Simplified)
+# =============================================================================
+# Simplified schema without imports for testing generation.
+#
+# Schnitzel Framework Example | Moinsen Development
+# =============================================================================
+
+schnitzel: "1.0"
+
+meta:
+  name: "PromptDuel"
+  version: "1.0.0"
+  org: "dev.moinsen.promptduel"
+  description: "Competitive prompt engineering game with AI-powered gameplay"
+
+# =============================================================================
+# MODELS
+# =============================================================================
+
+models:
+  Player:
+    description: "A player in the Prompt Duel game"
+    fields:
+      id:
+        type: uuid
+        primary: true
+      username:
+        type: string
+        unique: true
+        min_length: 3
+        max_length: 20
+      display_name:
+        type: string
+        max_length: 50
+      email:
+        type: string
+        unique: true
+      avatar_url:
+        type: string
+        optional: true
+      elo_rating:
+        type: int
+        default: 1000
+        description: "Player's skill rating"
+      total_wins:
+        type: int
+        default: 0
+      total_losses:
+        type: int
+        default: 0
+      total_draws:
+        type: int
+        default: 0
+      is_banned:
+        type: bool
+        default: false
+      created_at:
+        type: datetime
+        auto: create
+      updated_at:
+        type: datetime
+        auto: update
+    crud: true
+
+  Match:
+    description: "A competitive match between two players"
+    fields:
+      id:
+        type: uuid
+        primary: true
+      player1_id:
+        type: uuid
+        references: Player
+      player2_id:
+        type: uuid
+        references: Player
+        optional: true
+        description: "Null if waiting for opponent"
+      status:
+        type: enum
+        values: [waiting, in_progress, completed, cancelled]
+        default: waiting
+      winner_id:
+        type: uuid
+        references: Player
+        optional: true
+      mode:
+        type: enum
+        values: [ranked, casual, practice]
+        default: casual
+      max_rounds:
+        type: int
+        default: 3
+      current_round:
+        type: int
+        default: 0
+      player1_score:
+        type: int
+        default: 0
+      player2_score:
+        type: int
+        default: 0
+      started_at:
+        type: datetime
+        optional: true
+      ended_at:
+        type: datetime
+        optional: true
+      created_at:
+        type: datetime
+        auto: create
+    crud: true
+
+  Round:
+    description: "A single round within a match"
+    fields:
+      id:
+        type: uuid
+        primary: true
+      match_id:
+        type: uuid
+        references: Match
+      round_number:
+        type: int
+      puzzle:
+        type: text
+        description: "The prompt challenge for this round"
+      player1_prompt:
+        type: text
+        optional: true
+      player2_prompt:
+        type: text
+        optional: true
+      player1_result:
+        type: text
+        optional: true
+      player2_result:
+        type: text
+        optional: true
+      winner_id:
+        type: uuid
+        references: Player
+        optional: true
+      arbiter_reasoning:
+        type: text
+        optional: true
+        description: "AI arbiter's explanation of the winner"
+      time_limit_seconds:
+        type: int
+        default: 60
+      created_at:
+        type: datetime
+        auto: create
+    crud: true
+
+  Prompt:
+    description: "A submitted prompt in a round"
+    fields:
+      id:
+        type: uuid
+        primary: true
+      round_id:
+        type: uuid
+        references: Round
+      player_id:
+        type: uuid
+        references: Player
+      content:
+        type: text
+        max_length: 500
+      token_count:
+        type: int
+      execution_result:
+        type: text
+        optional: true
+      score:
+        type: float
+        optional: true
+        description: "AI-assigned quality score (0-100)"
+      submitted_at:
+        type: datetime
+        auto: create
+    crud: true
+
+  Leaderboard:
+    description: "Season leaderboard entry"
+    fields:
+      id:
+        type: uuid
+        primary: true
+      player_id:
+        type: uuid
+        references: Player
+      season:
+        type: string
+        description: "Season identifier (e.g., '2024-Q1')"
+      rank:
+        type: int
+      elo_rating:
+        type: int
+      wins:
+        type: int
+        default: 0
+      losses:
+        type: int
+        default: 0
+      win_streak:
+        type: int
+        default: 0
+      best_streak:
+        type: int
+        default: 0
+      updated_at:
+        type: datetime
+        auto: update
+    crud: true
+
+# Note: Custom endpoints are auto-generated from models with crud: true

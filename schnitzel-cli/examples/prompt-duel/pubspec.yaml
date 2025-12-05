@@ -1,0 +1,9 @@
+name: prompt_duel_workspace
+description: Schnitzel project workspace
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+
+workspace:
+  - apps/prompt_duel
+  - packages/shared

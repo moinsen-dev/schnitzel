@@ -8,4 +8,10 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
+.ruff_cache/
 
+# Generated example projects (can be regenerated with scripts/test-*.sh)
+examples/generated/
+
+# Schnitzel internal
+.schnitzel/

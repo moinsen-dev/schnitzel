@@ -1,0 +1,88 @@
+schnitzel: 1.0.0
+
+meta:
+  name: "my_blog"
+  version: "1.0.0"
+  org: "com.example"
+  description: "my-blog application"
+
+models:
+  User:
+    description: A user in the system
+    crud: true
+    fields:
+      id:
+        type: uuid
+        primary: true
+      name:
+        type: string
+      email:
+        type: string
+        unique: true
+      bio:
+        type: text
+        optional: true
+      is_active:
+        type: bool
+        default: true
+      created_at:
+        type: datetime
+        auto: create
+    relations:
+      posts:
+        type: hasMany
+        model: Post
+      comments:
+        type: hasMany
+        model: Comment
+
+  Post:
+    description: A blog post
+    crud: true
+    fields:
+      id:
+        type: uuid
+        primary: true
+      title:
+        type: string
+      content:
+        type: text
+      author_id:
+        type: uuid
+      created_at:
+        type: datetime
+        auto: create
+    relations:
+      author:
+        type: belongsTo
+        model: User
+        foreign_key: author_id
+      comments:
+        type: hasMany
+        model: Comment
+
+  Comment:
+    description: A comment on a post
+    crud: true
+    fields:
+      id:
+        type: uuid
+        primary: true
+      content:
+        type: text
+      author_id:
+        type: uuid
+      post_id:
+        type: uuid
+      created_at:
+        type: datetime
+        auto: create
+    relations:
+      author:
+        type: belongsTo
+        model: User
+        foreign_key: author_id
+      post:
+        type: belongsTo
+        model: Post
+        foreign_key: post_id

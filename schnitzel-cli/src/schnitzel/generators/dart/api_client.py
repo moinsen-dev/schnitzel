@@ -79,8 +79,12 @@ class DartApiClientGenerator:
         if retryable_status_codes is None:
             retryable_status_codes = [500, 502, 503, 504]
 
-        # Check if schema has endpoints
-        if not schema.endpoints:
+        # Check if we have any CRUD models
+        crud_models = self._get_crud_models(schema)
+        has_crud_models = bool(crud_models)
+
+        # Check if schema has endpoints or CRUD models
+        if not schema.endpoints and not has_crud_models:
             return self._generate_empty_client(
                 include_auth_interceptor,
                 include_retry_interceptor,
@@ -94,21 +98,29 @@ class DartApiClientGenerator:
 
         # Parse endpoints and generate methods
         client_methods = []
-        for path, methods in schema.endpoints.items():
-            # Get shared parameters for this path
-            shared_params = methods.get("params", {}) if isinstance(methods, dict) else {}
 
-            # Generate methods for each HTTP method
-            for method_name, endpoint_def in methods.items():
-                if method_name == "params":
-                    continue  # Skip shared params
+        # Generate methods from explicit endpoint definitions
+        if schema.endpoints:
+            for path, methods in schema.endpoints.items():
+                # Get shared parameters for this path
+                shared_params = methods.get("params", {}) if isinstance(methods, dict) else {}
 
-                if isinstance(endpoint_def, dict):
-                    method_code = self._generate_client_method(
-                        path, method_name, endpoint_def, shared_params
-                    )
-                    if method_code:
-                        client_methods.append(method_code)
+                # Generate methods for each HTTP method
+                for method_name, endpoint_def in methods.items():
+                    if method_name == "params":
+                        continue  # Skip shared params
+
+                    if isinstance(endpoint_def, dict):
+                        method_code = self._generate_client_method(
+                            path, method_name, endpoint_def, shared_params
+                        )
+                        if method_code:
+                            client_methods.append(method_code)
+
+        # Generate CRUD methods from models with crud: true
+        for model_name, model in crud_models.items():
+            crud_methods = self._generate_crud_methods(model_name, model)
+            client_methods.extend(crud_methods)
 
         # Add base imports
         self.imports.add("import 'package:dio/dio.dart';")
@@ -184,7 +196,8 @@ class DartApiClientGenerator:
                 f"          maxStale: const Duration(seconds: {cache_max_age_seconds}),\n"
                 f"          policy: CachePolicy.request,\n"
                 f"          priority: CachePriority.normal,\n"
-                f"          hitCacheOnErrorExcept: [401, 403],\n"
+                f"          hitCacheOnErrorCodes: [500, 502, 503, 504],\n"
+                f"          hitCacheOnNetworkFailure: true,\n"
                 f"        ),\n"
                 f"      ));\n"
                 f"    }}"
@@ -378,7 +391,8 @@ class DartApiClientGenerator:
                 f"          maxStale: const Duration(seconds: {cache_max_age_seconds}),\n"
                 f"          policy: CachePolicy.request,\n"
                 f"          priority: CachePriority.normal,\n"
-                f"          hitCacheOnErrorExcept: [401, 403],\n"
+                f"          hitCacheOnErrorCodes: [500, 502, 503, 504],\n"
+                f"          hitCacheOnNetworkFailure: true,\n"
                 f"        ),\n"
                 f"      ));\n"
                 f"    }}"
@@ -603,7 +617,8 @@ class ApiClient {{
 //   - maxStale: {cache_max_age_seconds} seconds (how long responses are cached)
 //   - policy: CachePolicy.request (respects HTTP cache headers)
 //   - priority: CachePriority.normal
-//   - hitCacheOnErrorExcept: [401, 403] (use cache on errors except auth failures)
+//   - hitCacheOnErrorCodes: [500, 502, 503, 504] (use cache on server errors)
+//   - hitCacheOnNetworkFailure: true (use cache when offline)
 //
 // For persistent caching, use HiveCacheStore:
 //   - Add hive_flutter dependency to pubspec.yaml
@@ -1037,3 +1052,287 @@ class ApiClient {{
         indent_str = " " * spaces
         lines = text.split("\n")
         return "\n".join(f"{indent_str}{line}" if line.strip() else "" for line in lines)
+
+    def _get_crud_models(self, schema: SchnitzelSchema) -> Dict[str, Any]:
+        """Get models that have crud enabled.
+
+        Args:
+            schema: The Schnitzel schema
+
+        Returns:
+            Dictionary of model name to model definition for models with crud enabled
+        """
+        crud_models = {}
+        if schema.models:
+            for model_name, model in schema.models.items():
+                if model.crud:
+                    crud_models[model_name] = model
+        return crud_models
+
+    def _generate_crud_methods(self, model_name: str, model: Any) -> List[str]:
+        """Generate CRUD API methods for a model.
+
+        Args:
+            model_name: Name of the model (e.g., "User")
+            model: Model definition
+
+        Returns:
+            List of generated method code strings
+        """
+        methods = []
+
+        # Determine which CRUD operations to generate
+        if model.crud is True:
+            operations = ["list", "get", "create", "update", "delete"]
+        elif isinstance(model.crud, list):
+            operations = model.crud
+        else:
+            return methods
+
+        # Generate plural resource name (User -> users)
+        resource_name = self._pluralize(self._to_snake_case(model_name))
+
+        # Find primary key field
+        pk_field = "id"
+        pk_type = "String"  # UUIDs are strings in Dart
+        for field_name, field_def in model.fields.items():
+            if field_def.primary:
+                pk_field = field_name
+                pk_type = self._get_dart_type(field_def.type)
+                break
+
+        # Add model import
+        self.model_imports.add(model_name)
+
+        # Generate each CRUD operation
+        if "list" in operations:
+            methods.append(self._generate_dart_list_method(model_name, resource_name))
+
+        if "get" in operations:
+            methods.append(self._generate_dart_get_method(model_name, resource_name, pk_field, pk_type))
+
+        if "create" in operations:
+            methods.append(self._generate_dart_create_method(model_name, resource_name))
+
+        if "update" in operations:
+            methods.append(self._generate_dart_update_method(model_name, resource_name, pk_field, pk_type))
+
+        if "delete" in operations:
+            methods.append(self._generate_dart_delete_method(model_name, resource_name, pk_field, pk_type))
+
+        return methods
+
+    def _generate_dart_list_method(self, model_name: str, resource_name: str) -> str:
+        """Generate list method for Dart API client."""
+        method_name = f"list{model_name}s"
+        if model_name.endswith('s'):
+            method_name = f"list{model_name}es"
+
+        return f'''/// List all {resource_name} with pagination.
+///
+/// * [page] - Page number (default: 1)
+/// * [limit] - Items per page (default: 20, max: 100)
+Future<List<{model_name}>> {self._to_camel_case(method_name)}({{
+  int page = 1,
+  int limit = 20,
+  Map<String, String>? headers,
+  Duration? requestTimeout,
+  CancelToken? cancelToken,
+}}) async {{
+  try {{
+    final mergedHeaders = {{..._defaultHeaders, ...?headers}};
+    final response = await _dio.get(
+      '{resource_name}',
+      queryParameters: {{'page': page, 'limit': limit}},
+      options: Options(
+        headers: mergedHeaders,
+        sendTimeout: requestTimeout ?? sendTimeout,
+        receiveTimeout: requestTimeout ?? receiveTimeout,
+      ),
+      cancelToken: cancelToken,
+    );
+    return (response.data as List).map((e) => {model_name}.fromJson(e)).toList();
+  }} on DioException catch (e) {{
+    throw ApiException(
+      statusCode: e.response?.statusCode ?? 0,
+      message: e.message ?? 'Unknown error',
+      body: e.response?.data,
+    );
+  }}
+}}'''
+
+    def _generate_dart_get_method(self, model_name: str, resource_name: str, pk_field: str = "id", pk_type: str = "String") -> str:
+        """Generate get-by-id method for Dart API client."""
+        method_name = f"get{model_name}"
+
+        return f'''/// Get a single {self._to_snake_case(model_name)} by {pk_field}.
+///
+/// * [{pk_field}] - The {self._to_snake_case(model_name)} {pk_field}
+Future<{model_name}> {self._to_camel_case(method_name)}(
+  {pk_type} {pk_field}, {{
+  Map<String, String>? headers,
+  Duration? requestTimeout,
+  CancelToken? cancelToken,
+}}) async {{
+  try {{
+    final mergedHeaders = {{..._defaultHeaders, ...?headers}};
+    final response = await _dio.get(
+      '{resource_name}/${pk_field}',
+      options: Options(
+        headers: mergedHeaders,
+        sendTimeout: requestTimeout ?? sendTimeout,
+        receiveTimeout: requestTimeout ?? receiveTimeout,
+      ),
+      cancelToken: cancelToken,
+    );
+    return {model_name}.fromJson(response.data);
+  }} on DioException catch (e) {{
+    throw ApiException(
+      statusCode: e.response?.statusCode ?? 0,
+      message: e.message ?? 'Unknown error',
+      body: e.response?.data,
+    );
+  }}
+}}'''
+
+    def _generate_dart_create_method(self, model_name: str, resource_name: str) -> str:
+        """Generate create method for Dart API client."""
+        method_name = f"create{model_name}"
+        # Use the model itself as the request body type
+
+        return f'''/// Create a new {self._to_snake_case(model_name)}.
+///
+/// * [body] - The {self._to_snake_case(model_name)} data to create
+Future<{model_name}> {self._to_camel_case(method_name)}(
+  {model_name} body, {{
+  Map<String, String>? headers,
+  Duration? requestTimeout,
+  CancelToken? cancelToken,
+  void Function(int, int)? onSendProgress,
+}}) async {{
+  try {{
+    final mergedHeaders = {{..._defaultHeaders, ...?headers}};
+    final response = await _dio.post(
+      '{resource_name}',
+      data: body.toJson(),
+      options: Options(
+        headers: mergedHeaders,
+        sendTimeout: requestTimeout ?? sendTimeout,
+        receiveTimeout: requestTimeout ?? receiveTimeout,
+      ),
+      onSendProgress: onSendProgress,
+      cancelToken: cancelToken,
+    );
+    return {model_name}.fromJson(response.data);
+  }} on DioException catch (e) {{
+    throw ApiException(
+      statusCode: e.response?.statusCode ?? 0,
+      message: e.message ?? 'Unknown error',
+      body: e.response?.data,
+    );
+  }}
+}}'''
+
+    def _generate_dart_update_method(self, model_name: str, resource_name: str, pk_field: str = "id", pk_type: str = "String") -> str:
+        """Generate update method for Dart API client."""
+        method_name = f"update{model_name}"
+        # Use the model itself as the request body type
+
+        return f'''/// Update an existing {self._to_snake_case(model_name)}.
+///
+/// * [{pk_field}] - The {self._to_snake_case(model_name)} {pk_field}
+/// * [body] - The updated {self._to_snake_case(model_name)} data
+Future<{model_name}> {self._to_camel_case(method_name)}(
+  {pk_type} {pk_field},
+  {model_name} body, {{
+  Map<String, String>? headers,
+  Duration? requestTimeout,
+  CancelToken? cancelToken,
+  void Function(int, int)? onSendProgress,
+}}) async {{
+  try {{
+    final mergedHeaders = {{..._defaultHeaders, ...?headers}};
+    final response = await _dio.put(
+      '{resource_name}/${pk_field}',
+      data: body.toJson(),
+      options: Options(
+        headers: mergedHeaders,
+        sendTimeout: requestTimeout ?? sendTimeout,
+        receiveTimeout: requestTimeout ?? receiveTimeout,
+      ),
+      onSendProgress: onSendProgress,
+      cancelToken: cancelToken,
+    );
+    return {model_name}.fromJson(response.data);
+  }} on DioException catch (e) {{
+    throw ApiException(
+      statusCode: e.response?.statusCode ?? 0,
+      message: e.message ?? 'Unknown error',
+      body: e.response?.data,
+    );
+  }}
+}}'''
+
+    def _generate_dart_delete_method(self, model_name: str, resource_name: str, pk_field: str = "id", pk_type: str = "String") -> str:
+        """Generate delete method for Dart API client."""
+        method_name = f"delete{model_name}"
+
+        return f'''/// Delete a {self._to_snake_case(model_name)}.
+///
+/// * [{pk_field}] - The {self._to_snake_case(model_name)} {pk_field} to delete
+Future<void> {self._to_camel_case(method_name)}(
+  {pk_type} {pk_field}, {{
+  Map<String, String>? headers,
+  Duration? requestTimeout,
+  CancelToken? cancelToken,
+}}) async {{
+  try {{
+    final mergedHeaders = {{..._defaultHeaders, ...?headers}};
+    await _dio.delete(
+      '{resource_name}/${pk_field}',
+      options: Options(
+        headers: mergedHeaders,
+        sendTimeout: requestTimeout ?? sendTimeout,
+        receiveTimeout: requestTimeout ?? receiveTimeout,
+      ),
+      cancelToken: cancelToken,
+    );
+  }} on DioException catch (e) {{
+    throw ApiException(
+      statusCode: e.response?.statusCode ?? 0,
+      message: e.message ?? 'Unknown error',
+      body: e.response?.data,
+    );
+  }}
+}}'''
+
+    def _to_snake_case(self, name: str) -> str:
+        """Convert PascalCase or camelCase to snake_case.
+
+        Args:
+            name: Name in PascalCase or camelCase
+
+        Returns:
+            Name in snake_case
+        """
+        import re
+        # Insert underscore before uppercase letters and convert to lowercase
+        s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+        return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+    def _pluralize(self, name: str) -> str:
+        """Simple pluralization for resource names.
+
+        Args:
+            name: Singular name
+
+        Returns:
+            Pluralized name
+        """
+        # Simple English pluralization rules
+        if name.endswith('y') and len(name) > 1 and name[-2] not in 'aeiou':
+            return name[:-1] + 'ies'
+        elif name.endswith(('s', 'x', 'z', 'ch', 'sh')):
+            return name + 'es'
+        else:
+            return name + 's'

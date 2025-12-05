@@ -64,6 +64,9 @@ class Model(BaseModel):
     fields: Dict[str, FieldDefinition] = PydanticField(default_factory=dict)
     relations: Optional[Dict[str, Relation]] = None
     indexes: Optional[List[Union[str, List[str]]]] = None
+    # Auto-CRUD generation: True = all operations, list = specific operations
+    # Example: crud: true or crud: [list, get, create, update, delete]
+    crud: Optional[Union[bool, List[Literal["list", "get", "create", "update", "delete"]]]] = None
 
     @field_validator("name")
     @classmethod

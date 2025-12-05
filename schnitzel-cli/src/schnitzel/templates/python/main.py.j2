@@ -5,20 +5,37 @@ Source: {{ schema_source }}
 Generated at: {{ timestamp }}
 """
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from .database import init_db, close_db
+from .settings import settings
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan handler for startup and shutdown events."""
+    # Startup: Initialize database tables
+    await init_db()
+    yield
+    # Shutdown: Close database connections
+    await close_db()
+
 
 app = FastAPI(
     title="{{ app_title }}",
     description="{{ app_description }}",
-    version="{{ app_version }}"
+    version="{{ app_version }}",
+    lifespan=lifespan,
 )
 
-# Configure CORS for development
+# Configure CORS from settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
-    allow_credentials=True,
+    allow_origins=settings.cors_origins,
+    allow_credentials=settings.cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -39,14 +56,10 @@ async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "service": "{{ app_name }}"
+        "service": settings.app_name,
     }
 
 
 # Import and register generated routes
-try:
-    from backend.app.generated.routes import router as generated_router
-    app.include_router(generated_router, prefix="/api")
-except ImportError:
-    # Generated routes not yet available
-    pass
+from .generated.routes import router as generated_router
+app.include_router(generated_router, prefix=settings.api_prefix)

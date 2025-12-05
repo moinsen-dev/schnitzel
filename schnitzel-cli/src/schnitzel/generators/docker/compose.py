@@ -154,8 +154,8 @@ services:
       # Backend API port - default: {backend_port}
       - "${{BACKEND_PORT:-{backend_port}}}:8000"
     environment:
-      # Database connection URL - uses same env vars as db service
-      DATABASE_URL: postgresql://${{POSTGRES_USER:-schnitzel}}:${{POSTGRES_PASSWORD:-schnitzel_dev}}@db:5432/${{POSTGRES_DB:-schnitzel_db}}
+      # Database connection URL - uses async driver for asyncpg
+      DATABASE_URL: postgresql+asyncpg://${{POSTGRES_USER:-schnitzel}}:${{POSTGRES_PASSWORD:-schnitzel_dev}}@db:5432/${{POSTGRES_DB:-schnitzel_db}}
       # Redis connection URL
       REDIS_URL: redis://redis:6379
       # Backend environment - default: development

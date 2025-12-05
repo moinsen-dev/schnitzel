@@ -51,3 +51,10 @@ testpaths = ["tests"]
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
+
+[tool.uv.workspace]
+members = [
+    "examples/test-app/backend/app",
+    "examples/my-blog/backend/app",
+    "examples/prompt-duel/backend/app",
+]

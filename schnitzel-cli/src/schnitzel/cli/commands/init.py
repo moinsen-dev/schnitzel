@@ -38,21 +38,32 @@ def _is_flutter_installed() -> bool:
         return False
 
 
-def _get_schema_template(template: str) -> str:
+def _get_schema_template(template: str, project_name: str = "my_app") -> str:
     """Get the schema template content based on template type.
 
     Args:
         template: Template type ('minimal' or 'full')
+        project_name: Name of the project (used for meta section)
 
     Returns:
         str: Schema template content
     """
+    # Sanitize project name for use in schema
+    sanitized_name = _sanitize_dart_package_name(project_name)
+
     if template == "full":
-        return """schnitzel: 1.0.0
+        return f"""schnitzel: 1.0.0
+
+meta:
+  name: "{sanitized_name}"
+  version: "1.0.0"
+  org: "com.example"
+  description: "{project_name} application"
 
 models:
   User:
     description: A user in the system
+    crud: true
     fields:
       id:
         type: uuid
@@ -81,6 +92,7 @@ models:
 
   Post:
     description: A blog post
+    crud: true
     fields:
       id:
         type: uuid
@@ -105,6 +117,7 @@ models:
 
   Comment:
     description: A comment on a post
+    crud: true
     fields:
       id:
         type: uuid
@@ -129,12 +142,18 @@ models:
         foreign_key: post_id
 """
     else:  # minimal (default)
-        return """# Schnitzel Schema Definition
+        return f"""# Schnitzel Schema Definition
 # Define your data models here
 
-version: "1.0"
+schnitzel: "1.0"
 
-models: {}
+meta:
+  name: "{sanitized_name}"
+  version: "1.0.0"
+  org: "com.example"
+  description: "{project_name} application"
+
+models: {{}}
 """
 
 
@@ -275,15 +294,16 @@ def _create_workspace_pubspec(project_path: Path, project_name: str) -> None:
     # Sanitize project name for Dart package naming rules
     workspace_name = _sanitize_dart_package_name(project_name)
 
-    # Create pubspec.yaml content
+    # Create pubspec.yaml content with new apps/ structure
     pubspec_content = f"""name: {workspace_name}_workspace
 description: Schnitzel project workspace
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: '>=3.5.0 <4.0.0'
 
 workspace:
-  - packages/app
+  - apps/{workspace_name}
+  - packages/shared
 """
 
     # Write pubspec.yaml to project root
@@ -325,11 +345,134 @@ def _run_flutter_pub_add(packages_dir: Path, packages: list[str], dev: bool = Fa
         return False
 
 
-def _create_flutter_app(packages_dir: Path, project_name: str) -> bool:
-    """Create Flutter package in packages/app directory with Freezed dependencies.
+def _add_resolution_workspace(package_dir: Path) -> None:
+    """Add resolution: workspace to a pubspec.yaml for Dart workspace support.
+
+    This is required for packages that are part of a Dart/Flutter workspace
+    (SDK >= 3.5.0). Without this, 'flutter pub get' at workspace root will fail.
 
     Args:
-        packages_dir: Path to packages/app directory
+        package_dir: Path to the package directory containing pubspec.yaml
+    """
+    pubspec_file = package_dir / "pubspec.yaml"
+    if not pubspec_file.exists():
+        return
+
+    content = pubspec_file.read_text(encoding="utf-8")
+
+    # Check if resolution: workspace already exists
+    if "resolution:" in content:
+        return
+
+    # Insert resolution: workspace after the environment section ends
+    # Environment section ends when we find a new top-level key (not indented)
+    lines = content.split("\n")
+    new_lines = []
+    in_environment = False
+    resolution_added = False
+
+    for i, line in enumerate(lines):
+        # Check if this is a new top-level key after environment section
+        if in_environment and not resolution_added:
+            # Top-level key starts with letter/underscore and has no leading spaces
+            if line and not line.startswith(" ") and not line.startswith("#"):
+                # This is the next section, insert resolution before it
+                new_lines.append("")
+                new_lines.append("resolution: workspace")
+                resolution_added = True
+                in_environment = False
+
+        new_lines.append(line)
+
+        # Track when we enter environment section
+        if line.strip() == "environment:":
+            in_environment = True
+
+    # If file ends while still in environment, add at end
+    if in_environment and not resolution_added:
+        new_lines.append("")
+        new_lines.append("resolution: workspace")
+        resolution_added = True
+
+    if resolution_added:
+        pubspec_file.write_text("\n".join(new_lines), encoding="utf-8")
+
+
+def _create_flutter_app(apps_dir: Path, project_name: str, org: str = "com.example") -> bool:
+    """Create Flutter application in apps/{name} directory.
+
+    Creates a real Flutter app (not a package) with the specified organization.
+
+    Args:
+        apps_dir: Path to apps/{project_name} directory
+        project_name: Base name for the Flutter project
+        org: Organization identifier for Flutter (e.g., 'com.example', 'dev.moinsen')
+
+    Returns:
+        bool: True if Flutter app was created successfully, False otherwise
+    """
+    try:
+        # Sanitize project name for Dart package naming rules
+        dart_package_name = _sanitize_dart_package_name(project_name)
+
+        # Step 1: Run flutter create (real app, not package)
+        # flutter create appName --org com.example --project-name app_name
+        result = subprocess.run(
+            [
+                "flutter", "create",
+                str(apps_dir),
+                "--org", org,
+                "--project-name", dart_package_name
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+
+        if result.returncode != 0:
+            logger.error(f"flutter create failed: {result.stderr}")
+            return False
+
+        # Step 2: Add runtime dependencies with flutter pub add
+        # Note: Must be done BEFORE adding resolution: workspace
+        runtime_deps = [
+            "freezed_annotation",
+            "json_annotation",
+            "go_router",  # For navigation
+        ]
+        if not _is_quiet_mode():
+            console.print("  [dim]Adding app dependencies (Freezed, go_router)...[/dim]")
+
+        if not _run_flutter_pub_add(apps_dir, runtime_deps, dev=False):
+            console.print("  [yellow]Warning: Could not add some runtime dependencies[/yellow]")
+
+        # Step 3: Add dev dependencies with flutter pub add --dev
+        dev_deps = [
+            "build_runner",
+            "freezed",
+            "json_serializable",
+        ]
+
+        if not _run_flutter_pub_add(apps_dir, dev_deps, dev=True):
+            console.print("  [yellow]Warning: Could not add some dev dependencies[/yellow]")
+
+        # Step 4: Add resolution: workspace AFTER dependencies are added
+        _add_resolution_workspace(apps_dir)
+
+        return True
+
+    except subprocess.TimeoutExpired:
+        return False
+    except Exception as e:
+        logger.error(f"Error creating Flutter app: {e}")
+        return False
+
+
+def _create_flutter_shared(packages_dir: Path, project_name: str) -> bool:
+    """Create Flutter shared package in packages/shared directory with Dio and Freezed.
+
+    Args:
+        packages_dir: Path to packages/shared directory
         project_name: Base name for the Flutter project
 
     Returns:
@@ -345,7 +488,7 @@ def _create_flutter_app(packages_dir: Path, project_name: str) -> bool:
                 "flutter", "create",
                 str(packages_dir),
                 "--template=package",
-                "--project-name", f"{dart_package_name}_app"
+                "--project-name", f"{dart_package_name}_shared"
             ],
             capture_output=True,
             text=True,
@@ -355,16 +498,19 @@ def _create_flutter_app(packages_dir: Path, project_name: str) -> bool:
         if result.returncode != 0:
             return False
 
-        # Step 2: Add runtime dependencies with flutter pub add
+        # Step 2: Add runtime dependencies (Dio for API client, Freezed for models)
+        # Note: Must be done BEFORE adding resolution: workspace
         runtime_deps = [
+            "dio",
+            "dio_cache_interceptor",
             "freezed_annotation",
             "json_annotation",
         ]
         if not _is_quiet_mode():
-            console.print("  [dim]Adding Freezed dependencies...[/dim]")
+            console.print("  [dim]Adding shared package dependencies (Dio, Freezed)...[/dim]")
 
         if not _run_flutter_pub_add(packages_dir, runtime_deps, dev=False):
-            console.print("  [yellow]Warning: Could not add some runtime dependencies[/yellow]")
+            console.print("  [yellow]Warning: Could not add some runtime dependencies to shared package[/yellow]")
 
         # Step 3: Add dev dependencies with flutter pub add --dev
         dev_deps = [
@@ -374,7 +520,10 @@ def _create_flutter_app(packages_dir: Path, project_name: str) -> bool:
         ]
 
         if not _run_flutter_pub_add(packages_dir, dev_deps, dev=True):
-            console.print("  [yellow]Warning: Could not add some dev dependencies[/yellow]")
+            console.print("  [yellow]Warning: Could not add some dev dependencies to shared package[/yellow]")
+
+        # Step 4: Add resolution: workspace AFTER dependencies are added
+        _add_resolution_workspace(packages_dir)
 
         return True
 
@@ -454,8 +603,9 @@ def init_command(
 
     Creates a new project directory with the following structure:
     - schema.schnitzel.yaml: Schema definition file
-    - packages/app/: Flutter application directory (placeholder)
-    - backend/app/: FastAPI backend directory (placeholder)
+    - apps/{name}/: Flutter application directory (real app with Android/iOS)
+    - packages/shared/: Shared Flutter package for models and API client
+    - backend/app/: FastAPI backend directory
     - docker-compose.yaml: Docker compose configuration
 
     Args:
@@ -501,11 +651,14 @@ def init_command(
         logger.debug(f"Creating project directory: {project_path}")
         project_path.mkdir(parents=True, exist_ok=False)
 
-        # Create packages/app directory (Flutter placeholder or actual Flutter app)
-        packages_dir = project_path / "packages" / "app"
-        logger.debug(f"Packages directory: {packages_dir}")
+        # Sanitize project name for Dart package naming rules
+        dart_package_name = _sanitize_dart_package_name(project_name)
 
-        # Handle Flutter package creation
+        # Create apps/{name} directory (Flutter app or placeholder)
+        apps_dir = project_path / "apps" / dart_package_name
+        logger.debug(f"Apps directory: {apps_dir}")
+
+        # Handle Flutter app creation
         flutter_app_created = False
         if with_flutter:
             # Check if Flutter is installed
@@ -515,21 +668,40 @@ def init_command(
                 console.print("[dim]Or use --no-flutter to skip Flutter setup[/dim]")
                 raise typer.Exit(code=1)
 
-            # Create Flutter package (this will create packages/app/)
-            flutter_app_created = _create_flutter_app(packages_dir, project_name)
+            # Default org - will be read from schema if specified later
+            # For init, we use default; user can customize in schema.schnitzel.yaml
+            org = "com.example"
+
+            # Create Flutter app (real app, not package) in apps/{name}/
+            flutter_app_created = _create_flutter_app(apps_dir, project_name, org=org)
             if not flutter_app_created:
-                console.print("[red]Error: flutter create --template=package failed[/red]")
+                console.print("[red]Error: flutter create failed[/red]")
                 console.print("[dim]Check Flutter installation with: flutter doctor[/dim]")
                 raise typer.Exit(code=1)
 
             if not _is_quiet_mode():
-                console.print("  [green]✓ Created packages/app/ (Flutter package)[/green]")
+                console.print(f"  [green]✓ Created apps/{dart_package_name}/ (Flutter app)[/green]")
+
+            # Create packages/shared Flutter package for shared models and API client
+            shared_dir = project_path / "packages" / "shared"
+            flutter_shared_created = _create_flutter_shared(shared_dir, project_name)
+            if not flutter_shared_created:
+                console.print("[red]Error: flutter create --template=package failed for shared package[/red]")
+                console.print("[dim]Check Flutter installation with: flutter doctor[/dim]")
+                raise typer.Exit(code=1)
+
+            if not _is_quiet_mode():
+                console.print("  [green]✓ Created packages/shared/ (Flutter package)[/green]")
+
             _create_workspace_pubspec(project_path, project_name)
         else:
-            # No Flutter: create empty directory placeholder
-            packages_dir.mkdir(parents=True, exist_ok=True)
+            # No Flutter: create empty directory placeholders
+            apps_dir.mkdir(parents=True, exist_ok=True)
+            shared_dir = project_path / "packages" / "shared"
+            shared_dir.mkdir(parents=True, exist_ok=True)
             if not _is_quiet_mode():
-                console.print("  [green]✓ Created packages/app/[/green]")
+                console.print(f"  [green]✓ Created apps/{dart_package_name}/[/green]")
+                console.print("  [green]✓ Created packages/shared/[/green]")
 
         # Create backend/app directory (FastAPI placeholder or actual uv project)
         backend_dir = project_path / "backend" / "app"
@@ -563,7 +735,7 @@ def init_command(
 
         # Create schema.schnitzel.yaml using selected template
         schema_file = project_path / "schema.schnitzel.yaml"
-        schema_content = _get_schema_template(template)
+        schema_content = _get_schema_template(template, project_name)
         schema_file.write_text(schema_content)
         if not _is_quiet_mode():
             console.print("  [green]✓ Created schema.schnitzel.yaml[/green]")
@@ -656,7 +828,7 @@ A Schnitzel project with full-stack code generation for Flutter and FastAPI.
 
 5. **Run the Flutter app**
    ```bash
-   cd packages/app
+   cd apps/{dart_package_name}
    # Get dependencies
    flutter pub get
    # Run the app
@@ -667,16 +839,20 @@ A Schnitzel project with full-stack code generation for Flutter and FastAPI.
 
 ```
 {project_name}/
-├── schema.schnitzel.yaml   # Your data model definitions
+├── schema.schnitzel.yaml    # Your data model definitions
 ├── docker-compose.yaml      # Docker services configuration
-├── backend/                 # FastAPI backend
-│   └── app/
-│       └── models.py        # Generated Pydantic models
-└── packages/                # Flutter frontend
+├── pubspec.yaml             # Flutter workspace configuration
+├── apps/                    # Flutter applications
+│   └── {dart_package_name}/ # Main Flutter app (with Android/iOS)
+│       └── lib/
+│           └── main.dart    # App entry point
+├── packages/                # Shared Flutter packages
+│   └── shared/              # Shared models and API client
+│       └── lib/
+│           └── generated/   # Generated Dart models
+└── backend/                 # FastAPI backend
     └── app/
-        └── lib/
-            └── models/      # Generated Dart models
-                └── models.dart
+        └── generated/       # Generated Python models
 ```
 
 ## Next Steps
@@ -760,8 +936,9 @@ build/
 docker-compose.override.yaml
 
 # Generated files
-backend/app/models.py
-packages/app/lib/models/models.dart
+backend/app/generated/
+packages/shared/lib/generated/
+apps/*/lib/generated/
 
 # Logs
 *.log
@@ -772,10 +949,10 @@ logs/
             console.print("  [green]✓ Created .gitignore[/green]")
 
         # Create placeholder README files
-        # Only create packages README if Flutter app wasn't created (Flutter creates its own README)
+        # Only create apps README if Flutter app wasn't created (Flutter creates its own README)
         if not flutter_app_created:
-            packages_readme = packages_dir / "README.md"
-            packages_readme.write_text("# Flutter App\n\nFlutter application will be generated here.\n")
+            apps_readme = apps_dir / "README.md"
+            apps_readme.write_text("# Flutter App\n\nFlutter application will be generated here.\n")
 
         # Only create backend README if backend wasn't initialized with uv (uv creates its own files)
         if not backend_app_created:

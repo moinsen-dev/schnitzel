@@ -23,6 +23,9 @@ from schnitzel.generators.python.main import FastAPIMainGenerator
 from schnitzel.generators.python.models import PythonModelGenerator
 from schnitzel.generators.python.orm import SQLAlchemyORMGenerator
 from schnitzel.generators.python.routes import PythonRouteGenerator
+from schnitzel.generators.python.requirements import RequirementsGenerator
+from schnitzel.generators.python.settings import SettingsGenerator
+from schnitzel.generators.python.database import DatabaseGenerator
 from schnitzel.generators.python.auth.jwt import JWTAuthGenerator
 from schnitzel.generators.python.auth.oauth import OAuthIntegrationGenerator
 from schnitzel.generators.python.auth.rbac import RBACPermissionGenerator
@@ -31,6 +34,11 @@ from schnitzel.generators.python.auth.mfa import MFAGenerator
 from schnitzel.generators.python.auth.migrations import AuthMigrationGenerator
 from schnitzel.generators.dart.models import DartModelGenerator
 from schnitzel.generators.dart.api_client import DartApiClientGenerator
+from schnitzel.generators.dart.app_main import FlutterAppMainGenerator
+from schnitzel.generators.dart.router import FlutterRouterGenerator
+from schnitzel.generators.dart.screens import FlutterScreensGenerator
+from schnitzel.generators.dart.app_pubspec import FlutterAppPubspecGenerator
+from schnitzel.generators.docker.dockerfile import DockerfileGenerator
 from schnitzel.utils.logging import get_logger
 from schnitzel.utils.network_errors import NetworkErrorHandler
 
@@ -180,25 +188,82 @@ def _run_flutter_setup(flutter_dir: Path, quiet: bool = False) -> bool:
                     console.print("  [green]✓ build_runner build[/green]")
             else:
                 if not quiet:
-                    console.print(f"  [yellow]⚠ build_runner build failed (may need freezed dependencies)[/yellow]")
+                    console.print(f"  [red]✗ build_runner build failed[/red]")
                     if result.stderr:
                         # Show first few lines of error
                         error_lines = result.stderr.strip().split('\n')[:3]
                         for line in error_lines:
                             console.print(f"    [dim]{line[:100]}[/dim]")
-                # Don't mark as failure - build_runner may not be configured yet
+                success = False  # Mark as failure - Freezed code won't be generated
         except subprocess.TimeoutExpired as e:
             if not quiet:
-                console.print("  [yellow]⚠ build_runner timed out[/yellow]")
+                console.print("  [red]✗ build_runner timed out[/red]")
                 console.print("  [dim]This may indicate network issues downloading dependencies[/dim]")
+            success = False
         except FileNotFoundError as e:
             if not quiet:
                 NetworkErrorHandler.handle_subprocess_error(e, "dart", quiet)
+            success = False
         except Exception as e:
             if not quiet:
-                console.print(f"  [yellow]⚠ build_runner error: {e}[/yellow]")
+                console.print(f"  [red]✗ build_runner error: {e}[/red]")
+            success = False
 
     return success
+
+
+def _run_flutter_pub_get_only(package_dir: Path, quiet: bool = False) -> bool:
+    """Run only flutter pub get (no build_runner).
+
+    Use this for packages that only need dependencies resolved but don't
+    have code generation requirements.
+
+    Args:
+        package_dir: Path to the Flutter package directory
+        quiet: If True, suppress output
+
+    Returns:
+        True if pub get succeeded, False otherwise
+    """
+    if not _is_flutter_installed():
+        if not quiet:
+            console.print("  [yellow]⚠ Flutter not installed - skipping Flutter setup[/yellow]")
+        return False
+
+    pubspec = package_dir / "pubspec.yaml"
+    if not pubspec.exists():
+        return True  # Nothing to do
+
+    try:
+        result = subprocess.run(
+            ["flutter", "pub", "get"],
+            cwd=package_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode == 0:
+            if not quiet:
+                console.print(f"  [green]✓ flutter pub get[/green]")
+            return True
+        else:
+            if not quiet:
+                console.print(f"  [red]✗ flutter pub get failed[/red]")
+                if result.stderr:
+                    console.print(f"    [dim]{result.stderr.strip()[:200]}[/dim]")
+            return False
+    except subprocess.TimeoutExpired:
+        if not quiet:
+            console.print(f"  [red]✗ flutter pub get timed out[/red]")
+        return False
+    except FileNotFoundError:
+        if not quiet:
+            console.print(f"  [red]✗ flutter not found[/red]")
+        return False
+    except Exception as e:
+        if not quiet:
+            console.print(f"  [red]✗ flutter pub get error: {e}[/red]")
+        return False
 
 
 def _run_python_setup(backend_dir: Path, quiet: bool = False) -> bool:
@@ -261,25 +326,60 @@ def _run_python_setup(backend_dir: Path, quiet: bool = False) -> bool:
         return False
 
 
-def _run_post_generation_setup(output_path: Path, quiet: bool = False) -> None:
+def _run_post_generation_setup(output_path: Path, quiet: bool = False) -> bool:
     """Run post-generation setup commands for Flutter and Python.
 
     Args:
-        output_path: Base output directory containing packages/ and backend/
+        output_path: Base output directory containing apps/, packages/ and backend/
         quiet: If True, suppress output
+
+    Returns:
+        True if all setup steps succeeded, False if any failed
     """
+    all_success = True
+
     if not quiet:
         console.print("\n[blue]Running post-generation setup...[/blue]")
 
-    # Flutter setup
-    flutter_dir = output_path / "packages" / "app"
-    if flutter_dir.exists():
-        _run_flutter_setup(flutter_dir, quiet)
+    # Step 0: Workspace-level flutter pub get (if pubspec.yaml exists at root)
+    workspace_pubspec = output_path / "pubspec.yaml"
+    if workspace_pubspec.exists():
+        if not quiet:
+            console.print("\n[blue]Setting up workspace...[/blue]")
+        success = _run_flutter_pub_get_only(output_path, quiet)
+        if not success:
+            all_success = False
 
-    # Python setup
+    # Step 1: Shared package (needs build_runner for Freezed models)
+    shared_dir = output_path / "packages" / "shared"
+    if shared_dir.exists():
+        if not quiet:
+            console.print("\n[blue]Setting up shared package...[/blue]")
+        success = _run_flutter_setup(shared_dir, quiet)
+        if not success:
+            all_success = False
+
+    # Step 2: Apps (only need flutter pub get, no build_runner)
+    apps_dir = output_path / "apps"
+    if apps_dir.exists():
+        for app_dir in apps_dir.iterdir():
+            if app_dir.is_dir() and (app_dir / "pubspec.yaml").exists():
+                if not quiet:
+                    console.print(f"\n[blue]Setting up app: {app_dir.name}...[/blue]")
+                success = _run_flutter_pub_get_only(app_dir, quiet)
+                if not success:
+                    all_success = False
+
+    # Step 3: Python backend
     backend_dir = output_path / "backend" / "app"
     if backend_dir.exists():
-        _run_python_setup(backend_dir, quiet)
+        if not quiet:
+            console.print("\n[blue]Setting up Python backend...[/blue]")
+        success = _run_python_setup(backend_dir, quiet)
+        if not success:
+            all_success = False
+
+    return all_success
 
 
 def _generate_python(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
@@ -453,6 +553,179 @@ def _generate_main(schema, output_dir: Path, schema_path: Path, force: bool, dry
     }
 
 
+def _generate_requirements(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
+    """Generate requirements.txt for Python backend.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        Dictionary with file info: {'path': Path, 'size': int, 'type': str} or None if skipped
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating requirements.txt...[/blue]")
+
+    # Determine output path: output_dir/backend
+    requirements_output_dir = output_dir / "backend"
+
+    # Check if requirements.txt already exists
+    requirements_file = requirements_output_dir / "requirements.txt"
+    if requirements_file.exists() and not force and not dry_run:
+        console.print(f"[yellow]Warning: {requirements_file} already exists. Use --force to overwrite.[/yellow]")
+        return None
+
+    if dry_run:
+        return {'path': requirements_file, 'size': 0, 'type': 'requirements'}
+
+    # Generate requirements.txt
+    generator = RequirementsGenerator()
+    output_file, size = generator.generate_to_file(schema, requirements_output_dir)
+
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated backend/requirements.txt[/green]")
+
+    return {
+        'path': output_file,
+        'size': size,
+        'type': 'requirements'
+    }
+
+
+def _generate_settings(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False, project_name: str = "schnitzel") -> dict | None:
+    """Generate settings.py for Python backend.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+        project_name: Name of the project
+
+    Returns:
+        Dictionary with file info: {'path': Path, 'size': int, 'type': str} or None if skipped
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating settings.py...[/blue]")
+
+    # Determine output path: output_dir/backend/app
+    settings_output_dir = output_dir / "backend" / "app"
+
+    # Check if settings.py already exists
+    settings_file = settings_output_dir / "settings.py"
+    if settings_file.exists() and not force and not dry_run:
+        console.print(f"[yellow]Warning: {settings_file} already exists. Use --force to overwrite.[/yellow]")
+        return None
+
+    if dry_run:
+        return {'path': settings_file, 'size': 0, 'type': 'settings'}
+
+    # Generate settings.py
+    generator = SettingsGenerator()
+    output_file, size = generator.generate_to_file(schema, settings_output_dir, project_name=project_name)
+
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated backend/app/settings.py[/green]")
+
+    return {
+        'path': output_file,
+        'size': size,
+        'type': 'settings'
+    }
+
+
+def _generate_database(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
+    """Generate database.py for Python backend.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        Dictionary with file info: {'path': Path, 'size': int, 'type': str} or None if skipped
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating database.py...[/blue]")
+
+    # Determine output path: output_dir/backend/app
+    database_output_dir = output_dir / "backend" / "app"
+
+    # Check if database.py already exists
+    database_file = database_output_dir / "database.py"
+    if database_file.exists() and not force and not dry_run:
+        console.print(f"[yellow]Warning: {database_file} already exists. Use --force to overwrite.[/yellow]")
+        return None
+
+    if dry_run:
+        return {'path': database_file, 'size': 0, 'type': 'database'}
+
+    # Generate database.py
+    generator = DatabaseGenerator()
+    output_file, size = generator.generate_to_file(schema, database_output_dir)
+
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated backend/app/database.py[/green]")
+
+    return {
+        'path': output_file,
+        'size': size,
+        'type': 'database'
+    }
+
+
+def _generate_dockerfile(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False, project_name: str = "schnitzel") -> dict | None:
+    """Generate Dockerfile for Python backend.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+        project_name: Name of the project
+
+    Returns:
+        Dictionary with file info: {'path': Path, 'size': int, 'type': str} or None if skipped
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating Dockerfile...[/blue]")
+
+    # Determine output path: output_dir/backend
+    dockerfile_output_dir = output_dir / "backend"
+
+    # Check if Dockerfile already exists
+    dockerfile = dockerfile_output_dir / "Dockerfile"
+    if dockerfile.exists() and not force and not dry_run:
+        console.print(f"[yellow]Warning: {dockerfile} already exists. Use --force to overwrite.[/yellow]")
+        return None
+
+    if dry_run:
+        return {'path': dockerfile, 'size': 0, 'type': 'dockerfile'}
+
+    # Generate Dockerfile
+    generator = DockerfileGenerator()
+    output_file, size = generator.generate_to_file(schema, dockerfile_output_dir, project_name=project_name)
+
+    # Also generate .dockerignore
+    generator.generate_dockerignore_to_file(dockerfile_output_dir)
+
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated backend/Dockerfile[/green]")
+
+    return {
+        'path': output_file,
+        'size': size,
+        'type': 'dockerfile'
+    }
+
+
 def _generate_dart(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
     """Generate Dart Freezed models.
 
@@ -469,8 +742,9 @@ def _generate_dart(schema, output_dir: Path, schema_path: Path, force: bool, dry
     if not dry_run and not _is_quiet_mode():
         console.print("[blue]Generating Dart models...[/blue]")
 
-    # Determine output path: output_dir/packages/app/lib/models
-    dart_output_dir = output_dir / "packages" / "app" / "lib" / "models"
+    # Determine output path: output_dir/packages/shared/lib/models
+    # Models go in shared package so they can be used by both app and api_client
+    dart_output_dir = output_dir / "packages" / "shared" / "lib" / "models"
 
     # Check if models.dart already exists
     models_file = dart_output_dir / "models.dart"
@@ -536,6 +810,233 @@ def _generate_dart_api_client(schema, output_dir: Path, schema_path: Path, force
         'size': size,
         'type': 'dart_api'
     }
+
+
+def _get_app_dir_name(schema) -> str:
+    """Get the Flutter app directory name from schema meta.
+
+    Args:
+        schema: Parsed schema object
+
+    Returns:
+        Sanitized app directory name (e.g., 'my_blog')
+    """
+    if schema.meta and schema.meta.name:
+        name = schema.meta.name.lower().replace('-', '_')
+        # Remove non-alphanumeric characters except underscores
+        return ''.join(c for c in name if c.isalnum() or c == '_')
+    return 'app'
+
+
+def _generate_flutter_main(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
+    """Generate Flutter main.dart entry point.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        Dictionary with file info: {'path': Path, 'size': int, 'type': str} or None if skipped
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating Flutter main.dart...[/blue]")
+
+    # Determine output path: output_dir/apps/{app_name}/lib
+    app_name = _get_app_dir_name(schema)
+    flutter_output_dir = output_dir / "apps" / app_name / "lib"
+
+    # Check if main.dart already exists
+    main_file = flutter_output_dir / "main.dart"
+    if main_file.exists() and not force and not dry_run:
+        console.print(f"[yellow]Warning: {main_file} already exists. Use --force to overwrite.[/yellow]")
+        return None
+
+    if dry_run:
+        return {'path': main_file, 'size': 0, 'type': 'flutter_main'}
+
+    # Generate Flutter main.dart
+    generator = FlutterAppMainGenerator()
+    output_file, size = generator.generate_to_file(schema, flutter_output_dir, schema_source=schema_path.name)
+
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated apps/{app_name}/lib/main.dart[/green]")
+
+    return {
+        'path': output_file,
+        'size': size,
+        'type': 'flutter_main'
+    }
+
+
+def _generate_flutter_widget_test(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
+    """Generate Flutter widget_test.dart.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        Dictionary with file info: {'path': Path, 'size': int, 'type': str} or None if skipped
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating Flutter widget_test.dart...[/blue]")
+
+    # Determine output path: output_dir/apps/{app_name}/test
+    app_name = _get_app_dir_name(schema)
+    test_output_dir = output_dir / "apps" / app_name / "test"
+
+    # Check if widget_test.dart already exists
+    test_file = test_output_dir / "widget_test.dart"
+    if test_file.exists() and not force and not dry_run:
+        console.print(f"[yellow]Warning: {test_file} already exists. Use --force to overwrite.[/yellow]")
+        return None
+
+    if dry_run:
+        return {'path': test_file, 'size': 0, 'type': 'flutter_widget_test'}
+
+    # Generate Flutter widget_test.dart
+    generator = FlutterAppMainGenerator()
+    output_file, size = generator.generate_widget_test_to_file(schema, test_output_dir, schema_source=schema_path.name)
+
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated apps/{app_name}/test/widget_test.dart[/green]")
+
+    return {
+        'path': output_file,
+        'size': size,
+        'type': 'flutter_widget_test'
+    }
+
+
+def _generate_flutter_router(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
+    """Generate Flutter go_router configuration.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        Dictionary with file info: {'path': Path, 'size': int, 'type': str} or None if skipped
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating Flutter router.dart...[/blue]")
+
+    # Determine output path: output_dir/apps/{app_name}/lib
+    app_name = _get_app_dir_name(schema)
+    flutter_output_dir = output_dir / "apps" / app_name / "lib"
+
+    # Check if router.dart already exists
+    router_file = flutter_output_dir / "router.dart"
+    if router_file.exists() and not force and not dry_run:
+        console.print(f"[yellow]Warning: {router_file} already exists. Use --force to overwrite.[/yellow]")
+        return None
+
+    if dry_run:
+        return {'path': router_file, 'size': 0, 'type': 'flutter_router'}
+
+    # Generate Flutter router.dart
+    generator = FlutterRouterGenerator()
+    output_file, size = generator.generate_to_file(schema, flutter_output_dir, schema_source=schema_path.name)
+
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated apps/{app_name}/lib/router.dart[/green]")
+
+    return {
+        'path': output_file,
+        'size': size,
+        'type': 'flutter_router'
+    }
+
+
+def _generate_flutter_screens(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> list[dict]:
+    """Generate Flutter CRUD screens.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        List of dictionaries with file info for each generated screen
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating Flutter screens...[/blue]")
+
+    # Determine output path: output_dir/apps/{app_name}/lib/screens
+    app_name = _get_app_dir_name(schema)
+    screens_output_dir = output_dir / "apps" / app_name / "lib" / "screens"
+
+    # Check if screens directory already has files
+    if screens_output_dir.exists() and any(screens_output_dir.iterdir()) and not force and not dry_run:
+        console.print(f"[yellow]Warning: {screens_output_dir} already has files. Use --force to overwrite.[/yellow]")
+        return []
+
+    if dry_run:
+        # Return estimated file list
+        return [{'path': screens_output_dir / "home_screen.dart", 'size': 0, 'type': 'flutter_screen'}]
+
+    # Generate Flutter screens
+    generator = FlutterScreensGenerator()
+    results = generator.generate_to_files(schema, screens_output_dir, schema_source=schema_path.name)
+
+    generated_files = []
+    for output_file, size in results:
+        generated_files.append({
+            'path': output_file,
+            'size': size,
+            'type': 'flutter_screen'
+        })
+
+    screen_count = len(results)
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated apps/{app_name}/lib/screens/[/green] ({screen_count} screens)")
+
+    return generated_files
+
+
+def _generate_flutter_pubspec(schema, output_dir: Path, dry_run: bool = False) -> dict | None:
+    """Update Flutter app pubspec.yaml with required dependencies.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        Dictionary with file info or None if no changes made
+    """
+    # Determine app directory: output_dir/apps/{app_name}
+    app_name = _get_app_dir_name(schema)
+    app_dir = output_dir / "apps" / app_name
+
+    if not app_dir.exists():
+        return None
+
+    generator = FlutterAppPubspecGenerator()
+    pubspec_file, changes_made = generator.update_pubspec(schema, app_dir, dry_run)
+
+    if changes_made and not dry_run and not _is_quiet_mode():
+        console.print(f"[green]✓ Updated apps/{app_name}/pubspec.yaml[/green] (added dependencies)")
+
+    if changes_made:
+        return {
+            'path': pubspec_file,
+            'size': pubspec_file.stat().st_size if pubspec_file.exists() and not dry_run else 0,
+            'type': 'flutter_pubspec'
+        }
+
+    return None
 
 
 def _generate_auth(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> list[dict]:
@@ -850,15 +1351,15 @@ def _run_generation(
         # Count total generation steps for progress tracking
         generation_steps = []
         if target == "python":
-            generation_steps = ["python", "orm", "routes", "main", "auth"]
+            generation_steps = ["requirements", "settings", "database", "python", "orm", "routes", "main", "dockerfile", "auth"]
         elif target == "dart":
-            generation_steps = ["dart", "dart_api"]
+            generation_steps = ["dart", "dart_api", "flutter_pubspec", "flutter_main", "flutter_widget_test", "flutter_router", "flutter_screens"]
         elif target == "docker":
-            generation_steps = ["docker"]
+            generation_steps = ["docker", "dockerfile"]
         elif target == "auth":
             generation_steps = ["auth"]
         elif target == "all":
-            generation_steps = ["python", "orm", "routes", "main", "auth", "dart", "dart_api", "docker"]
+            generation_steps = ["requirements", "settings", "database", "python", "orm", "routes", "main", "dockerfile", "auth", "dart", "dart_api", "flutter_pubspec", "flutter_main", "flutter_widget_test", "flutter_router", "flutter_screens", "docker"]
 
         # Handle dry-run mode
         if dry_run:
@@ -870,7 +1371,31 @@ def _run_generation(
             total_size = 0
 
             for step in generation_steps:
-                if step == "python":
+                if step == "requirements":
+                    result = _generate_requirements(schema, output_path, schema_path, force, dry_run)
+                    if result:
+                        gen = RequirementsGenerator()
+                        content = gen.generate(schema)
+                        result['size'] = len(content.encode('utf-8'))
+                        generated_files.append(result)
+                        total_size += result['size']
+                elif step == "settings":
+                    result = _generate_settings(schema, output_path, schema_path, force, dry_run)
+                    if result:
+                        gen = SettingsGenerator()
+                        content = gen.generate(schema)
+                        result['size'] = len(content.encode('utf-8'))
+                        generated_files.append(result)
+                        total_size += result['size']
+                elif step == "database":
+                    result = _generate_database(schema, output_path, schema_path, force, dry_run)
+                    if result:
+                        gen = DatabaseGenerator()
+                        content = gen.generate(schema)
+                        result['size'] = len(content.encode('utf-8'))
+                        generated_files.append(result)
+                        total_size += result['size']
+                elif step == "python":
                     result = _generate_python(schema, output_path, schema_path, force, dry_run)
                     if result:
                         # Calculate actual size by generating content
@@ -927,6 +1452,48 @@ def _run_generation(
                         result['endpoint_count'] = len(schema.endpoints) if schema.endpoints else 0
                         generated_files.append(result)
                         total_size += result['size']
+                elif step == "flutter_pubspec":
+                    result = _generate_flutter_pubspec(schema, output_path, dry_run)
+                    if result:
+                        generated_files.append(result)
+                        total_size += result['size']
+                elif step == "flutter_main":
+                    result = _generate_flutter_main(schema, output_path, schema_path, force, dry_run)
+                    if result:
+                        gen = FlutterAppMainGenerator()
+                        content = gen.generate(schema)
+                        result['size'] = len(content.encode('utf-8'))
+                        generated_files.append(result)
+                        total_size += result['size']
+                elif step == "flutter_widget_test":
+                    result = _generate_flutter_widget_test(schema, output_path, schema_path, force, dry_run)
+                    if result:
+                        gen = FlutterAppMainGenerator()
+                        content = gen.generate_widget_test(schema)
+                        result['size'] = len(content.encode('utf-8'))
+                        generated_files.append(result)
+                        total_size += result['size']
+                elif step == "flutter_router":
+                    result = _generate_flutter_router(schema, output_path, schema_path, force, dry_run)
+                    if result:
+                        gen = FlutterRouterGenerator()
+                        content = gen.generate(schema)
+                        result['size'] = len(content.encode('utf-8'))
+                        generated_files.append(result)
+                        total_size += result['size']
+                elif step == "flutter_screens":
+                    screen_results = _generate_flutter_screens(schema, output_path, schema_path, force, dry_run)
+                    for result in screen_results:
+                        generated_files.append(result)
+                        total_size += result['size']
+                elif step == "dockerfile":
+                    result = _generate_dockerfile(schema, output_path, schema_path, force, dry_run)
+                    if result:
+                        gen = DockerfileGenerator()
+                        content = gen.generate(schema)
+                        result['size'] = len(content.encode('utf-8'))
+                        generated_files.append(result)
+                        total_size += result['size']
                 elif step == "docker":
                     result = _generate_docker(schema_path, output_path, force, dry_run, schema=schema)
                     if result:
@@ -947,12 +1514,19 @@ def _run_generation(
                 for file_info in generated_files:
                     console.print(f"  [green]✓[/green] {file_info['path']}")
                     type_display = {
+                        'requirements': 'Python requirements.txt',
+                        'settings': 'Python settings.py',
+                        'database': 'Python database.py',
                         'python': 'Python models',
                         'orm': 'SQLAlchemy ORM',
                         'routes': 'FastAPI routes',
                         'main': 'FastAPI main.py',
+                        'dockerfile': 'Dockerfile',
                         'dart': 'Dart models',
                         'dart_api': 'Dart API client',
+                        'flutter_main': 'Flutter main.dart',
+                        'flutter_router': 'Flutter router.dart',
+                        'flutter_screen': 'Flutter screen',
                         'docker': 'Docker Compose',
                         'auth_jwt': 'JWT Authentication',
                         'auth_oauth': 'OAuth Integration',
@@ -1019,7 +1593,19 @@ def _run_generation(
                             completed=idx
                         )
 
-                        if step == "python":
+                        if step == "requirements":
+                            result = _generate_requirements(schema, output_path, schema_path, force, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
+                        elif step == "settings":
+                            result = _generate_settings(schema, output_path, schema_path, force, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
+                        elif step == "database":
+                            result = _generate_database(schema, output_path, schema_path, force, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
+                        elif step == "python":
                             result = _generate_python(schema, output_path, schema_path, force, dry_run)
                             if result:
                                 generated_files.append(result['path'])
@@ -1035,6 +1621,10 @@ def _run_generation(
                             result = _generate_main(schema, output_path, schema_path, force, dry_run)
                             if result:
                                 generated_files.append(result['path'])
+                        elif step == "dockerfile":
+                            result = _generate_dockerfile(schema, output_path, schema_path, force, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
                         elif step == "dart":
                             result = _generate_dart(schema, output_path, schema_path, force, dry_run)
                             if result:
@@ -1042,6 +1632,26 @@ def _run_generation(
                         elif step == "dart_api":
                             result = _generate_dart_api_client(schema, output_path, schema_path, force, dry_run)
                             if result:
+                                generated_files.append(result['path'])
+                        elif step == "flutter_pubspec":
+                            result = _generate_flutter_pubspec(schema, output_path, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
+                        elif step == "flutter_main":
+                            result = _generate_flutter_main(schema, output_path, schema_path, force, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
+                        elif step == "flutter_widget_test":
+                            result = _generate_flutter_widget_test(schema, output_path, schema_path, force, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
+                        elif step == "flutter_router":
+                            result = _generate_flutter_router(schema, output_path, schema_path, force, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
+                        elif step == "flutter_screens":
+                            screen_results = _generate_flutter_screens(schema, output_path, schema_path, force, dry_run)
+                            for result in screen_results:
                                 generated_files.append(result['path'])
                         elif step == "docker":
                             result = _generate_docker(schema_path, output_path, force, dry_run, schema=schema)
@@ -1074,7 +1684,19 @@ def _run_generation(
             generated_files: list[Path] = []
             try:
                 for step in generation_steps:
-                    if step == "python":
+                    if step == "requirements":
+                        result = _generate_requirements(schema, output_path, schema_path, force, dry_run)
+                        if result:
+                            generated_files.append(result['path'])
+                    elif step == "settings":
+                        result = _generate_settings(schema, output_path, schema_path, force, dry_run)
+                        if result:
+                            generated_files.append(result['path'])
+                    elif step == "database":
+                        result = _generate_database(schema, output_path, schema_path, force, dry_run)
+                        if result:
+                            generated_files.append(result['path'])
+                    elif step == "python":
                         result = _generate_python(schema, output_path, schema_path, force, dry_run)
                         if result:
                             generated_files.append(result['path'])
@@ -1090,6 +1712,10 @@ def _run_generation(
                         result = _generate_main(schema, output_path, schema_path, force, dry_run)
                         if result:
                             generated_files.append(result['path'])
+                    elif step == "dockerfile":
+                        result = _generate_dockerfile(schema, output_path, schema_path, force, dry_run)
+                        if result:
+                            generated_files.append(result['path'])
                     elif step == "dart":
                         result = _generate_dart(schema, output_path, schema_path, force, dry_run)
                         if result:
@@ -1097,6 +1723,26 @@ def _run_generation(
                     elif step == "dart_api":
                         result = _generate_dart_api_client(schema, output_path, schema_path, force, dry_run)
                         if result:
+                            generated_files.append(result['path'])
+                    elif step == "flutter_pubspec":
+                        result = _generate_flutter_pubspec(schema, output_path, dry_run)
+                        if result:
+                            generated_files.append(result['path'])
+                    elif step == "flutter_main":
+                        result = _generate_flutter_main(schema, output_path, schema_path, force, dry_run)
+                        if result:
+                            generated_files.append(result['path'])
+                    elif step == "flutter_widget_test":
+                        result = _generate_flutter_widget_test(schema, output_path, schema_path, force, dry_run)
+                        if result:
+                            generated_files.append(result['path'])
+                    elif step == "flutter_router":
+                        result = _generate_flutter_router(schema, output_path, schema_path, force, dry_run)
+                        if result:
+                            generated_files.append(result['path'])
+                    elif step == "flutter_screens":
+                        screen_results = _generate_flutter_screens(schema, output_path, schema_path, force, dry_run)
+                        for result in screen_results:
                             generated_files.append(result['path'])
                     elif step == "docker":
                         result = _generate_docker(schema_path, output_path, force, dry_run, schema=schema)
@@ -1176,10 +1822,10 @@ def generate_command(
         help="Output directory",
     ),
     force: bool = typer.Option(
-        False,
-        "--force",
+        True,
+        "--force/--no-force",
         "-f",
-        help="Overwrite existing files",
+        help="Overwrite existing files (default: True)",
     ),
     dry_run: bool = typer.Option(
         False,
@@ -1247,7 +1893,11 @@ def generate_command(
         if success:
             # Run post-generation setup if enabled
             if setup and not dry_run:
-                _run_post_generation_setup(output_path, quiet=_is_quiet_mode())
+                setup_success = _run_post_generation_setup(output_path, quiet=_is_quiet_mode())
+                if setup_success:
+                    console.print("\n[green]✓ Project setup complete![/green]")
+                else:
+                    console.print("\n[yellow]⚠ Setup completed with warnings[/yellow]")
             console.print(f"\n[blue]Watching for changes...[/blue]\n")
         else:
             console.print(f"\n[yellow]Initial generation failed. Watching for changes...[/yellow]\n")
@@ -1292,4 +1942,18 @@ def generate_command(
 
         # Run post-generation setup if enabled and not dry-run
         if setup and not dry_run:
-            _run_post_generation_setup(output_path, quiet=_is_quiet_mode())
+            setup_success = _run_post_generation_setup(output_path, quiet=_is_quiet_mode())
+
+            if not _is_quiet_mode():
+                if setup_success:
+                    console.print("\n[green]✓ Project setup complete![/green]")
+                    # Find app name for helpful message
+                    apps_dir = output_path / "apps"
+                    if apps_dir.exists():
+                        for app_dir in apps_dir.iterdir():
+                            if app_dir.is_dir():
+                                console.print(f"  Run: [cyan]cd apps/{app_dir.name} && flutter run[/cyan]")
+                                break
+                else:
+                    console.print("\n[yellow]⚠ Setup completed with warnings[/yellow]")
+                    console.print("  Some setup steps failed. Check output above.")
