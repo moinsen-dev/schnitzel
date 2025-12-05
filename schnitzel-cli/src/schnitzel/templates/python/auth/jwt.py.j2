@@ -2,7 +2,12 @@
 
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
-
+{% if jwt_config.algorithm.startswith('RS') %}
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.backends import default_backend
+{% endif %}
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from pydantic import BaseModel
 
@@ -18,17 +23,175 @@ class JWTConfig(BaseModel):
     algorithm: str = "{{ jwt_config.algorithm | default('HS256') }}"
     access_token_expire_minutes: int = {{ jwt_config.access_expiry | default(15) }}
     refresh_token_expire_days: int = {{ jwt_config.refresh_expiry | default(30) }}
+    {% if jwt_config.issuer %}
+    issuer: Optional[str] = "{{ jwt_config.issuer }}"
+    {% else %}
+    issuer: Optional[str] = None
+    {% endif %}
+    {% if jwt_config.audience %}
+    audience: Optional[str] = "{{ jwt_config.audience }}"
+    {% else %}
+    audience: Optional[str] = None
+    {% endif %}
 
 
 # Default configuration (can be overridden)
 jwt_config = JWTConfig()
+
+# Security scheme for FastAPI dependency
+security = HTTPBearer()
+
+{% if jwt_config.algorithm.startswith('RS') %}
+# =============================================================================
+# RSA Key Loading (for RS256, RS384, RS512)
+# =============================================================================
+
+def load_private_key(key_path: str) -> bytes:
+    """Load RSA private key from file for token signing.
+
+    Args:
+        key_path: Path to PEM-encoded private key file
+
+    Returns:
+        Private key in PEM format as bytes
+
+    Example:
+        >>> private_key = load_private_key("keys/private.pem")
+    """
+    with open(key_path, "rb") as key_file:
+        private_key = serialization.load_pem_private_key(
+            key_file.read(),
+            password=None,
+            backend=default_backend()
+        )
+    return private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+
+
+def load_public_key(key_path: str) -> bytes:
+    """Load RSA public key from file for token verification.
+
+    Args:
+        key_path: Path to PEM-encoded public key file
+
+    Returns:
+        Public key in PEM format as bytes
+
+    Example:
+        >>> public_key = load_public_key("keys/public.pem")
+    """
+    with open(key_path, "rb") as key_file:
+        public_key = serialization.load_pem_public_key(
+            key_file.read(),
+            backend=default_backend()
+        )
+    return public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.SubjectPublicKeyInfo()
+    )
+
+
+# Cache for loaded keys (load once, reuse)
+_private_key: Optional[bytes] = None
+_public_key: Optional[bytes] = None
+
+
+def get_private_key() -> bytes:
+    """Get cached private key or load from environment variable JWT_PRIVATE_KEY_PATH."""
+    global _private_key
+    if _private_key is None:
+        import os
+        key_path = os.getenv("JWT_PRIVATE_KEY_PATH", "keys/private.pem")
+        _private_key = load_private_key(key_path)
+    return _private_key
+
+
+def get_public_key() -> bytes:
+    """Get cached public key or load from environment variable JWT_PUBLIC_KEY_PATH."""
+    global _public_key
+    if _public_key is None:
+        import os
+        key_path = os.getenv("JWT_PUBLIC_KEY_PATH", "keys/public.pem")
+        _public_key = load_public_key(key_path)
+    return _public_key
+
+{% endif %}
+
+
+# =============================================================================
+# Claims Management
+# =============================================================================
+
+def build_token_claims(
+    subject: str,
+    token_type: str = "access",
+    roles: Optional[list[str]] = None,
+    permissions: Optional[list[str]] = None,
+    user_id: Optional[str] = None,
+    custom_claims: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build standard and custom JWT claims.
+
+    Args:
+        subject: The subject claim (typically user identifier)
+        token_type: Type of token ("access" or "refresh")
+        roles: Optional list of user roles
+        permissions: Optional list of user permissions
+        user_id: Optional explicit user_id claim
+        custom_claims: Optional dictionary of additional custom claims
+
+    Returns:
+        Dictionary containing all claims to be encoded in the token
+
+    Example:
+        >>> claims = build_token_claims(
+        ...     subject="user@example.com",
+        ...     roles=["admin", "user"],
+        ...     permissions=["read:orders", "write:orders"],
+        ...     user_id="uuid-123"
+        ... )
+    """
+    claims: Dict[str, Any] = {
+        "sub": subject,
+        "iat": datetime.utcnow(),
+        "type": token_type,
+    }
+
+    # Add issuer and audience if configured
+    if jwt_config.issuer:
+        claims["iss"] = jwt_config.issuer
+    if jwt_config.audience:
+        claims["aud"] = jwt_config.audience
+
+    # Add optional standard claims
+    if roles is not None:
+        claims["roles"] = roles
+    if permissions is not None:
+        claims["permissions"] = permissions
+    if user_id is not None:
+        claims["user_id"] = user_id
+
+    # Merge custom claims
+    if custom_claims:
+        claims.update(custom_claims)
+
+    return claims
 
 
 # =============================================================================
 # JWT Token Generation
 # =============================================================================
 
-def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+def create_access_token(
+    data: dict,
+    expires_delta: timedelta | None = None,
+    roles: Optional[list[str]] = None,
+    permissions: Optional[list[str]] = None,
+    user_id: Optional[str] = None,
+) -> str:
     """Create a JWT access token.
 
     Args:
@@ -36,12 +199,19 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
               Typically includes: {"sub": user_id, "roles": [...], ...}
         expires_delta: Optional custom expiration time. If None, uses default
                       from jwt_config.access_token_expire_minutes.
+        roles: Optional list of user roles to include in token
+        permissions: Optional list of user permissions to include in token
+        user_id: Optional explicit user_id claim
 
     Returns:
         Encoded JWT token string
 
     Example:
-        >>> token = create_access_token({"sub": "user123", "roles": ["user"]})
+        >>> token = create_access_token(
+        ...     {"sub": "user@example.com"},
+        ...     roles=["admin"],
+        ...     permissions=["read:all", "write:all"]
+        ... )
         >>> # Token valid for 15 minutes (default)
         >>>
         >>> token = create_access_token(
@@ -58,19 +228,44 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     else:
         expire = datetime.utcnow() + timedelta(minutes=jwt_config.access_token_expire_minutes)
 
-    to_encode.update({"exp": expire, "type": "access"})
+    to_encode.update({
+        "exp": expire,
+        "type": "access",
+        "iat": datetime.utcnow(),
+    })
+
+    # Add optional claims
+    if roles is not None:
+        to_encode["roles"] = roles
+    if permissions is not None:
+        to_encode["permissions"] = permissions
+    if user_id is not None:
+        to_encode["user_id"] = user_id
+
+    # Add issuer and audience if configured
+    if jwt_config.issuer:
+        to_encode["iss"] = jwt_config.issuer
+    if jwt_config.audience:
+        to_encode["aud"] = jwt_config.audience
+
+    # Get signing key based on algorithm
+    {% if jwt_config.algorithm.startswith('RS') %}
+    signing_key = get_private_key()
+    {% else %}
+    signing_key = jwt_config.secret_key
+    {% endif %}
 
     # Encode the JWT
     encoded_jwt = jwt.encode(
         to_encode,
-        jwt_config.secret_key,
+        signing_key,
         algorithm=jwt_config.algorithm
     )
 
     return encoded_jwt
 
 
-def create_refresh_token(data: dict) -> str:
+def create_refresh_token(data: dict, user_id: Optional[str] = None) -> str:
     """Create a JWT refresh token.
 
     Refresh tokens have a longer expiration time and are used to obtain
@@ -79,6 +274,7 @@ def create_refresh_token(data: dict) -> str:
     Args:
         data: Dictionary containing claims to encode in the token.
               Typically includes: {"sub": user_id}
+        user_id: Optional explicit user_id claim
 
     Returns:
         Encoded JWT refresh token string
@@ -92,12 +288,33 @@ def create_refresh_token(data: dict) -> str:
     # Set expiration time (longer for refresh tokens)
     expire = datetime.utcnow() + timedelta(days=jwt_config.refresh_token_expire_days)
 
-    to_encode.update({"exp": expire, "type": "refresh"})
+    to_encode.update({
+        "exp": expire,
+        "type": "refresh",
+        "iat": datetime.utcnow(),
+    })
+
+    # Add user_id if provided
+    if user_id is not None:
+        to_encode["user_id"] = user_id
+
+    # Add issuer and audience if configured
+    if jwt_config.issuer:
+        to_encode["iss"] = jwt_config.issuer
+    if jwt_config.audience:
+        to_encode["aud"] = jwt_config.audience
+
+    # Get signing key based on algorithm
+    {% if jwt_config.algorithm.startswith('RS') %}
+    signing_key = get_private_key()
+    {% else %}
+    signing_key = jwt_config.secret_key
+    {% endif %}
 
     # Encode the JWT
     encoded_jwt = jwt.encode(
         to_encode,
-        jwt_config.secret_key,
+        signing_key,
         algorithm=jwt_config.algorithm
     )
 
@@ -131,11 +348,31 @@ def verify_token(token: str) -> dict:
         ...     pass
     """
     try:
+        # Get verification key based on algorithm
+        {% if jwt_config.algorithm.startswith('RS') %}
+        verification_key = get_public_key()
+        {% else %}
+        verification_key = jwt_config.secret_key
+        {% endif %}
+
+        # Prepare decode options
+        decode_options = {"algorithms": [jwt_config.algorithm]}
+        if jwt_config.audience:
+            decode_options["audience"] = jwt_config.audience
+        if jwt_config.issuer:
+            decode_options["issuer"] = jwt_config.issuer
+
         # Decode and verify the token
         payload = jwt.decode(
             token,
-            jwt_config.secret_key,
-            algorithms=[jwt_config.algorithm]
+            verification_key,
+            algorithms=[jwt_config.algorithm],
+            {% if jwt_config.audience %}
+            audience=jwt_config.audience,
+            {% endif %}
+            {% if jwt_config.issuer %}
+            issuer=jwt_config.issuer,
+            {% endif %}
         )
 
         # Verify token type exists
@@ -236,3 +473,192 @@ def get_user_roles_from_token(token: str) -> list[str]:
         return payload.get("roles", [])
     except (JWTError, ValueError):
         return []
+
+
+def get_user_permissions_from_token(token: str) -> list[str]:
+    """Extract user permissions from a token.
+
+    Args:
+        token: JWT token string
+
+    Returns:
+        List of permission strings (empty list if none found or token invalid)
+    """
+    try:
+        payload = verify_token(token)
+        return payload.get("permissions", [])
+    except (JWTError, ValueError):
+        return []
+
+
+def extract_claims_from_token(token: str, claim_keys: list[str]) -> Dict[str, Any]:
+    """Extract specific claims from a token.
+
+    Args:
+        token: JWT token string
+        claim_keys: List of claim keys to extract
+
+    Returns:
+        Dictionary with requested claims (empty dict if token invalid)
+    """
+    try:
+        payload = verify_token(token)
+        return {key: payload.get(key) for key in claim_keys if key in payload}
+    except (JWTError, ValueError):
+        return {}
+
+
+# =============================================================================
+# FastAPI Dependency for Token Validation
+# =============================================================================
+
+class TokenPayload(BaseModel):
+    """Model for decoded token payload."""
+
+    sub: str
+    exp: int
+    iat: int
+    type: str
+    roles: Optional[list[str]] = None
+    permissions: Optional[list[str]] = None
+    user_id: Optional[str] = None
+    iss: Optional[str] = None
+    aud: Optional[str] = None
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> TokenPayload:
+    """FastAPI dependency to get the current authenticated user from JWT token.
+
+    Extracts the JWT token from the Authorization header (Bearer scheme),
+    validates it, and returns the decoded payload.
+
+    Args:
+        credentials: HTTP Bearer credentials from the Authorization header
+
+    Returns:
+        TokenPayload object containing the decoded token claims
+
+    Raises:
+        HTTPException: 401 Unauthorized if token is missing, invalid, or expired
+
+    Example:
+        >>> from fastapi import Depends
+        >>>
+        >>> @app.get("/profile")
+        >>> async def get_profile(current_user: TokenPayload = Depends(get_current_user)):
+        ...     user_id = current_user.sub
+        ...     roles = current_user.roles
+        ...     return {"user_id": user_id, "roles": roles}
+    """
+    token = credentials.credentials
+
+    try:
+        # Verify and decode the token
+        payload = verify_access_token(token)
+
+        # Create TokenPayload from decoded claims
+        return TokenPayload(**payload)
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token: {str(e)}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except JWTError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Could not validate credentials: {str(e)}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+async def get_current_user_with_roles(
+    required_roles: list[str],
+) -> callable:
+    """Create a dependency that checks for specific roles.
+
+    Args:
+        required_roles: List of roles that the user must have at least one of
+
+    Returns:
+        FastAPI dependency function
+
+    Example:
+        >>> admin_only = get_current_user_with_roles(["admin"])
+        >>>
+        >>> @app.delete("/users/{user_id}")
+        >>> async def delete_user(
+        ...     user_id: str,
+        ...     current_user: TokenPayload = Depends(admin_only)
+        ... ):
+        ...     # Only admins can access this endpoint
+        ...     pass
+    """
+    async def dependency(current_user: TokenPayload = Depends(get_current_user)) -> TokenPayload:
+        if not current_user.roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User has no roles assigned",
+            )
+
+        # Check if user has any of the required roles
+        user_roles = set(current_user.roles)
+        required_roles_set = set(required_roles)
+
+        if not user_roles.intersection(required_roles_set):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"User does not have required role. Required: {required_roles}",
+            )
+
+        return current_user
+
+    return dependency
+
+
+async def get_current_user_with_permissions(
+    required_permissions: list[str],
+) -> callable:
+    """Create a dependency that checks for specific permissions.
+
+    Args:
+        required_permissions: List of permissions that the user must have all of
+
+    Returns:
+        FastAPI dependency function
+
+    Example:
+        >>> write_orders = get_current_user_with_permissions(["write:orders"])
+        >>>
+        >>> @app.post("/orders")
+        >>> async def create_order(
+        ...     order_data: dict,
+        ...     current_user: TokenPayload = Depends(write_orders)
+        ... ):
+        ...     # Only users with write:orders permission can access
+        ...     pass
+    """
+    async def dependency(current_user: TokenPayload = Depends(get_current_user)) -> TokenPayload:
+        if not current_user.permissions:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User has no permissions assigned",
+            )
+
+        # Check if user has all required permissions
+        user_permissions = set(current_user.permissions)
+        required_permissions_set = set(required_permissions)
+
+        if not required_permissions_set.issubset(user_permissions):
+            missing = required_permissions_set - user_permissions
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"User missing required permissions: {list(missing)}",
+            )
+
+        return current_user
+
+    return dependency

@@ -116,9 +116,11 @@ class JWTAuthGenerator:
 
         Reads the auth section and extracts:
         - secret_key: JWT signing secret (default: placeholder)
-        - algorithm: Signing algorithm (default: HS256)
-        - access_expiry: Access token expiration in minutes (from auth.session.access_expiry seconds)
-        - refresh_expiry: Refresh token expiration in days (from auth.session.refresh_expiry seconds)
+        - algorithm: Signing algorithm (default: HS256, supports RS256, etc.)
+        - access_expiry: Access token expiration in minutes (from auth.jwt.access_expiry seconds)
+        - refresh_expiry: Refresh token expiration in days (from auth.jwt.refresh_expiry seconds)
+        - issuer: Optional token issuer claim
+        - audience: Optional token audience claim
 
         Args:
             schema: The Schnitzel schema
@@ -131,28 +133,49 @@ class JWTAuthGenerator:
             "algorithm": "HS256",
             "access_expiry": 15,  # minutes
             "refresh_expiry": 30,  # days
+            "issuer": None,
+            "audience": None,
         }
 
         # Extract auth configuration if it exists
-        if not schema.auth or not isinstance(schema.auth, dict):
+        if not schema.auth:
             return jwt_config
 
         auth_config = schema.auth
 
-        # Extract session configuration
-        session_config = auth_config.get("session", {})
-        if isinstance(session_config, dict):
+        # Extract JWT-specific configuration from AuthConfig Pydantic model
+        if hasattr(auth_config, "jwt") and auth_config.jwt:
+            jwt_section = auth_config.jwt
+
+            # Extract algorithm
+            if hasattr(jwt_section, "algorithm"):
+                jwt_config["algorithm"] = jwt_section.algorithm
+
             # Convert access_expiry from seconds to minutes
-            if "access_expiry" in session_config:
-                access_seconds = session_config["access_expiry"]
+            if hasattr(jwt_section, "access_expiry"):
+                access_seconds = jwt_section.access_expiry
                 jwt_config["access_expiry"] = max(1, access_seconds // 60)
 
             # Convert refresh_expiry from seconds to days
-            if "refresh_expiry" in session_config:
-                refresh_seconds = session_config["refresh_expiry"]
+            if hasattr(jwt_section, "refresh_expiry"):
+                refresh_seconds = jwt_section.refresh_expiry
                 jwt_config["refresh_expiry"] = max(1, refresh_seconds // 86400)
 
-        # Note: secret_key and algorithm are typically set via environment variables
-        # or configuration files, not in the schema
+            # Extract issuer and audience
+            if hasattr(jwt_section, "issuer") and jwt_section.issuer:
+                jwt_config["issuer"] = jwt_section.issuer
+
+            if hasattr(jwt_section, "audience") and jwt_section.audience:
+                jwt_config["audience"] = jwt_section.audience
+
+        # Fallback to session configuration (legacy support)
+        if hasattr(auth_config, "session") and auth_config.session:
+            session_config = auth_config.session
+
+            # Only use session config if JWT config didn't provide these values
+            if hasattr(session_config, "expiry") and jwt_config["access_expiry"] == 15:
+                # Use session expiry for access tokens if no JWT config
+                access_seconds = session_config.expiry
+                jwt_config["access_expiry"] = max(1, access_seconds // 60)
 
         return jwt_config

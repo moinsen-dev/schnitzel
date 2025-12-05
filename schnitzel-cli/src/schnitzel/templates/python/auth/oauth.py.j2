@@ -1,0 +1,457 @@
+"""Generated OAuth integration utilities from Schnitzel schema."""
+
+import os
+import secrets
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional
+from urllib.parse import urlencode
+
+import httpx
+from jose import jwt, JWTError
+from pydantic import BaseModel
+
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+class OAuthConfig(BaseModel):
+    """OAuth configuration for various providers."""
+
+    # Google OAuth
+    google_client_id: str = os.getenv("GOOGLE_CLIENT_ID", "")
+    google_client_secret: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
+    google_redirect_uri: str = os.getenv("GOOGLE_REDIRECT_URI", "{{ oauth_config.callback_url }}/google")
+
+    # Apple Sign In
+    apple_client_id: str = os.getenv("APPLE_CLIENT_ID", "")
+    apple_team_id: str = os.getenv("APPLE_TEAM_ID", "")
+    apple_key_id: str = os.getenv("APPLE_KEY_ID", "")
+    apple_private_key: str = os.getenv("APPLE_PRIVATE_KEY", "")
+    apple_redirect_uri: str = os.getenv("APPLE_REDIRECT_URI", "{{ oauth_config.callback_url }}/apple")
+
+    # Magic Link
+    magic_link_secret: str = os.getenv("MAGIC_LINK_SECRET", "change-this-secret-in-production")
+    magic_link_expiry_minutes: int = int(os.getenv("MAGIC_LINK_EXPIRY_MINUTES", "15"))
+
+
+# Default configuration (can be overridden)
+oauth_config = OAuthConfig()
+
+
+# =============================================================================
+# Google OAuth 2.0 Flow
+# =============================================================================
+{% if oauth_config.has_google %}
+
+def get_google_auth_url(state: Optional[str] = None) -> str:
+    """Generate Google OAuth authorization URL.
+
+    Args:
+        state: Optional state parameter for CSRF protection. If None, generates random state.
+
+    Returns:
+        Authorization URL string
+
+    Example:
+        >>> auth_url = get_google_auth_url(state="random-state-123")
+        >>> # Redirect user to auth_url
+    """
+    if state is None:
+        state = secrets.token_urlsafe(32)
+
+    params = {
+        "client_id": oauth_config.google_client_id,
+        "redirect_uri": oauth_config.google_redirect_uri,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "access_type": "offline",
+        "prompt": "consent",
+    }
+
+    base_url = "https://accounts.google.com/o/oauth2/v2/auth"
+    return f"{base_url}?{urlencode(params)}"
+
+
+async def google_callback(code: str) -> Dict[str, Any]:
+    """Exchange authorization code for access token and fetch user info.
+
+    Args:
+        code: Authorization code from Google OAuth callback
+
+    Returns:
+        Dictionary containing access_token, refresh_token, and user info
+
+    Raises:
+        httpx.HTTPError: If token exchange or user info request fails
+
+    Example:
+        >>> result = await google_callback(code="auth-code-123")
+        >>> print(result["user_info"]["email"])
+    """
+    # Exchange code for tokens
+    token_url = "https://oauth2.googleapis.com/token"
+    token_data = {
+        "code": code,
+        "client_id": oauth_config.google_client_id,
+        "client_secret": oauth_config.google_client_secret,
+        "redirect_uri": oauth_config.google_redirect_uri,
+        "grant_type": "authorization_code",
+    }
+
+    async with httpx.AsyncClient() as client:
+        # Get tokens
+        token_response = await client.post(token_url, data=token_data)
+        token_response.raise_for_status()
+        tokens = token_response.json()
+
+        # Get user info
+        user_info = await get_google_user_info(tokens["access_token"])
+
+        return {
+            "access_token": tokens["access_token"],
+            "refresh_token": tokens.get("refresh_token"),
+            "expires_in": tokens.get("expires_in"),
+            "user_info": user_info,
+        }
+
+
+async def get_google_user_info(access_token: str) -> Dict[str, Any]:
+    """Fetch user information from Google using access token.
+
+    Args:
+        access_token: Google OAuth access token
+
+    Returns:
+        Dictionary with user info (id, email, name, picture, etc.)
+
+    Raises:
+        httpx.HTTPError: If user info request fails
+
+    Example:
+        >>> user_info = await get_google_user_info(access_token)
+        >>> print(f"User: {user_info['name']} ({user_info['email']})")
+    """
+    userinfo_url = "https://www.googleapis.com/oauth2/v2/userinfo"
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(userinfo_url, headers=headers)
+        response.raise_for_status()
+        return response.json()
+
+{% endif %}
+
+# =============================================================================
+# Apple Sign In Flow
+# =============================================================================
+{% if oauth_config.has_apple %}
+
+def get_apple_auth_url(state: Optional[str] = None) -> str:
+    """Generate Apple Sign In authorization URL.
+
+    Args:
+        state: Optional state parameter for CSRF protection. If None, generates random state.
+
+    Returns:
+        Authorization URL string
+
+    Example:
+        >>> auth_url = get_apple_auth_url(state="random-state-123")
+        >>> # Redirect user to auth_url
+    """
+    if state is None:
+        state = secrets.token_urlsafe(32)
+
+    params = {
+        "client_id": oauth_config.apple_client_id,
+        "redirect_uri": oauth_config.apple_redirect_uri,
+        "response_type": "code id_token",
+        "response_mode": "form_post",
+        "scope": "name email",
+        "state": state,
+    }
+
+    base_url = "https://appleid.apple.com/auth/authorize"
+    return f"{base_url}?{urlencode(params)}"
+
+
+async def apple_callback(code: str, id_token: Optional[str] = None) -> Dict[str, Any]:
+    """Exchange authorization code for tokens and extract user info.
+
+    Apple Sign In returns an id_token which contains user information.
+    The code can be exchanged for an access token if needed for additional API calls.
+
+    Args:
+        code: Authorization code from Apple callback
+        id_token: Optional ID token from Apple (contains user info)
+
+    Returns:
+        Dictionary containing tokens and user info
+
+    Raises:
+        httpx.HTTPError: If token exchange fails
+        JWTError: If ID token decoding fails
+
+    Example:
+        >>> result = await apple_callback(code="auth-code-123", id_token="jwt-token")
+        >>> print(result["user_info"]["email"])
+    """
+    # Decode ID token to get user info
+    user_info = {}
+    if id_token:
+        user_info = decode_apple_id_token(id_token)
+
+    # Exchange code for access token (optional, for future API calls)
+    token_url = "https://appleid.apple.com/auth/token"
+    token_data = {
+        "code": code,
+        "client_id": oauth_config.apple_client_id,
+        "client_secret": _generate_apple_client_secret(),
+        "grant_type": "authorization_code",
+        "redirect_uri": oauth_config.apple_redirect_uri,
+    }
+
+    async with httpx.AsyncClient() as client:
+        token_response = await client.post(token_url, data=token_data)
+        token_response.raise_for_status()
+        tokens = token_response.json()
+
+        return {
+            "access_token": tokens.get("access_token"),
+            "refresh_token": tokens.get("refresh_token"),
+            "expires_in": tokens.get("expires_in"),
+            "user_info": user_info,
+        }
+
+
+def decode_apple_id_token(id_token: str) -> Dict[str, Any]:
+    """Decode and validate Apple ID token (JWT).
+
+    Note: In production, you should verify the token signature against Apple's public keys.
+    This implementation does basic decoding without signature verification.
+
+    Args:
+        id_token: JWT ID token from Apple
+
+    Returns:
+        Dictionary with user claims (sub, email, email_verified, etc.)
+
+    Raises:
+        JWTError: If token is invalid or expired
+
+    Example:
+        >>> user_info = decode_apple_id_token(id_token)
+        >>> print(f"Apple User ID: {user_info['sub']}")
+        >>> print(f"Email: {user_info['email']}")
+    """
+    try:
+        # Decode without verification (verify signature in production!)
+        # For production, fetch Apple's public keys and verify signature
+        payload = jwt.decode(
+            id_token,
+            options={"verify_signature": False},  # TODO: Verify in production
+        )
+
+        return {
+            "id": payload.get("sub"),
+            "email": payload.get("email"),
+            "email_verified": payload.get("email_verified", False),
+            "is_private_email": payload.get("is_private_email", False),
+        }
+    except JWTError as e:
+        raise JWTError(f"Failed to decode Apple ID token: {str(e)}")
+
+
+def _generate_apple_client_secret() -> str:
+    """Generate Apple client secret JWT.
+
+    Apple requires a JWT signed with your private key as the client secret.
+
+    Returns:
+        Signed JWT to use as client_secret
+
+    Note:
+        Requires APPLE_TEAM_ID, APPLE_KEY_ID, and APPLE_PRIVATE_KEY to be configured.
+    """
+    now = datetime.utcnow()
+    expiration = now + timedelta(days=180)  # Max 6 months
+
+    claims = {
+        "iss": oauth_config.apple_team_id,
+        "iat": int(now.timestamp()),
+        "exp": int(expiration.timestamp()),
+        "aud": "https://appleid.apple.com",
+        "sub": oauth_config.apple_client_id,
+    }
+
+    headers = {
+        "kid": oauth_config.apple_key_id,
+        "alg": "ES256",
+    }
+
+    # Sign with private key
+    client_secret = jwt.encode(
+        claims,
+        oauth_config.apple_private_key,
+        algorithm="ES256",
+        headers=headers,
+    )
+
+    return client_secret
+
+{% endif %}
+
+# =============================================================================
+# Magic Link Email Flow
+# =============================================================================
+{% if oauth_config.has_magic_link %}
+
+def generate_magic_link(email: str) -> tuple[str, str]:
+    """Generate a magic link token for passwordless authentication.
+
+    Creates a signed JWT token containing the user's email and expiration time.
+
+    Args:
+        email: User's email address
+
+    Returns:
+        Tuple of (token, magic_link_url)
+
+    Example:
+        >>> token, link = generate_magic_link("user@example.com")
+        >>> # Send link via email to user
+        >>> print(f"Magic link: {link}")
+    """
+    # Generate token with email and expiration
+    expiration = datetime.utcnow() + timedelta(
+        minutes=oauth_config.magic_link_expiry_minutes
+    )
+
+    payload = {
+        "email": email,
+        "exp": expiration,
+        "type": "magic_link",
+    }
+
+    token = jwt.encode(
+        payload,
+        oauth_config.magic_link_secret,
+        algorithm="HS256",
+    )
+
+    # Build magic link URL
+    base_url = "{{ oauth_config.callback_url }}/magic-link/verify"
+    magic_link_url = f"{base_url}?token={token}"
+
+    return token, magic_link_url
+
+
+def verify_magic_link(token: str) -> str:
+    """Verify a magic link token and extract the email.
+
+    Args:
+        token: Magic link token to verify
+
+    Returns:
+        Email address from the token
+
+    Raises:
+        JWTError: If token is invalid or expired
+        ValueError: If token type is not magic_link
+
+    Example:
+        >>> try:
+        ...     email = verify_magic_link(token)
+        ...     # Authenticate user with this email
+        ... except JWTError:
+        ...     # Token invalid or expired
+        ...     pass
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            oauth_config.magic_link_secret,
+            algorithms=["HS256"],
+        )
+
+        # Verify token type
+        if payload.get("type") != "magic_link":
+            raise ValueError("Invalid token type")
+
+        email = payload.get("email")
+        if not email:
+            raise ValueError("Email not found in token")
+
+        return email
+
+    except JWTError as e:
+        raise JWTError(f"Magic link verification failed: {str(e)}")
+
+
+async def send_magic_link_email(email: str, magic_link: str) -> bool:
+    """Send magic link email to user.
+
+    This is a stub implementation. In production, integrate with your email service
+    provider (SendGrid, AWS SES, Mailgun, etc.).
+
+    Args:
+        email: Recipient email address
+        magic_link: Magic link URL to include in email
+
+    Returns:
+        True if email was sent successfully, False otherwise
+
+    Example:
+        >>> token, link = generate_magic_link("user@example.com")
+        >>> success = await send_magic_link_email("user@example.com", link)
+        >>> if success:
+        ...     print("Magic link sent!")
+    """
+    # TODO: Integrate with email service provider
+    # Example with SendGrid:
+    # import sendgrid
+    # from sendgrid.helpers.mail import Mail
+    #
+    # sg = sendgrid.SendGridAPIClient(api_key=os.environ.get('SENDGRID_API_KEY'))
+    # message = Mail(
+    #     from_email='noreply@yourapp.com',
+    #     to_emails=email,
+    #     subject='Your Magic Link',
+    #     html_content=f'<p>Click here to sign in: <a href="{magic_link}">Sign In</a></p>'
+    # )
+    # response = sg.send(message)
+    # return response.status_code == 202
+
+    # Stub implementation - just print the link
+    print(f"[STUB] Would send magic link email to {email}")
+    print(f"[STUB] Magic link: {magic_link}")
+
+    return True
+
+{% endif %}
+
+# =============================================================================
+# Utility Functions
+# =============================================================================
+
+def validate_oauth_state(provided_state: str, stored_state: str) -> bool:
+    """Validate OAuth state parameter for CSRF protection.
+
+    Args:
+        provided_state: State parameter from OAuth callback
+        stored_state: State parameter stored before redirect
+
+    Returns:
+        True if states match, False otherwise
+
+    Example:
+        >>> state = secrets.token_urlsafe(32)
+        >>> # Store state in session/redis
+        >>> # After callback:
+        >>> if validate_oauth_state(callback_state, stored_state):
+        ...     # Proceed with authentication
+        ...     pass
+    """
+    return secrets.compare_digest(provided_state, stored_state)
