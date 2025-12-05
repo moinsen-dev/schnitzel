@@ -70,26 +70,44 @@ class RoleRegistry:
         """
         return self._roles.get(role_name)
 
-    def get_all_permissions(self, role_name: str) -> Set[str]:
+    def get_all_permissions(self, role_name: str, _visited: Optional[Set[str]] = None) -> Set[str]:
         """
         Get all permissions for a role including inherited permissions.
 
         Uses caching to avoid repeated inheritance resolution.
+        Detects and prevents circular inheritance chains.
 
         Args:
             role_name: Name of the role
+            _visited: Internal parameter for circular inheritance detection
 
         Returns:
             Set of all permissions (direct + inherited)
+
+        Raises:
+            ValueError: If circular inheritance is detected
 
         Example:
             >>> permissions = registry.get_all_permissions("moderator")
             >>> "users:read" in permissions
             True
         """
-        # Check cache first
-        if role_name in self._permission_cache:
+        # Check cache first (only if not in recursion)
+        if _visited is None and role_name in self._permission_cache:
             return self._permission_cache[role_name]
+
+        # Initialize visited set for circular detection
+        if _visited is None:
+            _visited = set()
+
+        # Check for circular inheritance
+        if role_name in _visited:
+            raise ValueError(
+                f"Circular inheritance detected: {role_name} is already in inheritance chain"
+            )
+
+        # Mark this role as visited
+        _visited.add(role_name)
 
         # Get role
         role = self.get_role(role_name)
@@ -101,11 +119,13 @@ class RoleRegistry:
 
         # Recursively add inherited permissions
         for parent_role_name in role.inherits:
-            parent_permissions = self.get_all_permissions(parent_role_name)
+            parent_permissions = self.get_all_permissions(parent_role_name, _visited.copy())
             all_permissions.update(parent_permissions)
 
-        # Cache and return
-        self._permission_cache[role_name] = all_permissions
+        # Cache and return (only at top level)
+        if len(_visited) == 1:
+            self._permission_cache[role_name] = all_permissions
+
         return all_permissions
 
     def check_permission(self, user_roles: List[str], permission: str) -> bool:
@@ -401,3 +421,291 @@ def require_all_permissions(permissions: List[str]):
         return credentials
 
     return dependency
+
+
+# =============================================================================
+# Role Checking Dependencies (auth_031)
+# =============================================================================
+
+def require_role(role_name: str):
+    """
+    FastAPI dependency to require a specific role.
+
+    This dependency extracts user roles from the JWT token and checks
+    if the user has the required role.
+
+    Args:
+        role_name: Role name required (e.g., "admin", "moderator")
+
+    Returns:
+        Dependency function for FastAPI routes
+
+    Example:
+        >>> @app.get("/admin", dependencies=[Depends(require_role("admin"))])
+        >>> async def admin_panel():
+        >>>     return {"admin": True}
+
+    Raises:
+        HTTPException: 403 if user doesn't have the role
+    """
+    def dependency(credentials: HTTPAuthorizationCredentials = Depends(security)):
+        # Extract token
+        token = credentials.credentials
+
+        # TODO: Decode JWT and extract user roles
+        # This is a placeholder - integrate with your JWT implementation
+        # from .jwt import verify_access_token
+        # payload = verify_access_token(token)
+        # user_roles = payload.get("roles", [])
+
+        # For now, assume roles are in the token (customize based on your JWT structure)
+        user_roles = []  # Replace with actual role extraction
+
+        # Check if user has the required role
+        if role_name not in user_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied: requires '{role_name}' role"
+            )
+
+        return credentials
+
+    return dependency
+
+
+def require_any_role(roles: List[str]):
+    """
+    FastAPI dependency to require any of multiple roles.
+
+    Args:
+        roles: List of role names (user needs at least one)
+
+    Returns:
+        Dependency function for FastAPI routes
+
+    Example:
+        >>> @app.get("/moderation", dependencies=[Depends(require_any_role(["admin", "moderator"]))])
+        >>> async def moderation_panel():
+        >>>     return {"moderation": True}
+
+    Raises:
+        HTTPException: 403 if user doesn't have any of the roles
+    """
+    def dependency(credentials: HTTPAuthorizationCredentials = Depends(security)):
+        token = credentials.credentials
+
+        # TODO: Decode JWT and extract user roles (same as above)
+        user_roles = []  # Replace with actual role extraction
+
+        # Check if user has any of the required roles
+        if not any(role in user_roles for role in roles):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied: requires one of {roles}"
+            )
+
+        return credentials
+
+    return dependency
+
+
+def require_all_roles(roles: List[str]):
+    """
+    FastAPI dependency to require all of multiple roles.
+
+    Args:
+        roles: List of role names (user needs all of them)
+
+    Returns:
+        Dependency function for FastAPI routes
+
+    Example:
+        >>> @app.get("/super-admin", dependencies=[Depends(require_all_roles(["admin", "superuser"]))])
+        >>> async def super_admin_panel():
+        >>>     return {"super_admin": True}
+
+    Raises:
+        HTTPException: 403 if user doesn't have all roles
+    """
+    def dependency(credentials: HTTPAuthorizationCredentials = Depends(security)):
+        token = credentials.credentials
+
+        # TODO: Decode JWT and extract user roles (same as above)
+        user_roles = []  # Replace with actual role extraction
+
+        # Check if user has all required roles
+        if not all(role in user_roles for role in roles):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied: requires all of {roles}"
+            )
+
+        return credentials
+
+    return dependency
+
+
+# =============================================================================
+# Role Assignment Utilities (auth_033)
+# =============================================================================
+
+def assign_role(user_id: str, role_name: str) -> None:
+    """
+    Assign a role to a user.
+
+    This is a stub function that should be implemented with your database layer.
+    The implementation depends on your user storage system (SQL, NoSQL, etc.).
+
+    Args:
+        user_id: Unique identifier for the user
+        role_name: Name of the role to assign
+
+    Example:
+        >>> assign_role("user-123", "moderator")
+
+    Implementation guide:
+        - Validate that the role exists in the registry
+        - Check if user already has the role
+        - Add role to user's roles in database
+        - Consider using a many-to-many relationship table
+
+    Example SQL implementation:
+        >>> def assign_role(user_id: str, role_name: str) -> None:
+        >>>     # Validate role exists
+        >>>     if not registry.get_role(role_name):
+        >>>         raise ValueError(f"Role '{role_name}' does not exist")
+        >>>
+        >>>     # Insert into user_roles table
+        >>>     db.execute(
+        >>>         "INSERT INTO user_roles (user_id, role_name) VALUES (?, ?) ON CONFLICT DO NOTHING",
+        >>>         (user_id, role_name)
+        >>>     )
+        >>>     db.commit()
+    """
+    # TODO: Implement with your database layer
+    raise NotImplementedError(
+        "assign_role() must be implemented with your database layer. "
+        "See function docstring for implementation guide."
+    )
+
+
+def remove_role(user_id: str, role_name: str) -> None:
+    """
+    Remove a role from a user.
+
+    This is a stub function that should be implemented with your database layer.
+
+    Args:
+        user_id: Unique identifier for the user
+        role_name: Name of the role to remove
+
+    Example:
+        >>> remove_role("user-123", "moderator")
+
+    Implementation guide:
+        - Check if user has the role before removing
+        - Remove role from user's roles in database
+        - Handle case where user doesn't have the role
+
+    Example SQL implementation:
+        >>> def remove_role(user_id: str, role_name: str) -> None:
+        >>>     result = db.execute(
+        >>>         "DELETE FROM user_roles WHERE user_id = ? AND role_name = ?",
+        >>>         (user_id, role_name)
+        >>>     )
+        >>>     db.commit()
+        >>>     if result.rowcount == 0:
+        >>>         raise ValueError(f"User does not have role '{role_name}'")
+    """
+    # TODO: Implement with your database layer
+    raise NotImplementedError(
+        "remove_role() must be implemented with your database layer. "
+        "See function docstring for implementation guide."
+    )
+
+
+def get_user_roles(user_id: str) -> List[str]:
+    """
+    Get all roles assigned to a user.
+
+    This is a stub function that should be implemented with your database layer.
+
+    Args:
+        user_id: Unique identifier for the user
+
+    Returns:
+        List of role names assigned to the user
+
+    Example:
+        >>> roles = get_user_roles("user-123")
+        >>> print(roles)  # ["user", "moderator"]
+
+    Implementation guide:
+        - Query database for all roles assigned to user
+        - Return list of role names
+        - Return empty list if user has no roles
+
+    Example SQL implementation:
+        >>> def get_user_roles(user_id: str) -> List[str]:
+        >>>     result = db.execute(
+        >>>         "SELECT role_name FROM user_roles WHERE user_id = ?",
+        >>>         (user_id,)
+        >>>     )
+        >>>     return [row[0] for row in result.fetchall()]
+    """
+    # TODO: Implement with your database layer
+    raise NotImplementedError(
+        "get_user_roles() must be implemented with your database layer. "
+        "See function docstring for implementation guide."
+    )
+
+
+def set_user_roles(user_id: str, roles: List[str]) -> None:
+    """
+    Set all roles for a user (replaces existing roles).
+
+    This is a stub function that should be implemented with your database layer.
+
+    Args:
+        user_id: Unique identifier for the user
+        roles: List of role names to assign (replaces all existing roles)
+
+    Example:
+        >>> set_user_roles("user-123", ["user", "moderator"])
+
+    Implementation guide:
+        - Validate that all roles exist in the registry
+        - Remove all existing roles for the user
+        - Add all new roles in a transaction
+        - Use transaction to ensure atomic operation
+
+    Example SQL implementation:
+        >>> def set_user_roles(user_id: str, roles: List[str]) -> None:
+        >>>     # Validate all roles exist
+        >>>     for role_name in roles:
+        >>>         if not registry.get_role(role_name):
+        >>>             raise ValueError(f"Role '{role_name}' does not exist")
+        >>>
+        >>>     # Begin transaction
+        >>>     db.begin()
+        >>>     try:
+        >>>         # Remove all existing roles
+        >>>         db.execute("DELETE FROM user_roles WHERE user_id = ?", (user_id,))
+        >>>
+        >>>         # Add new roles
+        >>>         for role_name in roles:
+        >>>             db.execute(
+        >>>                 "INSERT INTO user_roles (user_id, role_name) VALUES (?, ?)",
+        >>>                 (user_id, role_name)
+        >>>             )
+        >>>
+        >>>         db.commit()
+        >>>     except Exception:
+        >>>         db.rollback()
+        >>>         raise
+    """
+    # TODO: Implement with your database layer
+    raise NotImplementedError(
+        "set_user_roles() must be implemented with your database layer. "
+        "See function docstring for implementation guide."
+    )

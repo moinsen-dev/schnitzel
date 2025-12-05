@@ -1,0 +1,344 @@
+"""Generated session management utilities from Schnitzel schema."""
+
+import json
+import secrets
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional
+from redis import Redis
+from redis.exceptions import RedisError
+
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+class SessionConfig:
+    """Session configuration from schema."""
+
+    storage: str = "{{ session_config.storage | default('redis') }}"
+    expiry: int = {{ session_config.expiry | default(3600) }}  # seconds
+    sliding_window: bool = {{ session_config.sliding_window | default(True) | string | capitalize }}
+    multi_device: bool = {{ session_config.multi_device | default(True) | string | capitalize }}
+    {% if session_config.remember_me_duration %}
+    remember_me_duration: int = {{ session_config.remember_me_duration }}  # seconds
+    {% else %}
+    remember_me_duration: Optional[int] = None
+    {% endif %}
+
+
+# Default configuration
+session_config = SessionConfig()
+
+
+# =============================================================================
+# Session Store
+# =============================================================================
+
+class SessionStore:
+    """Redis-based session store with TTL and sliding expiration support.
+
+    Features:
+    - Unique session ID generation using secrets.token_urlsafe
+    - Session data stored as JSON in Redis
+    - Automatic expiry using Redis TTL
+    - Sliding expiration: reset TTL on each access
+    - Session key format: "session:{session_id}"
+    """
+
+    def __init__(
+        self,
+        redis_client: Optional[Redis] = None,
+        redis_host: str = "localhost",
+        redis_port: int = 6379,
+        redis_db: int = 0,
+        redis_password: Optional[str] = None,
+    ):
+        """Initialize session store with Redis connection.
+
+        Args:
+            redis_client: Pre-configured Redis client (optional)
+            redis_host: Redis server host (default: localhost)
+            redis_port: Redis server port (default: 6379)
+            redis_db: Redis database number (default: 0)
+            redis_password: Redis password (optional)
+
+        Example:
+            >>> store = SessionStore()
+            >>> session_id = store.create_session("user-123", {"email": "user@example.com"})
+        """
+        if redis_client:
+            self.redis = redis_client
+        else:
+            self.redis = Redis(
+                host=redis_host,
+                port=redis_port,
+                db=redis_db,
+                password=redis_password,
+                decode_responses=True,
+            )
+
+    def _get_session_key(self, session_id: str) -> str:
+        """Generate Redis key for session.
+
+        Args:
+            session_id: Unique session identifier
+
+        Returns:
+            Redis key in format "session:{session_id}"
+        """
+        return f"session:{session_id}"
+
+    def create_session(
+        self,
+        user_id: str,
+        data: Optional[Dict[str, Any]] = None,
+        remember_me: bool = False,
+    ) -> str:
+        """Create a new session with unique session ID.
+
+        Generates a secure random session ID using secrets.token_urlsafe,
+        stores user data as JSON in Redis, and sets TTL for automatic expiry.
+
+        Args:
+            user_id: User identifier to associate with session
+            data: Optional additional session data to store
+            remember_me: If True, use extended remember_me_duration for TTL
+
+        Returns:
+            Unique session ID
+
+        Raises:
+            RedisError: If Redis operation fails
+
+        Example:
+            >>> session_id = store.create_session(
+            ...     "user-123",
+            ...     {"email": "user@example.com", "role": "admin"}
+            ... )
+        """
+        # Generate unique session ID (32 bytes = 43 characters base64url)
+        session_id = secrets.token_urlsafe(32)
+
+        # Build session data
+        session_data = {
+            "user_id": user_id,
+            "created_at": datetime.utcnow().isoformat(),
+            "last_accessed": datetime.utcnow().isoformat(),
+        }
+
+        # Merge additional data
+        if data:
+            session_data.update(data)
+
+        # Determine TTL
+        if remember_me and session_config.remember_me_duration:
+            ttl = session_config.remember_me_duration
+        else:
+            ttl = session_config.expiry
+
+        # Store in Redis with TTL
+        key = self._get_session_key(session_id)
+        try:
+            self.redis.setex(key, ttl, json.dumps(session_data))
+        except RedisError as e:
+            raise RedisError(f"Failed to create session: {e}")
+
+        return session_id
+
+    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve session data by session ID.
+
+        If sliding_window is enabled, automatically refreshes the session TTL
+        to extend the session lifetime.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            Session data as dictionary, or None if session not found or expired
+
+        Example:
+            >>> data = store.get_session("abc123...")
+            >>> if data:
+            ...     print(f"User ID: {data['user_id']}")
+        """
+        key = self._get_session_key(session_id)
+
+        try:
+            session_json = self.redis.get(key)
+            if not session_json:
+                return None
+
+            # Parse session data
+            session_data = json.loads(session_json)
+
+            # Update last accessed timestamp
+            session_data["last_accessed"] = datetime.utcnow().isoformat()
+
+            # Refresh session TTL if sliding window is enabled
+            if session_config.sliding_window:
+                self.refresh_session(session_id)
+            else:
+                # Still update the last_accessed timestamp even without sliding window
+                ttl = self.redis.ttl(key)
+                if ttl > 0:
+                    self.redis.setex(key, ttl, json.dumps(session_data))
+
+            return session_data
+
+        except (RedisError, json.JSONDecodeError):
+            return None
+
+    def update_session(self, session_id: str, data: Dict[str, Any]) -> bool:
+        """Update session data.
+
+        Merges new data with existing session data while preserving TTL.
+
+        Args:
+            session_id: Session identifier
+            data: Data to merge into session
+
+        Returns:
+            True if session was updated, False if session not found
+
+        Example:
+            >>> updated = store.update_session(
+            ...     "abc123...",
+            ...     {"last_page": "/dashboard"}
+            ... )
+        """
+        key = self._get_session_key(session_id)
+
+        try:
+            # Get current session data
+            session_json = self.redis.get(key)
+            if not session_json:
+                return False
+
+            # Get current TTL
+            ttl = self.redis.ttl(key)
+            if ttl <= 0:
+                return False
+
+            # Parse and merge data
+            session_data = json.loads(session_json)
+            session_data.update(data)
+            session_data["last_accessed"] = datetime.utcnow().isoformat()
+
+            # Write back with same TTL
+            self.redis.setex(key, ttl, json.dumps(session_data))
+            return True
+
+        except (RedisError, json.JSONDecodeError):
+            return False
+
+    def delete_session(self, session_id: str) -> bool:
+        """Delete a session.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            True if session was deleted, False if session not found
+
+        Example:
+            >>> store.delete_session("abc123...")
+        """
+        key = self._get_session_key(session_id)
+
+        try:
+            result = self.redis.delete(key)
+            return result > 0
+        except RedisError:
+            return False
+
+    def refresh_session(self, session_id: str) -> bool:
+        """Refresh session TTL for sliding expiration.
+
+        Resets the TTL to the configured expiry duration, effectively
+        extending the session lifetime on each access.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            True if session TTL was refreshed, False if session not found
+
+        Example:
+            >>> store.refresh_session("abc123...")
+        """
+        key = self._get_session_key(session_id)
+
+        try:
+            # Check if session exists
+            if not self.redis.exists(key):
+                return False
+
+            # Reset TTL to full expiry duration
+            self.redis.expire(key, session_config.expiry)
+            return True
+
+        except RedisError:
+            return False
+
+    def get_user_sessions(self, user_id: str) -> list[str]:
+        """Get all active session IDs for a user.
+
+        Only works if multi_device is enabled. Scans all session keys
+        and returns those belonging to the specified user.
+
+        Note: This operation can be slow on large datasets due to Redis SCAN.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            List of active session IDs for the user
+
+        Example:
+            >>> sessions = store.get_user_sessions("user-123")
+            >>> print(f"User has {len(sessions)} active sessions")
+        """
+        if not session_config.multi_device:
+            return []
+
+        try:
+            user_sessions = []
+            # Scan for all session keys
+            for key in self.redis.scan_iter("session:*"):
+                session_json = self.redis.get(key)
+                if session_json:
+                    session_data = json.loads(session_json)
+                    if session_data.get("user_id") == user_id:
+                        # Extract session_id from key "session:{session_id}"
+                        session_id = key.split(":", 1)[1]
+                        user_sessions.append(session_id)
+
+            return user_sessions
+
+        except (RedisError, json.JSONDecodeError):
+            return []
+
+    def delete_user_sessions(self, user_id: str) -> int:
+        """Delete all sessions for a user.
+
+        Useful for logout from all devices or account security actions.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            Number of sessions deleted
+
+        Example:
+            >>> deleted = store.delete_user_sessions("user-123")
+            >>> print(f"Deleted {deleted} sessions")
+        """
+        session_ids = self.get_user_sessions(user_id)
+        deleted_count = 0
+
+        for session_id in session_ids:
+            if self.delete_session(session_id):
+                deleted_count += 1
+
+        return deleted_count
