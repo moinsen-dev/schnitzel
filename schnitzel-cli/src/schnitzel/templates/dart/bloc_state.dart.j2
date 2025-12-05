@@ -1,11 +1,21 @@
 part of '{{ model_name_snake }}_bloc.dart';
 
+
+// =============================================================================
+// State Base Class
+// =============================================================================
+
 abstract class {{ model_name }}State extends Equatable {
   const {{ model_name }}State();
 
   @override
   List<Object?> get props => [];
 }
+
+
+// =============================================================================
+// State Types
+// =============================================================================
 
 /// Initial state before any operation
 class {{ model_name }}Initial extends {{ model_name }}State {

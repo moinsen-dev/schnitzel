@@ -165,6 +165,7 @@ class SchemaDiff:
         self.nullable_changes: Dict[str, Dict[str, Dict[str, bool]]] = {}  # model -> {col -> {old, new}}
         self.unique_changes: Dict[str, Dict[str, Dict[str, bool]]] = {}  # model -> {col -> {old, new}}
         self.index_changes: Dict[str, Dict[str, Dict[str, bool]]] = {}  # model -> {col -> {old, new}}
+        self.default_changes: Dict[str, Dict[str, Dict[str, Any]]] = {}  # model -> {col -> {old, new}}
 
         rename_hints = rename_hints or {}
 
@@ -293,6 +294,17 @@ class SchemaDiff:
                             "new": new_index,
                         }
 
+                    # Check if default value has changed
+                    old_default = old_field.get("default")
+                    new_default = new_field.get("default")
+                    if old_default != new_default:
+                        if new_model_name not in self.default_changes:
+                            self.default_changes[new_model_name] = {}
+                        self.default_changes[new_model_name][field_name] = {
+                            "old": old_default,
+                            "new": new_default,
+                        }
+
     def is_empty(self) -> bool:
         """Check if there are no changes.
 
@@ -310,6 +322,7 @@ class SchemaDiff:
             and not self.nullable_changes
             and not self.unique_changes
             and not self.index_changes
+            and not self.default_changes
         )
 
     def has_changes(self) -> bool:
@@ -816,6 +829,168 @@ class AlembicMigrationGenerator:
         s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
         return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
 
+    def _format_default_value_for_sql(self, default_value: Any, field_type: str) -> str:
+        """Format a default value for use in SQL statements.
+
+        Args:
+            default_value: The default value to format
+            field_type: The field type
+
+        Returns:
+            SQL-formatted default value string
+        """
+        field_type_lower = field_type.lower()
+
+        # Handle None/NULL
+        if default_value is None:
+            return "NULL"
+
+        # Handle boolean values
+        if field_type_lower in ("bool", "boolean"):
+            return "TRUE" if default_value else "FALSE"
+
+        # Handle numeric values
+        if field_type_lower in ("int", "integer", "float", "double"):
+            return str(default_value)
+
+        # Handle string values - escape single quotes
+        if field_type_lower in ("string", "str", "text"):
+            escaped = str(default_value).replace("'", "''")
+            return f"'{escaped}'"
+
+        # Handle UUID - treat as string
+        if field_type_lower == "uuid":
+            return f"'{default_value}'"
+
+        # Handle datetime - use SQL NOW() or specific timestamp
+        if field_type_lower in ("datetime", "date"):
+            if default_value in ("now", "NOW", "CURRENT_TIMESTAMP"):
+                return "CURRENT_TIMESTAMP"
+            return f"'{default_value}'"
+
+        # Default: treat as string
+        escaped = str(default_value).replace("'", "''")
+        return f"'{escaped}'"
+
+    def _format_server_default(self, default_value: Any) -> str:
+        """Format a default value for use in server_default parameter.
+
+        Args:
+            default_value: The default value to format
+
+        Returns:
+            Formatted server_default string for Alembic
+        """
+        if default_value is None:
+            return "None"
+
+        # For booleans
+        if isinstance(default_value, bool):
+            return f"sa.text('{'TRUE' if default_value else 'FALSE'}')"
+
+        # For numbers
+        if isinstance(default_value, (int, float)):
+            return f"sa.text('{default_value}')"
+
+        # For strings
+        if isinstance(default_value, str):
+            # Escape single quotes
+            escaped = default_value.replace("'", "''")
+            return f"sa.text('{escaped}')"
+
+        # Default case
+        return f"sa.text('{str(default_value)}')"
+
+    def generate_data_migration(
+        self,
+        migration_name: str,
+        table_name: str,
+        data_operations: list[Dict[str, Any]],
+        down_revision: str | None = None,
+    ) -> str:
+        """Generate a data-only migration (no schema changes).
+
+        Args:
+            migration_name: Name/description of the migration
+            table_name: Target table name
+            data_operations: List of data operations, each with:
+                - operation: 'insert' | 'update' | 'delete'
+                - values: Dict of column -> value pairs (for insert/update)
+                - where: WHERE clause condition (for update/delete)
+            down_revision: Previous migration revision ID
+
+        Returns:
+            Generated migration code as a string
+
+        Example:
+            data_operations = [
+                {
+                    "operation": "update",
+                    "values": {"status": "active"},
+                    "where": "status IS NULL"
+                },
+                {
+                    "operation": "insert",
+                    "values": {"name": "admin", "role": "superuser"}
+                }
+            ]
+        """
+        # Generate revision ID
+        revision_id = self._generate_revision_id(migration_name)
+        create_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Generate upgrade and downgrade operations
+        upgrade_ops = []
+        downgrade_ops = []
+
+        for op_def in data_operations:
+            operation = op_def.get("operation", "").lower()
+
+            if operation == "insert":
+                # Generate INSERT statement
+                values = op_def.get("values", {})
+                columns = ", ".join(values.keys())
+                value_list = ", ".join([f"'{v}'" if isinstance(v, str) else str(v) for v in values.values()])
+                sql = f"INSERT INTO {table_name} ({columns}) VALUES ({value_list})"
+                upgrade_ops.append(f"    op.execute(\"{sql}\")")
+
+                # Downgrade: DELETE the inserted row
+                where_clause = " AND ".join([f"{k} = " + (f"'{v}'" if isinstance(v, str) else str(v)) for k, v in values.items()])
+                downgrade_sql = f"DELETE FROM {table_name} WHERE {where_clause}"
+                downgrade_ops.insert(0, f"    op.execute(\"{downgrade_sql}\")")
+
+            elif operation == "update":
+                # Generate UPDATE statement
+                values = op_def.get("values", {})
+                where = op_def.get("where", "1=1")
+                set_clause = ", ".join([f"{k} = " + (f"'{v}'" if isinstance(v, str) else str(v)) for k, v in values.items()])
+                sql = f"UPDATE {table_name} SET {set_clause} WHERE {where}"
+                upgrade_ops.append(f"    op.execute(\"{sql}\")")
+
+                # Downgrade: would need original values - for now, add comment
+                downgrade_ops.insert(0, f"    # Manual intervention required: restore original values for UPDATE")
+                downgrade_ops.insert(1, f"    pass")
+
+            elif operation == "delete":
+                # Generate DELETE statement
+                where = op_def.get("where", "1=1")
+                sql = f"DELETE FROM {table_name} WHERE {where}"
+                upgrade_ops.append(f"    op.execute(\"{sql}\")")
+
+                # Downgrade: cannot restore deleted data
+                downgrade_ops.insert(0, f"    # Cannot restore deleted data")
+                downgrade_ops.insert(1, f"    pass")
+
+        # Build migration file
+        return self._build_migration_file(
+            migration_name=migration_name,
+            revision_id=revision_id,
+            down_revision=down_revision,
+            create_date=create_date,
+            upgrade_ops=upgrade_ops,
+            downgrade_ops=downgrade_ops,
+        )
+
     def _generate_indexes(self, model: Model) -> list[str]:
         """Generate CREATE INDEX statements for fields marked with index: true.
 
@@ -921,17 +1096,35 @@ class AlembicMigrationGenerator:
                     f"sa.Column('{field_name}', {col_type}, nullable={nullable}))"
                 )
 
+                # Add data migration to populate default values if field has a default and is not nullable
+                if field_def.default is not None and not nullable:
+                    default_value = self._format_default_value_for_sql(field_def.default, field_def.type)
+                    operations.append(
+                        f"    # Data migration: populate default value for new column"
+                    )
+                    operations.append(
+                        f"    op.execute(\"UPDATE {table_name} SET {field_name} = {default_value} WHERE {field_name} IS NULL\")"
+                    )
+
         # Alter column types for changed columns
         for model_name, fields_data in diff.changed_columns.items():
             table_name = self._pluralize_table_name(model_name)
 
             for field_name, change_data in fields_data.items():
                 from schnitzel.schema.models import FieldDefinition
+                old_field_def = FieldDefinition(**change_data["old"])
                 new_field_def = FieldDefinition(**change_data["new"])
 
                 new_col_type = self._get_sqlalchemy_migration_type(new_field_def)
                 nullable = new_field_def.optional or not (new_field_def.required or new_field_def.primary)
 
+                # Add comment about potential data transformation need
+                operations.append(
+                    f"    # Type change: {old_field_def.type} -> {new_field_def.type}"
+                )
+                operations.append(
+                    f"    # WARNING: You may need to add data transformation logic here"
+                )
                 operations.append(
                     f"    op.alter_column('{table_name}', '{field_name}', "
                     f"type_={new_col_type}, nullable={nullable})"
@@ -950,6 +1143,23 @@ class AlembicMigrationGenerator:
                     new_nullable = nullable_info["new"]
                     operations.append(
                         f"    op.alter_column('{table_name}', '{field_name}', nullable={new_nullable})"
+                    )
+
+        # Handle default value changes
+        for model_name, fields_data in diff.default_changes.items():
+            table_name = self._pluralize_table_name(model_name)
+            for field_name, default_info in fields_data.items():
+                new_default = default_info["new"]
+                # Format server_default value
+                if new_default is None:
+                    operations.append(
+                        f"    op.alter_column('{table_name}', '{field_name}', server_default=None)"
+                    )
+                else:
+                    # Convert Python value to SQL server_default format
+                    server_default = self._format_server_default(new_default)
+                    operations.append(
+                        f"    op.alter_column('{table_name}', '{field_name}', server_default={server_default})"
                     )
 
         # Drop columns from existing tables
@@ -1021,6 +1231,23 @@ class AlembicMigrationGenerator:
                     old_nullable = nullable_info["old"]
                     operations.append(
                         f"    op.alter_column('{table_name}', '{field_name}', nullable={old_nullable})"
+                    )
+
+        # Revert default value changes
+        for model_name, fields_data in diff.default_changes.items():
+            table_name = self._pluralize_table_name(model_name)
+            for field_name, default_info in fields_data.items():
+                old_default = default_info["old"]
+                # Format server_default value
+                if old_default is None:
+                    operations.append(
+                        f"    op.alter_column('{table_name}', '{field_name}', server_default=None)"
+                    )
+                else:
+                    # Convert Python value to SQL server_default format
+                    server_default = self._format_server_default(old_default)
+                    operations.append(
+                        f"    op.alter_column('{table_name}', '{field_name}', server_default={server_default})"
                     )
 
         # Revert column type changes for changed columns

@@ -9,6 +9,7 @@
 class {{ model.name }}(BaseModel):
     """{{ model.description or model.name + ' model.' }}"""
 
+    # Fields
     {% for field in model.fields %}
     {{ field.name }}: {{ field.type }}{% if field.default is not none %} = {{ field.default | tojson }}{% elif field.optional %} = None{% endif %}
 

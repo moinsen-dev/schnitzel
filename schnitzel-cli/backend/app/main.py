@@ -1,7 +1,33 @@
 """FastAPI application entry point for Schnitzel backend."""
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import (
+    Counter,
+    Histogram,
+    generate_latest,
+    CollectorRegistry,
+    CONTENT_TYPE_LATEST,
+)
+import time
+
+# Create custom registry for metrics
+registry = CollectorRegistry()
+
+# Define Prometheus metrics
+REQUEST_COUNT = Counter(
+    "http_requests_total",
+    "Total number of HTTP requests",
+    ["method", "endpoint", "status"],
+    registry=registry,
+)
+
+REQUEST_LATENCY = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request latency in seconds",
+    ["method", "endpoint"],
+    registry=registry,
+)
 
 app = FastAPI(
     title="Schnitzel Backend",
@@ -17,6 +43,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def metrics_middleware(request, call_next):
+    """Middleware to track request metrics."""
+    start_time = time.time()
+    response = await call_next(request)
+    duration = time.time() - start_time
+
+    # Record metrics
+    REQUEST_COUNT.labels(
+        method=request.method,
+        endpoint=request.url.path,
+        status=response.status_code,
+    ).inc()
+
+    REQUEST_LATENCY.labels(
+        method=request.method,
+        endpoint=request.url.path,
+    ).observe(duration)
+
+    return response
 
 
 @app.get("/")
@@ -36,6 +84,15 @@ async def health_check():
         "status": "healthy",
         "service": "schnitzel-backend"
     }
+
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint."""
+    return Response(
+        content=generate_latest(registry),
+        media_type=CONTENT_TYPE_LATEST,
+    )
 
 
 # Import and register generated routes

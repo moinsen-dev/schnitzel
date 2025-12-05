@@ -1,0 +1,252 @@
+name: Tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  python-tests:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Verify UV installation
+        run: uv --version
+
+      - name: Install dependencies
+        working-directory: ./schnitzel-cli
+        run: |
+          uv sync --all-extras
+
+      - name: Run tests with pytest
+        working-directory: ./schnitzel-cli
+        run: |
+          uv run pytest tests/ -v --tb=short --cov=src/schnitzel --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.11'
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./schnitzel-cli/coverage.xml
+          flags: python
+          name: python-coverage
+          fail_ci_if_error: false
+
+  python-lint:
+    name: Python Linting
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        working-directory: ./schnitzel-cli
+        run: |
+          uv sync --all-extras
+
+      - name: Run ruff format check
+        working-directory: ./schnitzel-cli
+        run: |
+          uv run ruff format --check .
+
+      - name: Run ruff lint
+        working-directory: ./schnitzel-cli
+        run: |
+          uv run ruff check .
+
+  python-type-check:
+    name: Python Type Checking
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        working-directory: ./schnitzel-cli
+        run: |
+          uv sync --all-extras
+
+      - name: Run pyright
+        working-directory: ./schnitzel-cli
+        run: |
+          uv run pyright src/
+
+  dart-analyze:
+    name: Dart/Flutter Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.24.x"
+          channel: "stable"
+
+      - name: Check for Flutter projects
+        id: check-flutter
+        run: |
+          if find . -name "pubspec.yaml" -type f | grep -q .; then
+            echo "has_flutter=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_flutter=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Analyze Flutter packages
+        if: steps.check-flutter.outputs.has_flutter == 'true'
+        run: |
+          for pubspec in $(find . -name "pubspec.yaml" -type f); do
+            dir=$(dirname "$pubspec")
+            echo "Analyzing $dir"
+            cd "$dir"
+            flutter pub get
+            flutter analyze
+            cd - > /dev/null
+          done
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        working-directory: ./schnitzel-cli
+        run: |
+          uv sync --all-extras
+
+      - name: Run integration tests
+        working-directory: ./schnitzel-cli
+        env:
+          REDIS_URL: redis://localhost:6379
+          DATABASE_URL: postgresql://test:test@localhost:5432/test_db
+        run: |
+          uv run pytest tests/integration/ -v --tb=short
+
+  build-validation:
+    name: Build Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Build package
+        working-directory: ./schnitzel-cli
+        run: |
+          uv build
+
+      - name: Verify package installation
+        working-directory: ./schnitzel-cli
+        run: |
+          uv run schnitzel --help
+
+  all-tests-passed:
+    name: All Tests Passed
+    runs-on: ubuntu-latest
+    needs: [python-tests, python-lint, python-type-check, dart-analyze, integration-tests, build-validation]
+    if: always()
+
+    steps:
+      - name: Check if all jobs passed
+        run: |
+          if [[ "${{ needs.python-tests.result }}" == "success" && \
+                "${{ needs.python-lint.result }}" == "success" && \
+                "${{ needs.python-type-check.result }}" == "success" && \
+                "${{ needs.dart-analyze.result }}" == "success" && \
+                "${{ needs.integration-tests.result }}" == "success" && \
+                "${{ needs.build-validation.result }}" == "success" ]]; then
+            echo "All tests passed!"
+            exit 0
+          else
+            echo "Some tests failed!"
+            exit 1
+          fi

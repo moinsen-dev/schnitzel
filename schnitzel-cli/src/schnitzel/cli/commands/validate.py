@@ -125,8 +125,11 @@ def validate_command(
                 console.print("FAILED")
             raise typer.Exit(code=1)
 
-        # Step 4: Check for warnings
-        has_warnings = bool(validation_result.warnings)
+        # Step 4: Check for N+1 query issues (always run this check)
+        n_plus_1_warnings = validator.detect_n_plus_1_issues(schema_obj)
+
+        # Step 5: Check for warnings
+        has_warnings = bool(validation_result.warnings) or bool(n_plus_1_warnings)
 
         # If strict mode and warnings exist, fail
         if strict and has_warnings:
@@ -185,10 +188,19 @@ def validate_command(
                 _display_schema_summary(schema_obj, validation_result)
 
                 # Display warnings if any
-                if has_warnings:
+                if validation_result.warnings:
                     console.print("\n[yellow]⚠ Naming Convention Warnings:[/yellow]\n")
                     for warning in validation_result.warnings:
                         console.print(f"[yellow]  • {warning}[/yellow]\n")
+
+                # Display N+1 query warnings
+                if n_plus_1_warnings:
+                    console.print("\n[yellow]⚠ Potential N+1 Query Issues:[/yellow]\n")
+                    for warning in n_plus_1_warnings:
+                        console.print(f"{warning}\n")
+
+                # Display strict mode hint if there are any warnings
+                if has_warnings:
                     console.print("[dim]Use --strict to treat warnings as errors[/dim]")
 
                 # Display security status if checked

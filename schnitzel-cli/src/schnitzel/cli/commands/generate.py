@@ -19,12 +19,14 @@ from schnitzel.schema.exceptions import (
     SchemaError,
     VersionError,
 )
+from schnitzel.generators.python.main import FastAPIMainGenerator
 from schnitzel.generators.python.models import PythonModelGenerator
 from schnitzel.generators.python.orm import SQLAlchemyORMGenerator
 from schnitzel.generators.python.routes import PythonRouteGenerator
 from schnitzel.generators.dart.models import DartModelGenerator
 from schnitzel.generators.dart.api_client import DartApiClientGenerator
 from schnitzel.utils.logging import get_logger
+from schnitzel.utils.network_errors import NetworkErrorHandler
 
 console = Console()
 logger = get_logger(__name__)
@@ -139,12 +141,18 @@ def _run_flutter_setup(flutter_dir: Path, quiet: bool = False) -> bool:
                 if result.stderr:
                     console.print(f"    [dim]{result.stderr.strip()[:200]}[/dim]")
             success = False
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
         if not quiet:
-            console.print("  [red]✗ flutter pub get timed out[/red]")
+            NetworkErrorHandler.handle_subprocess_error(e, "flutter pub get", quiet)
+        success = False
+    except FileNotFoundError as e:
+        if not quiet:
+            NetworkErrorHandler.handle_subprocess_error(e, "flutter", quiet)
         success = False
     except Exception as e:
-        if not quiet:
+        if not quiet and ("network" in str(e).lower() or "connection" in str(e).lower()):
+            NetworkErrorHandler.handle_subprocess_error(e, "flutter pub get", quiet)
+        elif not quiet:
             console.print(f"  [red]✗ flutter pub get error: {e}[/red]")
         success = False
 
@@ -173,9 +181,13 @@ def _run_flutter_setup(flutter_dir: Path, quiet: bool = False) -> bool:
                         for line in error_lines:
                             console.print(f"    [dim]{line[:100]}[/dim]")
                 # Don't mark as failure - build_runner may not be configured yet
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as e:
             if not quiet:
                 console.print("  [yellow]⚠ build_runner timed out[/yellow]")
+                console.print("  [dim]This may indicate network issues downloading dependencies[/dim]")
+        except FileNotFoundError as e:
+            if not quiet:
+                NetworkErrorHandler.handle_subprocess_error(e, "dart", quiet)
         except Exception as e:
             if not quiet:
                 console.print(f"  [yellow]⚠ build_runner error: {e}[/yellow]")
@@ -226,12 +238,19 @@ def _run_python_setup(backend_dir: Path, quiet: bool = False) -> bool:
                 if result.stderr:
                     console.print(f"    [dim]{result.stderr.strip()[:200]}[/dim]")
             return False
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
         if not quiet:
             console.print("  [yellow]⚠ uv sync timed out[/yellow]")
+            console.print("  [dim]This may indicate network issues downloading dependencies[/dim]")
+        return False
+    except FileNotFoundError as e:
+        if not quiet:
+            NetworkErrorHandler.handle_subprocess_error(e, "uv", quiet)
         return False
     except Exception as e:
-        if not quiet:
+        if not quiet and ("network" in str(e).lower() or "connection" in str(e).lower()):
+            NetworkErrorHandler.handle_subprocess_error(e, "uv sync", quiet)
+        elif not quiet:
             console.print(f"  [yellow]⚠ uv sync error: {e}[/yellow]")
         return False
 
@@ -383,6 +402,48 @@ def _generate_routes(schema, output_dir: Path, schema_path: Path, force: bool, d
         'path': output_file,
         'size': size,
         'type': 'routes'
+    }
+
+
+def _generate_main(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
+    """Generate FastAPI main.py entry point with CORS support.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        Dictionary with file info: {'path': Path, 'size': int, 'type': str} or None if skipped
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating FastAPI main.py...[/blue]")
+
+    # Determine output path: output_dir/backend/app
+    main_output_dir = output_dir / "backend" / "app"
+
+    # Check if main.py already exists
+    main_file = main_output_dir / "main.py"
+    if main_file.exists() and not force and not dry_run:
+        console.print(f"[yellow]Warning: {main_file} already exists. Use --force to overwrite.[/yellow]")
+        return None
+
+    if dry_run:
+        return {'path': main_file, 'size': 0, 'type': 'main'}
+
+    # Generate FastAPI main.py
+    generator = FastAPIMainGenerator()
+    output_file, size = generator.generate_to_file(schema, main_output_dir, schema_source=schema_path.name)
+
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated backend/app/main.py[/green] (with CORS middleware)")
+
+    return {
+        'path': output_file,
+        'size': size,
+        'type': 'main'
     }
 
 
@@ -641,13 +702,13 @@ def _run_generation(
         # Count total generation steps for progress tracking
         generation_steps = []
         if target == "python":
-            generation_steps = ["python", "orm", "routes"]
+            generation_steps = ["python", "orm", "routes", "main"]
         elif target == "dart":
             generation_steps = ["dart", "dart_api"]
         elif target == "docker":
             generation_steps = ["docker"]
         elif target == "all":
-            generation_steps = ["python", "orm", "routes", "dart", "dart_api", "docker"]
+            generation_steps = ["python", "orm", "routes", "main", "dart", "dart_api", "docker"]
 
         # Handle dry-run mode
         if dry_run:
@@ -689,6 +750,15 @@ def _run_generation(
                         result['endpoint_count'] = len(schema.endpoints) if schema.endpoints else 0
                         generated_files.append(result)
                         total_size += result['size']
+                elif step == "main":
+                    result = _generate_main(schema, output_path, schema_path, force, dry_run)
+                    if result:
+                        # Calculate actual size by generating content
+                        gen = FastAPIMainGenerator()
+                        content = gen.generate(schema)
+                        result['size'] = len(content.encode('utf-8'))
+                        generated_files.append(result)
+                        total_size += result['size']
                 elif step == "dart":
                     result = _generate_dart(schema, output_path, schema_path, force, dry_run)
                     if result:
@@ -725,6 +795,7 @@ def _run_generation(
                         'python': 'Python models',
                         'orm': 'SQLAlchemy ORM',
                         'routes': 'FastAPI routes',
+                        'main': 'FastAPI main.py',
                         'dart': 'Dart models',
                         'dart_api': 'Dart API client',
                         'docker': 'Docker Compose'
@@ -799,6 +870,10 @@ def _run_generation(
                             result = _generate_routes(schema, output_path, schema_path, force, dry_run)
                             if result:
                                 generated_files.append(result['path'])
+                        elif step == "main":
+                            result = _generate_main(schema, output_path, schema_path, force, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
                         elif step == "dart":
                             result = _generate_dart(schema, output_path, schema_path, force, dry_run)
                             if result:
@@ -844,6 +919,10 @@ def _run_generation(
                             generated_files.append(result['path'])
                     elif step == "routes":
                         result = _generate_routes(schema, output_path, schema_path, force, dry_run)
+                        if result:
+                            generated_files.append(result['path'])
+                    elif step == "main":
+                        result = _generate_main(schema, output_path, schema_path, force, dry_run)
                         if result:
                             generated_files.append(result['path'])
                     elif step == "dart":

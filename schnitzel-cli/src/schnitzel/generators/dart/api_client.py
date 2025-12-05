@@ -6,6 +6,7 @@ Generates Dio-based HTTP client with type-safe method signatures for each API en
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Set
+from schnitzel import __version__
 from schnitzel.schema.models import SchnitzelSchema, DART_TYPE_MAP
 
 
@@ -45,10 +46,12 @@ class DartApiClientGenerator:
         include_auth_interceptor: bool = True,
         include_retry_interceptor: bool = True,
         include_log_interceptor: bool = True,
+        include_cache_interceptor: bool = True,
         default_timeout_seconds: int = 30,
         max_retries: int = 3,
         retry_delay_ms: int = 1000,
         retryable_status_codes: list[int] | None = None,
+        cache_max_age_seconds: int = 300,
     ) -> str:
         """
         Generate Dart API client from a schema.
@@ -58,10 +61,12 @@ class DartApiClientGenerator:
             include_auth_interceptor: Whether to include auth token interceptor (default: True)
             include_retry_interceptor: Whether to include retry interceptor (default: True)
             include_log_interceptor: Whether to include request/response logging (default: True)
+            include_cache_interceptor: Whether to include offline cache interceptor (default: True)
             default_timeout_seconds: Default timeout in seconds for all requests (default: 30)
             max_retries: Maximum number of retry attempts (default: 3)
             retry_delay_ms: Base delay between retries in milliseconds (default: 1000)
             retryable_status_codes: HTTP status codes that trigger retries (default: [500, 502, 503, 504])
+            cache_max_age_seconds: Maximum age in seconds for cached responses (default: 300)
 
         Returns:
             Generated Dart code as a string
@@ -79,10 +84,12 @@ class DartApiClientGenerator:
             return self._generate_empty_client(
                 include_auth_interceptor,
                 include_retry_interceptor,
+                include_cache_interceptor,
                 default_timeout_seconds,
                 max_retries,
                 retry_delay_ms,
                 retryable_status_codes,
+                cache_max_age_seconds,
             )
 
         # Parse endpoints and generate methods
@@ -110,6 +117,10 @@ class DartApiClientGenerator:
         if self.model_imports:
             self.imports.add("import '../models/models.dart';")
 
+        # Add cache interceptor import if requested
+        if include_cache_interceptor:
+            self.imports.add("import 'package:dio_cache_interceptor/dio_cache_interceptor.dart';")
+
         # Build final code
         imports_code = "\n".join(sorted(self.imports))
         methods_code = "\n\n".join(client_methods)
@@ -128,6 +139,13 @@ class DartApiClientGenerator:
         auth_interceptor_code = ""
         if include_auth_interceptor:
             auth_interceptor_code = self._generate_auth_interceptor() + "\n\n"
+
+        # Generate cache interceptor if requested
+        cache_interceptor_code = ""
+        if include_cache_interceptor:
+            cache_interceptor_code = self._generate_cache_interceptor(
+                cache_max_age_seconds
+            ) + "\n\n"
 
         # Build interceptor setup code (in constructor body)
         interceptor_setup = []
@@ -157,6 +175,20 @@ class DartApiClientGenerator:
                 "      _dio.interceptors.add(AuthInterceptor(token));\n"
                 "    }"
             )
+        if include_cache_interceptor:
+            interceptor_setup.append(
+                "    if (cacheStore != null) {\n"
+                f"      _dio.interceptors.add(DioCacheInterceptor(\n"
+                f"        options: CacheOptions(\n"
+                f"          store: cacheStore,\n"
+                f"          maxStale: const Duration(seconds: {cache_max_age_seconds}),\n"
+                f"          policy: CachePolicy.request,\n"
+                f"          priority: CachePriority.normal,\n"
+                f"          hitCacheOnErrorExcept: [401, 403],\n"
+                f"        ),\n"
+                f"      ));\n"
+                f"    }}"
+            )
 
         # Build the ApiClient class with optional interceptor setup
         interceptor_setup_code = "\n".join(interceptor_setup) if interceptor_setup else ""
@@ -164,6 +196,9 @@ class DartApiClientGenerator:
 
         # Add enableLogging parameter if log interceptor is included
         logging_param = "      bool enableLogging = false,\n" if include_log_interceptor else ""
+
+        # Add cacheStore parameter if cache interceptor is included
+        cache_param = "      CacheStore? cacheStore,\n" if include_cache_interceptor else ""
 
         if interceptor_setup:
             class_code = f"""class ApiClient {{
@@ -176,7 +211,7 @@ class DartApiClientGenerator:
   ApiClient(
     this._dio,
     {{
-{("      String? token," if include_auth_interceptor else "")}{logging_param}      Map<String, String>? defaultHeaders,
+{("      String? token," if include_auth_interceptor else "")}{logging_param}{cache_param}      Map<String, String>? defaultHeaders,
       this.connectTimeout = const Duration(seconds: {default_timeout_seconds}),
       this.receiveTimeout = const Duration(seconds: {default_timeout_seconds}),
       this.sendTimeout = const Duration(seconds: {default_timeout_seconds}),
@@ -208,7 +243,7 @@ class DartApiClientGenerator:
 {self._indent(methods_code, 2)}
 }}"""
 
-        return f"{imports_code}\n\n{exception_class}\n\n{retry_interceptor_code}{auth_interceptor_code}{class_code}\n"
+        return f"{imports_code}\n\n{exception_class}\n\n{retry_interceptor_code}{auth_interceptor_code}{cache_interceptor_code}{class_code}\n"
 
     def generate_to_file(
         self,
@@ -245,7 +280,7 @@ class DartApiClientGenerator:
 
         # Build header comment
         timestamp = datetime.now().isoformat()
-        header = f"""// Generated by Schnitzel Framework
+        header = f"""// Generated by Schnitzel Framework v{__version__}
 // DO NOT EDIT - This file is auto-generated
 // Generated at: {timestamp}
 // Source: {schema_source}
@@ -278,13 +313,20 @@ class DartApiClientGenerator:
         self,
         include_auth_interceptor: bool = True,
         include_retry_interceptor: bool = True,
+        include_cache_interceptor: bool = True,
         default_timeout_seconds: int = 30,
         max_retries: int = 3,
         retry_delay_ms: int = 1000,
         retryable_status_codes: list[int] | None = None,
+        cache_max_age_seconds: int = 300,
     ) -> str:
         """Generate a minimal API client when no endpoints are defined."""
         self.imports.add("import 'package:dio/dio.dart';")
+
+        # Add cache interceptor import if requested
+        if include_cache_interceptor:
+            self.imports.add("import 'package:dio_cache_interceptor/dio_cache_interceptor.dart';")
+
         imports_code = "\n".join(sorted(self.imports))
         exception_class = self._generate_api_exception_class()
 
@@ -303,6 +345,13 @@ class DartApiClientGenerator:
         if include_auth_interceptor:
             auth_interceptor_code = self._generate_auth_interceptor() + "\n\n"
 
+        # Generate cache interceptor if requested
+        cache_interceptor_code = ""
+        if include_cache_interceptor:
+            cache_interceptor_code = self._generate_cache_interceptor(
+                cache_max_age_seconds
+            ) + "\n\n"
+
         # Build interceptor setup code
         interceptor_setup = []
         if include_retry_interceptor:
@@ -320,15 +369,31 @@ class DartApiClientGenerator:
                 "      _dio.interceptors.add(AuthInterceptor(token));\n"
                 "    }"
             )
+        if include_cache_interceptor:
+            interceptor_setup.append(
+                "    if (cacheStore != null) {\n"
+                f"      _dio.interceptors.add(DioCacheInterceptor(\n"
+                f"        options: CacheOptions(\n"
+                f"          store: cacheStore,\n"
+                f"          maxStale: const Duration(seconds: {cache_max_age_seconds}),\n"
+                f"          policy: CachePolicy.request,\n"
+                f"          priority: CachePriority.normal,\n"
+                f"          hitCacheOnErrorExcept: [401, 403],\n"
+                f"        ),\n"
+                f"      ));\n"
+                f"    }}"
+            )
 
         interceptor_setup_code = "\n".join(interceptor_setup) if interceptor_setup else ""
+
+        cache_param = "      CacheStore? cacheStore,\n" if include_cache_interceptor else ""
 
         if interceptor_setup:
             return f"""{imports_code}
 
 {exception_class}
 
-{retry_interceptor_code}{auth_interceptor_code}class ApiClient {{
+{retry_interceptor_code}{auth_interceptor_code}{cache_interceptor_code}class ApiClient {{
   final Dio _dio;
   final Map<String, String> _defaultHeaders;
   final Duration? connectTimeout;
@@ -338,8 +403,7 @@ class DartApiClientGenerator:
   ApiClient(
     this._dio,
     {{
-{("      String? token," if include_auth_interceptor else "")}
-      Map<String, String>? defaultHeaders,
+{("      String? token," if include_auth_interceptor else "")}{cache_param}      Map<String, String>? defaultHeaders,
       this.connectTimeout = const Duration(seconds: {default_timeout_seconds}),
       this.receiveTimeout = const Duration(seconds: {default_timeout_seconds}),
       this.sendTimeout = const Duration(seconds: {default_timeout_seconds}),
@@ -510,6 +574,41 @@ class ApiClient {{
   }}
 }}"""
 
+    def _generate_cache_interceptor(
+        self,
+        cache_max_age_seconds: int = 300,
+    ) -> str:
+        """Generate documentation for cache interceptor using dio_cache_interceptor.
+
+        The actual interceptor is added via DioCacheInterceptor from dio_cache_interceptor package.
+        This method generates documentation explaining how to use caching.
+
+        Args:
+            cache_max_age_seconds: Maximum age in seconds for cached responses (default: 300)
+
+        Returns:
+            Dart documentation comment explaining cache setup
+        """
+        return f"""// Cache Interceptor Configuration
+// To enable response caching, pass a CacheStore instance to the ApiClient constructor.
+// Example with MemCacheStore (in-memory caching):
+//
+//   final cacheStore = MemCacheStore();
+//   final apiClient = ApiClient(
+//     dio,
+//     cacheStore: cacheStore,
+//   );
+//
+// The cache uses the following configuration:
+//   - maxStale: {cache_max_age_seconds} seconds (how long responses are cached)
+//   - policy: CachePolicy.request (respects HTTP cache headers)
+//   - priority: CachePriority.normal
+//   - hitCacheOnErrorExcept: [401, 403] (use cache on errors except auth failures)
+//
+// For persistent caching, use HiveCacheStore:
+//   - Add hive_flutter dependency to pubspec.yaml
+//   - Initialize: await Hive.initFlutter();
+//   - Create store: final cacheStore = HiveCacheStore(await HiveStore.open());"""
 
     def _generate_client_method(
         self,
@@ -556,13 +655,15 @@ class ApiClient {{
                 query_type = self._get_dart_type(query_def.get("type", "string"))
                 optional = query_def.get("optional", False)
                 default = query_def.get("default")
+                description = query_def.get("description", "")
 
                 # Track query params for later use in queryParameters map
                 query_params.append({
                     "name": query_name,
                     "type": query_type,
                     "optional": optional,
-                    "default": default
+                    "default": default,
+                    "description": description
                 })
 
                 # Build parameter signature with default values
@@ -582,8 +683,10 @@ class ApiClient {{
 
         # Add request body for POST/PUT/PATCH
         body_param = None
+        has_body = False
         if method_lower in ["post", "put", "patch"]:
             if "body" in endpoint_def:
+                has_body = True
                 body_type = endpoint_def["body"]
                 if isinstance(body_type, str):
                     # Reference to a model
@@ -659,9 +762,14 @@ class ApiClient {{
                     if 'body' in param and '=' not in param:
                         named_params[i] = f"required {param}"
 
-            # Add headers and timeout parameters (always optional)
+            # Add headers, timeout, and cancellation parameters (always optional)
             named_params.append("Map<String, String>? headers")
             named_params.append("Duration? requestTimeout")
+            named_params.append("CancelToken? cancelToken")
+
+            # Add progress callbacks for methods with body (uploads)
+            if has_body:
+                named_params.append("void Function(int, int)? onSendProgress")
 
             if positional_params and named_params:
                 params_str = ", ".join(positional_params) + ", {" + ", ".join(named_params) + "}"
@@ -670,11 +778,12 @@ class ApiClient {{
             else:
                 params_str = ", ".join(params) if params else ""
         else:
-            # No optional params - add headers and timeout as optional named parameters
+            # No optional params - add headers, timeout, and cancellation as optional named parameters
+            progress_param = ", void Function(int, int)? onSendProgress" if has_body else ""
             if params:
-                params_str = ", ".join(params) + ", {Map<String, String>? headers, Duration? requestTimeout}"
+                params_str = ", ".join(params) + f", {{Map<String, String>? headers, Duration? requestTimeout, CancelToken? cancelToken{progress_param}}}"
             else:
-                params_str = "{Map<String, String>? headers, Duration? requestTimeout}"
+                params_str = f"{{Map<String, String>? headers, Duration? requestTimeout, CancelToken? cancelToken{progress_param}}}"
 
         function_signature = f"Future<{return_type}> {method_name}({params_str}) async {{"
 
@@ -699,58 +808,66 @@ class ApiClient {{
         options_parts.append("receiveTimeout: requestTimeout ?? receiveTimeout")
         options_code = "options: Options(" + ", ".join(options_parts) + ")"
 
+        # Add onSendProgress if this is a request with body
+        progress_code = ""
+        if has_body:
+            progress_code = ", onSendProgress: onSendProgress"
+
+        # Add cancelToken parameter
+        cancel_token_code = ", cancelToken: cancelToken"
+
         # Build the HTTP call with options
         http_method = method_lower
         if http_method == "get":
             if query_params_code:
-                call_code = f"final response = await _dio.get('{dart_path}', {query_params_code}, {options_code});"
+                call_code = f"final response = await _dio.get('{dart_path}', {query_params_code}, {options_code}{cancel_token_code});"
             else:
-                call_code = f"final response = await _dio.get('{dart_path}', {options_code});"
+                call_code = f"final response = await _dio.get('{dart_path}', {options_code}{cancel_token_code});"
         elif http_method == "post":
             if body_param:
                 if query_params_code:
-                    call_code = f"final response = await _dio.post('{dart_path}', data: body.toJson(), {query_params_code}, {options_code});"
+                    call_code = f"final response = await _dio.post('{dart_path}', data: body.toJson(), {query_params_code}, {options_code}{progress_code}{cancel_token_code});"
                 else:
-                    call_code = f"final response = await _dio.post('{dart_path}', data: body.toJson(), {options_code});"
+                    call_code = f"final response = await _dio.post('{dart_path}', data: body.toJson(), {options_code}{progress_code}{cancel_token_code});"
             else:
                 if query_params_code:
-                    call_code = f"final response = await _dio.post('{dart_path}', {query_params_code}, {options_code});"
+                    call_code = f"final response = await _dio.post('{dart_path}', {query_params_code}, {options_code}{progress_code}{cancel_token_code});"
                 else:
-                    call_code = f"final response = await _dio.post('{dart_path}', {options_code});"
+                    call_code = f"final response = await _dio.post('{dart_path}', {options_code}{progress_code}{cancel_token_code});"
         elif http_method == "put":
             if body_param:
                 if query_params_code:
-                    call_code = f"final response = await _dio.put('{dart_path}', data: body.toJson(), {query_params_code}, {options_code});"
+                    call_code = f"final response = await _dio.put('{dart_path}', data: body.toJson(), {query_params_code}, {options_code}{progress_code}{cancel_token_code});"
                 else:
-                    call_code = f"final response = await _dio.put('{dart_path}', data: body.toJson(), {options_code});"
+                    call_code = f"final response = await _dio.put('{dart_path}', data: body.toJson(), {options_code}{progress_code}{cancel_token_code});"
             else:
                 if query_params_code:
-                    call_code = f"final response = await _dio.put('{dart_path}', {query_params_code}, {options_code});"
+                    call_code = f"final response = await _dio.put('{dart_path}', {query_params_code}, {options_code}{progress_code}{cancel_token_code});"
                 else:
-                    call_code = f"final response = await _dio.put('{dart_path}', {options_code});"
+                    call_code = f"final response = await _dio.put('{dart_path}', {options_code}{progress_code}{cancel_token_code});"
         elif http_method == "patch":
             if body_param:
                 if query_params_code:
-                    call_code = f"final response = await _dio.patch('{dart_path}', data: body.toJson(), {query_params_code}, {options_code});"
+                    call_code = f"final response = await _dio.patch('{dart_path}', data: body.toJson(), {query_params_code}, {options_code}{progress_code}{cancel_token_code});"
                 else:
-                    call_code = f"final response = await _dio.patch('{dart_path}', data: body.toJson(), {options_code});"
+                    call_code = f"final response = await _dio.patch('{dart_path}', data: body.toJson(), {options_code}{progress_code}{cancel_token_code});"
             else:
                 if query_params_code:
-                    call_code = f"final response = await _dio.patch('{dart_path}', {query_params_code}, {options_code});"
+                    call_code = f"final response = await _dio.patch('{dart_path}', {query_params_code}, {options_code}{progress_code}{cancel_token_code});"
                 else:
-                    call_code = f"final response = await _dio.patch('{dart_path}', {options_code});"
+                    call_code = f"final response = await _dio.patch('{dart_path}', {options_code}{progress_code}{cancel_token_code});"
         elif http_method == "delete":
             if query_params_code:
-                call_code = f"final response = await _dio.delete('{dart_path}', {query_params_code}, {options_code});"
+                call_code = f"final response = await _dio.delete('{dart_path}', {query_params_code}, {options_code}{cancel_token_code});"
             else:
-                call_code = f"final response = await _dio.delete('{dart_path}', {options_code});"
+                call_code = f"final response = await _dio.delete('{dart_path}', {options_code}{cancel_token_code});"
         else:
             # Merge options for custom methods
             merged_options = f"Options(method: '{method.upper()}', headers: mergedHeaders, sendTimeout: requestTimeout ?? sendTimeout, receiveTimeout: requestTimeout ?? receiveTimeout)"
             if query_params_code:
-                call_code = f"final response = await _dio.request('{dart_path}', options: {merged_options}, {query_params_code});"
+                call_code = f"final response = await _dio.request('{dart_path}', options: {merged_options}, {query_params_code}{cancel_token_code});"
             else:
-                call_code = f"final response = await _dio.request('{dart_path}', options: {merged_options});"
+                call_code = f"final response = await _dio.request('{dart_path}', options: {merged_options}{cancel_token_code});"
 
         # Add response deserialization if there's a response model
         if response_model:
@@ -779,9 +896,52 @@ class ApiClient {{
 
         function_body = "\n".join(f"  {line}" for line in body_lines)
 
-        # Add description as comment
+        # Build documentation comment with endpoint description and parameter docs
+        doc_lines = []
         description = endpoint_def.get("description", "")
-        docstring = f"/// {description}" if description else ""
+
+        if description:
+            doc_lines.append(f"/// {description}")
+            doc_lines.append("///")
+
+        # Add parameter documentation
+        param_docs_added = False
+
+        # Document path parameters
+        for param_name in path_params:
+            param_desc = None
+            if shared_params and param_name in shared_params:
+                param_def = shared_params[param_name]
+                if isinstance(param_def, dict):
+                    param_desc = param_def.get("description", "")
+
+            if param_desc:
+                doc_lines.append(f"/// * [{param_name}] - {param_desc}")
+                param_docs_added = True
+            elif description:  # Only add minimal param doc if we have a main description
+                doc_lines.append(f"/// * [{param_name}] - Path parameter")
+                param_docs_added = True
+
+        # Document query parameters
+        for qp in query_params:
+            param_desc = qp.get("description", "")
+            if param_desc:
+                optional_marker = " (optional)" if qp.get("optional", False) else ""
+                default_marker = f" (default: {qp.get('default')})" if qp.get("default") is not None else ""
+                doc_lines.append(f"/// * [{qp['name']}] - {param_desc}{optional_marker}{default_marker}")
+                param_docs_added = True
+            elif description:  # Only add minimal param doc if we have a main description
+                optional_marker = " (optional)" if qp.get("optional", False) else ""
+                doc_lines.append(f"/// * [{qp['name']}] - Query parameter{optional_marker}")
+                param_docs_added = True
+
+        # Document body parameter
+        if body_param and description:
+            doc_lines.append(f"/// * [body] - Request body ({body_param})")
+            param_docs_added = True
+
+        # Build final docstring
+        docstring = "\n".join(doc_lines) if doc_lines else ""
 
         # Combine all parts
         lines = []

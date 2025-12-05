@@ -123,6 +123,11 @@ class SchemaValidator:
             endpoint_warnings = self._validate_endpoint_paths(schema.endpoints)
             self.warnings.extend(endpoint_warnings)
 
+        # Validate API versioning consistency (warnings only)
+        if schema.endpoints:
+            versioning_warnings = self._validate_api_versioning_consistency(schema.endpoints)
+            self.warnings.extend(versioning_warnings)
+
         # Return validation result
         if errors:
             return ValidationResult.failure(errors, warnings=self.warnings)
@@ -213,6 +218,10 @@ class SchemaValidator:
         index_error = self._validate_index_constraint(field, field_name, model_name)
         if index_error:
             errors.append(index_error)
+
+        # Validate enum constraints
+        enum_errors = self._validate_enum_constraints(field, field_name, model_name)
+        errors.extend(enum_errors)
 
         return errors
 
@@ -399,9 +408,12 @@ class SchemaValidator:
         self, field: FieldDefinition, field_name: str, model_name: str
     ) -> List[str]:
         """
-        Validate min/max constraints for numeric fields.
+        Validate min/max constraints for numeric and string fields.
 
-        Constraints are only valid for numeric field types (int, float).
+        Constraints are valid for:
+        - Numeric field types (int, float): min/max represent value bounds
+        - String field types (string, text): min/max represent character length bounds
+
         If both min and max are specified, validates that min <= max.
 
         Args:
@@ -421,11 +433,15 @@ class SchemaValidator:
         if not has_min and not has_max:
             return errors
 
-        # Numeric types that support min/max constraints
+        # Types that support min/max constraints
+        # - Numeric types: min/max are value bounds
+        # - String types: min/max are character length bounds
         numeric_types = {"int", "float"}
+        string_types = {"string", "text"}
+        supported_types = numeric_types | string_types
 
-        # Validate that constraints are only applied to numeric types
-        if field.type not in numeric_types:
+        # Validate that constraints are only applied to supported types
+        if field.type not in supported_types:
             constraint_names = []
             if has_min:
                 constraint_names.append(f"min: {field.min}")
@@ -433,11 +449,11 @@ class SchemaValidator:
                 constraint_names.append(f"max: {field.max}")
 
             error_parts = [
-                f"Numeric constraints are not valid for field '{field_name}' in model '{model_name}'",
+                f"min/max constraints are not valid for field '{field_name}' in model '{model_name}'",
                 f"Constraints: {', '.join(constraint_names)}",
                 f"Field type: {field.type}",
-                f"Numeric constraints (min/max) can only be applied to 'int' or 'float' fields",
-                f"Remove the constraints or change the field type to 'int' or 'float'"
+                f"min/max constraints can only be applied to 'int', 'float', 'string', or 'text' fields",
+                f"Remove the constraints or change the field type"
             ]
             errors.append("\n".join(error_parts))
             return errors
@@ -445,10 +461,28 @@ class SchemaValidator:
         # Validate that min <= max (if both are specified)
         if has_min and has_max:
             if field.min > field.max:
+                constraint_meaning = "value" if field.type in numeric_types else "length"
                 error_parts = [
                     f"Invalid constraint values for field '{field_name}' in model '{model_name}'",
-                    f"Minimum value ({field.min}) cannot be greater than maximum value ({field.max})",
+                    f"Minimum {constraint_meaning} ({field.min}) cannot be greater than maximum {constraint_meaning} ({field.max})",
                     f"Ensure min <= max"
+                ]
+                errors.append("\n".join(error_parts))
+
+        # Validate that string length constraints are non-negative integers
+        if field.type in string_types:
+            if has_min and (not isinstance(field.min, int) or field.min < 0):
+                error_parts = [
+                    f"Invalid min length for field '{field_name}' in model '{model_name}'",
+                    f"String length min must be a non-negative integer",
+                    f"Got: {field.min}"
+                ]
+                errors.append("\n".join(error_parts))
+            if has_max and (not isinstance(field.max, int) or field.max < 0):
+                error_parts = [
+                    f"Invalid max length for field '{field_name}' in model '{model_name}'",
+                    f"String length max must be a non-negative integer",
+                    f"Got: {field.max}"
                 ]
                 errors.append("\n".join(error_parts))
 
@@ -482,6 +516,54 @@ class SchemaValidator:
             return "\n".join(error_parts)
 
         return None
+
+    def _validate_enum_constraints(
+        self, field: FieldDefinition, field_name: str, model_name: str
+    ) -> List[str]:
+        """
+        Validate enum field constraints.
+
+        For enum fields, validates:
+        - Enum fields must have a values list defined
+        - Default value (if present) must be in the values list
+        - Values list must not be empty
+
+        Args:
+            field: The field to validate
+            field_name: Name of the field
+            model_name: Name of the containing model
+
+        Returns:
+            List of error messages (empty if valid)
+        """
+        errors: List[str] = []
+
+        # Only validate enum fields
+        if field.type.lower() != "enum":
+            return errors
+
+        # Validate that enum has values defined
+        if field.values is None or len(field.values) == 0:
+            error_parts = [
+                f"Enum field '{field_name}' in model '{model_name}' must have values defined",
+                f"Enum fields require a 'values' list specifying the allowed values",
+                f"Example: values: [option1, option2, option3]"
+            ]
+            errors.append("\n".join(error_parts))
+            return errors  # Can't validate default without values
+
+        # Validate that default value is in values list (if default is specified)
+        if field.default is not None:
+            if field.default not in field.values:
+                error_parts = [
+                    f"Invalid default value for enum field '{field_name}' in model '{model_name}'",
+                    f"Default value '{field.default}' is not in the allowed values list",
+                    f"Allowed values: {', '.join(field.values)}",
+                    f"Either change the default to one of the allowed values or add '{field.default}' to the values list"
+                ]
+                errors.append("\n".join(error_parts))
+
+        return errors
 
     def _check_duplicate_model_names(self, schema: SchnitzelSchema) -> List[str]:
         """
@@ -957,6 +1039,116 @@ class SchemaValidator:
 
         return warnings
 
+    def _validate_api_versioning_consistency(self, endpoints: Dict[str, any]) -> List[str]:
+        """
+        Validate API versioning consistency across endpoint paths.
+
+        Checks that all endpoints use the same API version prefix (e.g., all use /api/v1,
+        or all use /v2, or none use versioning). Inconsistent versioning can lead to
+        confusion and maintenance issues.
+
+        Valid patterns:
+        - All endpoints have same version prefix: /api/v1/users, /api/v1/orders
+        - All endpoints have same version prefix: /v2/users, /v2/orders
+        - No endpoints have version prefixes: /users, /orders
+
+        Invalid patterns:
+        - Mixed versioning: /api/v1/users, /v2/orders, /users
+        - Inconsistent version numbers: /api/v1/users, /api/v2/orders
+
+        Args:
+            endpoints: Dictionary of endpoint definitions
+
+        Returns:
+            List of warning messages for versioning inconsistencies
+        """
+        warnings: List[str] = []
+
+        # Extract version prefixes from all endpoint paths
+        version_info: Dict[str, List[str]] = {}  # version_prefix -> [endpoint_paths]
+
+        for endpoint_path in endpoints.keys():
+            if not isinstance(endpoint_path, str):
+                continue
+
+            # Extract version prefix (if any)
+            version_prefix = self._extract_version_prefix(endpoint_path)
+
+            if version_prefix not in version_info:
+                version_info[version_prefix] = []
+            version_info[version_prefix].append(endpoint_path)
+
+        # Check for consistency
+        if len(version_info) > 1:
+            # Multiple different version prefixes found (or mix of versioned/unversioned)
+            warning_parts = [
+                "Inconsistent API versioning detected across endpoints",
+                "All endpoints should use the same version prefix (e.g., '/api/v1', '/v1', or no prefix)",
+                "",
+                "Found the following version patterns:"
+            ]
+
+            for version_prefix, paths in sorted(version_info.items()):
+                if version_prefix == "":
+                    prefix_label = "No version prefix"
+                else:
+                    prefix_label = f"Version prefix: {version_prefix}"
+
+                warning_parts.append(f"  {prefix_label} ({len(paths)} endpoints):")
+                # Show first 3 examples
+                for path in sorted(paths)[:3]:
+                    warning_parts.append(f"    - {path}")
+                if len(paths) > 3:
+                    warning_parts.append(f"    ... and {len(paths) - 3} more")
+
+            warning_parts.append("")
+            warning_parts.append("Recommendation: Choose one versioning strategy and apply it consistently:")
+            warning_parts.append("  1. Use /api/v1 prefix for all endpoints")
+            warning_parts.append("  2. Use /v1 prefix for all endpoints")
+            warning_parts.append("  3. Don't use version prefixes (rely on API gateway or headers)")
+
+            warnings.append("\n".join(warning_parts))
+
+        return warnings
+
+    def _extract_version_prefix(self, path: str) -> str:
+        """
+        Extract the version prefix from an endpoint path.
+
+        Recognizes patterns like:
+        - /api/v1/... -> returns "/api/v1"
+        - /api/v2/... -> returns "/api/v2"
+        - /v1/... -> returns "/v1"
+        - /v2/... -> returns "/v2"
+        - /users/... -> returns "" (no version)
+
+        Args:
+            path: Endpoint path
+
+        Returns:
+            Version prefix string, or empty string if no version found
+        """
+        if not path or not path.startswith('/'):
+            return ""
+
+        # Remove leading slash for processing
+        path_parts = path.lstrip('/').split('/')
+
+        if len(path_parts) < 1:
+            return ""
+
+        # Check for /api/vN pattern
+        if len(path_parts) >= 2 and path_parts[0].lower() == 'api':
+            if re.match(r'^v\d+$', path_parts[1].lower()):
+                return f"/{path_parts[0]}/{path_parts[1]}"
+
+        # Check for /vN pattern
+        if len(path_parts) >= 1:
+            if re.match(r'^v\d+$', path_parts[0].lower()):
+                return f"/{path_parts[0]}"
+
+        return ""
+
     def _validate_event_names(self, events: Dict[str, any]) -> List[str]:
         """
         Validate event names follow dot.notation convention.
@@ -1382,6 +1574,169 @@ class SchemaValidator:
         # For now, return the message as-is with markup
         # Rich formatting will be applied when displaying to console
         return message
+
+    def detect_n_plus_1_issues(self, schema: SchnitzelSchema) -> List[str]:
+        """Detect potential N+1 query issues in endpoints.
+
+        An N+1 query issue occurs when:
+        1. An endpoint returns a model (or list of models)
+        2. That model has hasMany or hasOne relations
+        3. The endpoint doesn't specify eager loading for those relations
+
+        This causes the API to execute N+1 queries:
+        - 1 query to fetch the main entities
+        - N additional queries to fetch relations for each entity
+
+        Args:
+            schema: The schema to analyze
+
+        Returns:
+            List of warning messages about potential N+1 issues
+        """
+        warnings: List[str] = []
+
+        if not schema.endpoints:
+            return warnings
+
+        # Build a map of which models have relations that could cause N+1
+        models_with_relations: Dict[str, List[str]] = {}
+        for model_name, model in schema.models.items():
+            if model.relations:
+                # Track hasMany and hasOne relations (these are most likely to cause N+1)
+                # belongsTo is usually fetched with the parent, so less of an issue
+                problematic_relations = [
+                    rel_name
+                    for rel_name, relation in model.relations.items()
+                    if relation.type in ["hasMany", "hasOne"]
+                ]
+                if problematic_relations:
+                    models_with_relations[model_name] = problematic_relations
+
+        # Analyze endpoints for N+1 potential
+        for endpoint_path, methods in schema.endpoints.items():
+            if not isinstance(methods, dict):
+                continue
+
+            for method, config in methods.items():
+                if not isinstance(config, dict):
+                    continue
+
+                # Check response types
+                if "response" not in config:
+                    continue
+
+                resp = config["response"]
+                if not isinstance(resp, dict):
+                    continue
+
+                for status_code, resp_config in resp.items():
+                    # Only check successful responses
+                    if not str(status_code).startswith("2"):
+                        continue
+
+                    resp_type = None
+                    if isinstance(resp_config, dict) and "type" in resp_config:
+                        resp_type = resp_config["type"]
+                    elif isinstance(resp_config, str):
+                        resp_type = resp_config
+
+                    if not resp_type:
+                        continue
+
+                    # Extract base model name from response type
+                    model_names = self._extract_model_names_from_type(resp_type)
+
+                    for model_name in model_names:
+                        if model_name in models_with_relations:
+                            # Check if endpoint has include/eager/with parameter
+                            has_eager_loading = self._endpoint_has_eager_loading(config)
+
+                            if not has_eager_loading:
+                                relations = models_with_relations[model_name]
+                                warning_parts = [
+                                    f"[yellow]Potential N+1 Query Issue:[/yellow] {method.upper()} {endpoint_path}",
+                                    f"[yellow]Model:[/yellow] {model_name} has relations: {', '.join(relations)}",
+                                    f"[yellow]Issue:[/yellow] Endpoint returns {model_name} but doesn't specify eager loading",
+                                    f"[green]Solution:[/green] Add 'include' or 'with' query parameter to allow eager loading:",
+                                    f"  query:",
+                                    f"    include: {{ type: string, optional: true }}",
+                                    f"[dim]Example: GET {endpoint_path}?include={','.join(relations[:2])}[/dim]"
+                                ]
+                                warnings.append(self._format_error_rich("\n".join(warning_parts)))
+
+        return warnings
+
+    def _extract_model_names_from_type(self, type_str: str) -> List[str]:
+        """Extract model names from a type string.
+
+        Handles various type formats:
+        - User
+        - list<User>
+        - List<User>
+        - PaginatedResponse<User>
+        - UserWithOrders (extracts User)
+
+        Args:
+            type_str: Type string to analyze
+
+        Returns:
+            List of model names found in the type
+        """
+        if not isinstance(type_str, str):
+            return []
+
+        model_names = []
+
+        # Remove common generic wrappers
+        # Handle list<Model>, List<Model>, PaginatedResponse<Model>, etc.
+        generic_pattern = r'(\w+)<(.+?)>'
+        matches = re.findall(generic_pattern, type_str)
+
+        if matches:
+            for wrapper, inner in matches:
+                # Recursively extract from inner type
+                model_names.extend(self._extract_model_names_from_type(inner))
+        else:
+            # No generic wrapper - check if it's a model name
+            # Strip any array notation
+            base_type = type_str.replace("[]", "").strip()
+
+            # Check if this looks like a model name (PascalCase)
+            if base_type and base_type[0].isupper():
+                model_names.append(base_type)
+
+        return model_names
+
+    def _endpoint_has_eager_loading(self, endpoint_config: Dict[str, Any]) -> bool:
+        """Check if endpoint has eager loading parameters.
+
+        Looks for common patterns like:
+        - include parameter
+        - with parameter
+        - eager parameter
+        - expand parameter
+
+        Args:
+            endpoint_config: Endpoint configuration dict
+
+        Returns:
+            True if endpoint appears to support eager loading
+        """
+        if "query" not in endpoint_config:
+            return False
+
+        query = endpoint_config["query"]
+        if not isinstance(query, dict):
+            return False
+
+        # Check for common eager loading parameter names
+        eager_loading_params = ["include", "with", "eager", "expand", "relations"]
+
+        for param_name in eager_loading_params:
+            if param_name in query:
+                return True
+
+        return False
 
 
 class BreakingChangesDetector:

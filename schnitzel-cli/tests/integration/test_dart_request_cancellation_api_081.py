@@ -35,6 +35,10 @@ class TestDartRequestCancellation:
 
         # Should generate client that can use Dio (which supports CancelToken)
         assert "Dio" in code
+        # Should include CancelToken parameter in method signature
+        assert "CancelToken? cancelToken" in code
+        # Should pass cancelToken to Dio method
+        assert "cancelToken: cancelToken" in code
         # Note: compile() is for Python - just verify generation succeeds
         assert code is not None
 

@@ -1,23 +1,65 @@
 """Serve command for starting Docker services and FastAPI with uvicorn."""
 
 import subprocess
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import typer
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 
 from schnitzel.utils.logging import get_logger
+from schnitzel.utils.banner import display_banner
+from schnitzel.utils.port import is_port_available, get_port_conflict_message
+from schnitzel.utils.network_errors import NetworkErrorHandler
 
 console = Console()
 logger = get_logger(__name__)
+
+
+def _parse_env_vars(env_list: list[str]) -> dict[str, str]:
+    """Parse environment variables from KEY=VALUE format.
+
+    Args:
+        env_list: List of strings in "KEY=VALUE" format
+
+    Returns:
+        dict[str, str]: Dictionary of parsed environment variables
+
+    Raises:
+        ValueError: If any env var is not in KEY=VALUE format
+    """
+    env_dict = {}
+    for env_str in env_list:
+        if "=" not in env_str:
+            raise ValueError(
+                f"Invalid environment variable format: '{env_str}'. "
+                f"Expected format: KEY=VALUE"
+            )
+        key, value = env_str.split("=", 1)
+        if not key:
+            raise ValueError(
+                f"Invalid environment variable: '{env_str}'. "
+                f"Key cannot be empty"
+            )
+        env_dict[key] = value
+    return env_dict
 
 # Shutdown timeout in seconds
 SHUTDOWN_TIMEOUT = 10
 
 # Track running service processes
 _running_processes: dict[str, subprocess.Popen] = {}
+
+# Create the serve command group
+serve = typer.Typer(
+    name="serve",
+    help="Start Docker services and run service-specific commands",
+    add_completion=False,
+)
+
 
 
 def _is_quiet_mode() -> bool:
@@ -163,11 +205,12 @@ def _start_flutter_server(
         return None
 
 
-def _start_docker_services(project_dir: Path) -> bool:
+def _start_docker_services(project_dir: Path, env_vars: dict[str, str] | None = None) -> bool:
     """Start Docker services using docker compose up -d.
 
     Args:
         project_dir: Path to the project directory containing docker-compose.yaml
+        env_vars: Optional dictionary of environment variables to pass to services
 
     Returns:
         bool: True if services started successfully, False otherwise
@@ -183,13 +226,28 @@ def _start_docker_services(project_dir: Path) -> bool:
         return False
 
     try:
+        # Build docker compose command
+        cmd = ["docker", "compose", "up", "-d"]
+
+        # Prepare environment for subprocess
+        env = None
+        if env_vars:
+            import os
+            # Merge custom env vars with system environment
+            env = os.environ.copy()
+            env.update(env_vars)
+
+            if not _is_quiet_mode():
+                console.print(f"[dim]Passing {len(env_vars)} custom environment variable(s) to services[/dim]")
+
         # Start all services with docker compose up -d
         result = subprocess.run(
-            ["docker", "compose", "up", "-d"],
+            cmd,
             cwd=project_dir,
             capture_output=True,
             text=True,
-            timeout=120
+            timeout=120,
+            env=env
         )
 
         if result.returncode != 0:
@@ -202,11 +260,11 @@ def _start_docker_services(project_dir: Path) -> bool:
 
         return True
 
-    except subprocess.TimeoutExpired:
-        console.print("[red]Error: Docker compose timed out[/red]")
+    except subprocess.TimeoutExpired as e:
+        should_exit, error_msg = NetworkErrorHandler.handle_docker_error(e, quiet=_is_quiet_mode())
         return False
     except Exception as e:
-        console.print(f"[red]Error starting Docker services:[/red] {e}")
+        should_exit, error_msg = NetworkErrorHandler.handle_docker_error(e, quiet=_is_quiet_mode())
         return False
 
 
@@ -756,7 +814,8 @@ def _start_uvicorn(
     project_dir: Path,
     port: int = 8000,
     host: str = "0.0.0.0",
-    reload: bool = True
+    reload: bool = True,
+    env_vars: dict[str, str] | None = None
 ) -> int:
     """Start uvicorn server with the FastAPI app.
 
@@ -765,10 +824,20 @@ def _start_uvicorn(
         port: Port to run the server on
         host: Host to bind to
         reload: Enable hot reload
+        env_vars: Optional dictionary of environment variables to pass to uvicorn
 
     Returns:
         int: Exit code from uvicorn
     """
+    # Check if port is available before starting
+    if not is_port_available(port, host):
+        console.print(f"[red]Error: Port conflict detected[/red]")
+        console.print()
+        error_msg = get_port_conflict_message(port, host, suggest_alternative=True)
+        console.print(error_msg)
+        console.print()
+        return 1
+
     # Find the FastAPI app module
     app_module = _find_backend_app_module(project_dir)
 
@@ -778,6 +847,8 @@ def _start_uvicorn(
         console.print(f"  Host: {host}")
         console.print(f"  Port: {port}")
         console.print(f"  Hot reload: {'enabled' if reload else 'disabled'}")
+        if env_vars:
+            console.print(f"  Custom env vars: {len(env_vars)}")
         console.print()
 
     # Build uvicorn command
@@ -791,11 +862,22 @@ def _start_uvicorn(
     if reload:
         cmd.append("--reload")
 
+    # Prepare environment for subprocess
+    env = None
+    if env_vars:
+        import os
+        # Merge custom env vars with system environment
+        env = os.environ.copy()
+        env.update(env_vars)
+
     try:
         # Run uvicorn - this will block until Ctrl+C
         result = subprocess.run(
             cmd,
             cwd=project_dir,
+            env=env,
+            capture_output=False,
+            text=True
         )
         return result.returncode
 
@@ -803,12 +885,25 @@ def _start_uvicorn(
         if not _is_quiet_mode():
             console.print("\n[yellow]Shutting down server...[/yellow]")
         return 0
+    except OSError as e:
+        # Catch port binding errors that might occur at runtime
+        if "Address already in use" in str(e) or "address already in use" in str(e).lower():
+            console.print(f"[red]Error: Port binding failed[/red]")
+            console.print()
+            error_msg = get_port_conflict_message(port, host, suggest_alternative=True)
+            console.print(error_msg)
+            console.print()
+            return 1
+        else:
+            console.print(f"[red]Error starting uvicorn:[/red] {e}")
+            return 1
     except Exception as e:
         console.print(f"[red]Error starting uvicorn:[/red] {e}")
         return 1
 
 
-def serve_command(
+@serve.command()
+def start(
     port: int = typer.Option(
         8000,
         "--port",
@@ -836,6 +931,12 @@ def serve_command(
         "--frontend-port",
         help="Port to run the Flutter frontend on (when not using --backend-only)"
     ),
+    env: Optional[list[str]] = typer.Option(
+        None,
+        "--env",
+        "-e",
+        help="Set environment variables in KEY=VALUE format (can be used multiple times)"
+    ),
 ) -> None:
     """Start Docker services, FastAPI backend, and Flutter frontend.
 
@@ -851,11 +952,30 @@ def serve_command(
         no_reload: Disable hot reload (default: False)
         backend_only: Start only backend services, skip Flutter (default: False)
         frontend_port: Port to run the Flutter frontend on (optional, for future use)
+        env: Custom environment variables in KEY=VALUE format (can be used multiple times)
     """
     project_dir = Path.cwd()
 
+    # Parse environment variables
+    env_vars = None
+    if env:
+        try:
+            env_vars = _parse_env_vars(env)
+            if not _is_quiet_mode():
+                console.print(f"[dim]Parsed {len(env_vars)} custom environment variable(s)[/dim]")
+                for key, value in env_vars.items():
+                    # Mask potentially sensitive values
+                    display_value = value if len(value) < 20 else f"{value[:10]}...{value[-5:]}"
+                    console.print(f"[dim]  {key}={display_value}[/dim]")
+        except ValueError as e:
+            console.print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(code=1)
+
     if not _is_quiet_mode():
-        console.print("\n[bold blue]Starting Schnitzel services...[/bold blue]")
+        # Display ASCII banner
+        display_banner(console)
+
+        console.print("[bold blue]Starting Schnitzel services...[/bold blue]")
         console.print(f"Project directory: {project_dir}")
         if backend_only:
             console.print("[dim]Mode: Backend only (Flutter will be skipped)[/dim]")
@@ -916,7 +1036,7 @@ def serve_command(
     if not _is_quiet_mode():
         console.print("[blue]Starting Docker services (PostgreSQL, Redis)...[/blue]")
 
-    if not _start_docker_services(project_dir):
+    if not _start_docker_services(project_dir, env_vars=env_vars):
         console.print("[red]Failed to start Docker services[/red]")
         raise typer.Exit(code=1)
 
@@ -957,7 +1077,7 @@ def serve_command(
     # Start uvicorn with FastAPI - this will block
     try:
         reload = not no_reload
-        exit_code = _start_uvicorn(project_dir, port=port, host=host, reload=reload)
+        exit_code = _start_uvicorn(project_dir, port=port, host=host, reload=reload, env_vars=env_vars)
 
         if exit_code != 0:
             raise typer.Exit(code=exit_code)
@@ -970,3 +1090,94 @@ def serve_command(
                 flutter_process.wait(timeout=5)
             except Exception:
                 pass
+
+
+@serve.command()
+def exec(
+    service: str = typer.Argument(
+        ...,
+        help="Name of the Docker Compose service to run command in"
+    ),
+    command: list[str] = typer.Argument(
+        ...,
+        help="Command to execute in the service container"
+    ),
+) -> None:
+    """Execute a command in a running Docker Compose service.
+    
+    This command runs a specified command inside a running Docker service container.
+    Useful for debugging, running bash shells, or executing one-off commands.
+    
+    Examples:
+        schnitzel serve exec backend bash
+        schnitzel serve exec backend python -m pytest
+        schnitzel serve exec db psql -U schnitzel -d schnitzel_db
+    
+    Args:
+        service: Name of the service from docker-compose.yaml (e.g., backend, db, redis)
+        command: Command and arguments to execute in the container
+    """
+    project_dir = Path.cwd()
+    
+    # Check Docker prerequisites
+    if not _check_docker_installed():
+        console.print("[red]Error: Docker is not installed[/red]")
+        console.print("[dim]Install Docker: https://docs.docker.com/get-docker/[/dim]")
+        raise typer.Exit(code=1)
+    
+    if not _check_docker_compose_installed():
+        console.print("[red]Error: Docker Compose is not installed[/red]")
+        raise typer.Exit(code=1)
+    
+    if not _is_docker_running():
+        console.print("[red]Error: Docker daemon is not running[/red]")
+        console.print("[dim]Start Docker Desktop or the Docker daemon[/dim]")
+        raise typer.Exit(code=1)
+    
+    # Check if service exists and is running
+    status = get_service_status(project_dir)
+    
+    if service not in status['services']:
+        console.print(f"[red]Error: Service '{service}' not found[/red]")
+        console.print("\n[yellow]Available services:[/yellow]")
+        for svc_name in status['services'].keys():
+            console.print(f"  - {svc_name}")
+        raise typer.Exit(code=1)
+    
+    service_info = status['services'][service]
+    if not service_info['running']:
+        console.print(f"[red]Error: Service '{service}' is not running[/red]")
+        console.print(f"[yellow]Current status:[/yellow] {service_info['status']}")
+        console.print("\n[dim]Start services with: schnitzel serve[/dim]")
+        raise typer.Exit(code=1)
+    
+    # Build docker compose exec command
+    docker_cmd = ["docker", "compose", "exec", service] + list(command)
+    
+    if not _is_quiet_mode():
+        console.print(f"[blue]Executing in service '{service}':[/blue] {' '.join(command)}")
+        console.print()
+    
+    try:
+        # Execute the command interactively (inherit stdin/stdout/stderr)
+        result = subprocess.run(
+            docker_cmd,
+            cwd=project_dir,
+        )
+        
+        # Exit with the same code as the command
+        if result.returncode != 0:
+            raise typer.Exit(code=result.returncode)
+            
+    except KeyboardInterrupt:
+        if not _is_quiet_mode():
+            console.print("\n[yellow]Command interrupted[/yellow]")
+        raise typer.Exit(code=130)
+    except Exception as e:
+        console.print(f"[red]Error executing command:[/red] {e}")
+        raise typer.Exit(code=1)
+
+
+
+# For backwards compatibility, also export serve_command as an alias to the group
+serve_command = serve

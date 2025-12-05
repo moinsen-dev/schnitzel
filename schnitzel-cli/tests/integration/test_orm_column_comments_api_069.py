@@ -32,8 +32,9 @@ class TestORMColumnComments:
         generator = SQLAlchemyORMGenerator()
         code = generator.generate(schema)
 
-        # Should have email field
+        # Should have email field with comment parameter
         assert "email" in code
+        assert 'comment="User\'s primary email address"' in code
         compile(code, "<string>", "exec")
 
     def test_generates_multiple_described_columns(self):
@@ -60,9 +61,11 @@ class TestORMColumnComments:
         generator = SQLAlchemyORMGenerator()
         code = generator.generate(schema)
 
-        # Should have both fields
+        # Should have both fields with comment parameters
         assert "email" in code
+        assert 'comment="Primary email"' in code
         assert "phone" in code
+        assert 'comment="Contact phone number"' in code
         compile(code, "<string>", "exec")
 
     def test_handles_empty_description(self):
@@ -82,8 +85,9 @@ class TestORMColumnComments:
         generator = SQLAlchemyORMGenerator()
         code = generator.generate(schema)
 
-        # Should generate without errors
+        # Should generate without errors and without comment parameter
         assert "name" in code
+        assert "comment=" not in code or 'comment=' not in code.split('name:')[1].split('\n')[0]
         compile(code, "<string>", "exec")
 
     def test_model_with_description(self):
@@ -127,8 +131,10 @@ class TestORMColumnComments:
         generator = SQLAlchemyORMGenerator()
         code = generator.generate(schema)
 
-        # Should handle special chars
+        # Should handle special chars and escape quotes properly
         assert "bio" in code
+        assert 'comment="User\'s bio with \'quotes\' and special chars"' in code or \
+               'comment="User\\\'s bio with \\\'quotes\\\' and special chars"' in code
         compile(code, "<string>", "exec")
 
 

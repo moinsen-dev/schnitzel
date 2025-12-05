@@ -85,9 +85,9 @@ app.command(name="generate")(generate_command)
 from schnitzel.cli.commands.migrate import migrate_command
 app.add_typer(migrate_command(), name="migrate")
 
-# Import and register serve command
-from schnitzel.cli.commands.serve import serve_command
-app.command(name="serve")(serve_command)
+# Import and register serve command group
+from schnitzel.cli.commands.serve import serve
+app.add_typer(serve, name="serve")
 
 # Export both app and main
 __all__ = ["app", "main"]

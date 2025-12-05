@@ -1,0 +1,47 @@
+{
+  "timestamp": "2025-12-04T21:02:02.727449",
+  "models": {
+    "User": {
+      "name": "User",
+      "description": null,
+      "fields": {
+        "id": {
+          "type": "uuid",
+          "description": null,
+          "primary": true,
+          "unique": false,
+          "index": false,
+          "optional": false,
+          "required": false,
+          "default": null,
+          "min": null,
+          "max": null,
+          "max_length": null,
+          "format": null,
+          "auto": null,
+          "values": null,
+          "dimensions": null
+        },
+        "name": {
+          "type": "string",
+          "description": null,
+          "primary": false,
+          "unique": false,
+          "index": false,
+          "optional": false,
+          "required": true,
+          "default": null,
+          "min": null,
+          "max": null,
+          "max_length": null,
+          "format": null,
+          "auto": null,
+          "values": null,
+          "dimensions": null
+        }
+      },
+      "relations": null,
+      "indexes": null
+    }
+  }
+}

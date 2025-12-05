@@ -29,17 +29,20 @@ class {{ model.name }}(Base):
     """{{ model.description }}"""
     {% endif %}
 
+    # Fields
     {% for field in model.fields %}
     {{ field.name }}: Mapped[{{ field.type_hint }}] = mapped_column({{ field.column_def }})
     {% endfor %}
     {% if model.foreign_keys %}
 
+    # Foreign Keys
     {% for fk in model.foreign_keys %}
     {{ fk.name }}: Mapped[{{ fk.type_hint }}] = mapped_column({{ fk.column_def }})
     {% endfor %}
     {% endif %}
     {% if model.relationships %}
 
+    # Relationships
     {% for rel in model.relationships %}
     {{ rel.name }}: Mapped[{{ rel.type_hint }}] = relationship({{ rel.options }})
     {% endfor %}

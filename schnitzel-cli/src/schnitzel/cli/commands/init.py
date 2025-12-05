@@ -256,6 +256,7 @@ dependencies = [
     "pydantic>=2.0.0",
     "alembic>=1.13.0",
     "psycopg2-binary>=2.9.0",
+    "prometheus-client>=0.19.0",
 ]
 
 [build-system]

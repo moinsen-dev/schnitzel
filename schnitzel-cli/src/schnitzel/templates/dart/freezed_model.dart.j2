@@ -10,6 +10,10 @@ part '{{ filename }}.freezed.dart';
 part '{{ filename }}.g.dart';
 
 
+// =============================================================================
+// Model Classes
+// =============================================================================
+
 {% for model in models %}
 {% if model.description %}
 /// {{ model.description }}

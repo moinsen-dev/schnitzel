@@ -138,6 +138,176 @@ class TestDartUploadProgress:
         assert "class ApiClient" in code
         assert "Dio" in code
 
+    def test_post_with_body_has_progress_callback(self):
+        """Test POST with body includes onSendProgress parameter."""
+        schema = SchnitzelSchema(
+            models={
+                "Document": Model(
+                    name="Document",
+                    fields={
+                        "id": FieldDefinition(type="uuid", primary=True),
+                        "content": FieldDefinition(type="string"),
+                    }
+                )
+            },
+            endpoints={
+                "/documents": {
+                    "POST": {
+                        "name": "createDocument",
+                        "body": "Document",
+                        "response": "Document"
+                    }
+                }
+            }
+        )
+
+        generator = DartApiClientGenerator()
+        code = generator.generate(schema)
+
+        # Should have onSendProgress parameter
+        assert "void Function(int, int)? onSendProgress" in code
+        # Should pass it to Dio
+        assert ", onSendProgress: onSendProgress" in code
+
+    def test_put_with_body_has_progress_callback(self):
+        """Test PUT with body includes onSendProgress parameter."""
+        schema = SchnitzelSchema(
+            models={
+                "Document": Model(
+                    name="Document",
+                    fields={
+                        "id": FieldDefinition(type="uuid", primary=True),
+                        "content": FieldDefinition(type="string"),
+                    }
+                )
+            },
+            endpoints={
+                "/documents/{id}": {
+                    "params": {"id": {"type": "uuid"}},
+                    "PUT": {
+                        "name": "updateDocument",
+                        "body": "Document",
+                        "response": "Document"
+                    }
+                }
+            }
+        )
+
+        generator = DartApiClientGenerator()
+        code = generator.generate(schema)
+
+        # Should have onSendProgress parameter
+        assert "void Function(int, int)? onSendProgress" in code
+        # Should pass it to Dio
+        assert ", onSendProgress: onSendProgress" in code
+
+    def test_patch_with_body_has_progress_callback(self):
+        """Test PATCH with body includes onSendProgress parameter."""
+        schema = SchnitzelSchema(
+            models={
+                "Document": Model(
+                    name="Document",
+                    fields={
+                        "id": FieldDefinition(type="uuid", primary=True),
+                        "content": FieldDefinition(type="string"),
+                    }
+                )
+            },
+            endpoints={
+                "/documents/{id}": {
+                    "params": {"id": {"type": "uuid"}},
+                    "PATCH": {
+                        "name": "patchDocument",
+                        "body": "Document",
+                        "response": "Document"
+                    }
+                }
+            }
+        )
+
+        generator = DartApiClientGenerator()
+        code = generator.generate(schema)
+
+        # Should have onSendProgress parameter
+        assert "void Function(int, int)? onSendProgress" in code
+        # Should pass it to Dio
+        assert ", onSendProgress: onSendProgress" in code
+
+    def test_get_without_body_no_progress_callback(self):
+        """Test GET without body does NOT include onSendProgress parameter."""
+        schema = SchnitzelSchema(
+            models={
+                "Document": Model(
+                    name="Document",
+                    fields={
+                        "id": FieldDefinition(type="uuid", primary=True),
+                        "content": FieldDefinition(type="string"),
+                    }
+                )
+            },
+            endpoints={
+                "/documents/{id}": {
+                    "params": {"id": {"type": "uuid"}},
+                    "GET": {
+                        "name": "getDocument",
+                        "response": "Document"
+                    }
+                }
+            }
+        )
+
+        generator = DartApiClientGenerator()
+        code = generator.generate(schema)
+
+        # Extract just the getDocument method
+        lines = code.split('\n')
+        get_method = []
+        in_method = False
+        for line in lines:
+            if 'Future<Document> getDocument' in line:
+                in_method = True
+            if in_method:
+                get_method.append(line)
+                if line.strip() == '}':
+                    break
+
+        get_method_code = '\n'.join(get_method)
+        # Should NOT have onSendProgress in the GET method
+        assert "onSendProgress" not in get_method_code
+
+    def test_post_without_body_no_progress_callback(self):
+        """Test POST without body does NOT include onSendProgress parameter."""
+        schema = SchnitzelSchema(
+            models={},
+            endpoints={
+                "/documents/process": {
+                    "POST": {
+                        "name": "processDocuments",
+                        "response": "void"
+                    }
+                }
+            }
+        )
+
+        generator = DartApiClientGenerator()
+        code = generator.generate(schema)
+
+        # Extract just the processDocuments method
+        lines = code.split('\n')
+        process_method = []
+        in_method = False
+        for line in lines:
+            if 'Future<void> processDocuments' in line:
+                in_method = True
+            if in_method:
+                process_method.append(line)
+                if line.strip() == '}':
+                    break
+
+        process_method_code = '\n'.join(process_method)
+        # Should NOT have onSendProgress in POST without body
+        assert "onSendProgress" not in process_method_code
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

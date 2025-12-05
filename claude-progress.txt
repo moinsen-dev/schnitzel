@@ -310,3 +310,237 @@ Notes for Implementation:
 - Use FoodieAI schema for realistic testing (User, Recipe, Order models)
 - All generated code must compile before committing
 - Test generated API with real HTTP requests, not just unit tests
+
+=====================================
+MODULE 02: REAL-TIME & EVENTS (INITIALIZED)
+=====================================
+
+Date: 2025-12-04
+Module: module_02_realtime_events - Real-time & Events
+Depends on: module_01_api_layer (COMPLETE - 180/180 features passing)
+
+Completed:
+- Read app_spec_master.txt (tech stack: FastAPI, Redis, Temporal, flutter_bloc, web_socket_channel)
+- Read app_spec.txt containing Module 02 specification
+- Merged master spec (tech stack, design) with module spec (real-time features)
+- Generated feature_list_module_02_realtime_events.json with 175 test cases
+  - Functional: 161 tests
+  - Style: 14 tests
+
+Module Feature Breakdown:
+- Schema Extensions (3 tests): EventConfig, StreamConfig, JobConfig model additions
+- Event Publisher Generator (13 tests): Redis Pub/Sub, WebSocket broadcast, event models, channel routing, validation
+- SSE Stream Generator (9 tests): AsyncGenerator pattern, reconnection headers, event ID tracking, authentication
+- WebSocket Handler Generator (13 tests): ConnectionManager, message routing, heartbeat, auth, rooms, error handling
+- Dart Event Client Generator (10 tests): SSEClient, WebSocketClient, reconnection, event deserialization, StreamControllers
+- Temporal Job Generator (7 tests): Workflow classes, cron parsing, retry policies, timeout config, activity stubs
+- BLoC State Generator (7 tests): Event classes (CRUD), State classes, repository pattern, error handling, optimistic updates
+- Integration Tests (7 tests): End-to-end generation pipeline, type safety, real connections
+- Advanced Features (21 tests): Complex payloads, pagination, filtering, relationships, concurrent connections, buffering
+- Generator Registry & CLI (9 tests): Export new generators, CLI commands, --events/--streams/--jobs/--blocs flags
+- Type Safety & Conventions (4 tests): Python-Dart type matching, naming conventions, pyright/dart analyze compliance
+- Edge Cases & Error Handling (16 tests): Empty sections, validation, connection failures, client disconnects, server restarts
+- Code Quality (15 tests): Docstrings, type hints, logging, metadata, serialization
+- Style & Formatting (14 tests): Black/flake8, dart format, code organization, descriptive names, comments
+- Schema Validation (3 tests): Events/streams/jobs section validation
+- Documentation (1 test): Generator examples
+
+Test Complexity Distribution:
+- Short tests (2-5 steps): 68 tests - Quick validations
+- Medium tests (6-9 steps): 72 tests - Feature verification
+- Comprehensive tests (10+ steps): 35 tests - End-to-end workflows
+
+Priority Breakdown:
+- P0 (Critical - 58 tests): Schema models, core generators, templates, basic integration
+- P1 (High - 82 tests): Advanced features, validation, error handling, CLI integration
+- P2 (Medium - 35 tests): Edge cases, performance, polish, documentation
+
+Files to Create:
+
+Schema Extensions:
+- schnitzel-cli/src/schnitzel/schema/models.py (extend with EventConfig, StreamConfig, MessageConfig, JobConfig, RetryPolicy)
+
+Python Generators:
+- schnitzel-cli/src/schnitzel/generators/python/events.py
+- schnitzel-cli/src/schnitzel/generators/python/streams.py
+- schnitzel-cli/src/schnitzel/generators/python/websocket.py
+- schnitzel-cli/src/schnitzel/generators/python/jobs.py
+
+Python Templates:
+- schnitzel-cli/src/schnitzel/templates/python/events.py.j2
+- schnitzel-cli/src/schnitzel/templates/python/streams.py.j2
+- schnitzel-cli/src/schnitzel/templates/python/websocket.py.j2
+- schnitzel-cli/src/schnitzel/templates/python/jobs.py.j2
+
+Dart Generators:
+- schnitzel-cli/src/schnitzel/generators/dart/events.py
+- schnitzel-cli/src/schnitzel/generators/dart/bloc.py
+
+Dart Templates:
+- schnitzel-cli/src/schnitzel/templates/dart/events.dart.j2
+- schnitzel-cli/src/schnitzel/templates/dart/bloc.dart.j2
+- schnitzel-cli/src/schnitzel/templates/dart/bloc_event.dart.j2
+- schnitzel-cli/src/schnitzel/templates/dart/bloc_state.dart.j2
+
+Integration Tests:
+- schnitzel-cli/tests/integration/test_events_generation.py
+- schnitzel-cli/tests/integration/test_streams_generation.py
+- schnitzel-cli/tests/integration/test_websocket_generation.py
+- schnitzel-cli/tests/integration/test_jobs_generation.py
+- schnitzel-cli/tests/integration/test_bloc_generation.py
+- schnitzel-cli/tests/integration/test_dart_events_generation.py
+
+CLI Updates:
+- schnitzel-cli/src/schnitzel/generators/python/__init__.py (update)
+- schnitzel-cli/src/schnitzel/generators/dart/__init__.py (update)
+- schnitzel-cli/src/schnitzel/cli.py or commands module (add events/streams/jobs/blocs commands)
+
+Module Status: 0/175 features passing (0%)
+
+Dependencies:
+- Depends on: module_01_api_layer (COMPLETE)
+- Uses: Schema parser, schema validator, all Module 01 generators
+- Extends: Schema models, generators registry, CLI commands
+- Builds upon: Python model generator, Dart model generator, FastAPI routes, Dio API client
+- Required by: Future modules needing real-time capabilities
+
+Technology Stack for This Module:
+
+Backend Generation:
+- FastAPI for HTTP/WebSocket endpoints
+- FastAPI StreamingResponse for SSE
+- Redis (redis-py) for Pub/Sub
+- Temporal (temporalio) for job scheduling
+- Pydantic v2 for event models
+- WebSocket support in FastAPI
+
+Frontend Generation:
+- Flutter/Dart
+- flutter_bloc for state management
+- web_socket_channel for WebSocket client
+- freezed for immutable event/state models
+- StreamControllers for BLoC integration
+- Dio for HTTP (from Module 01)
+
+Real-time Infrastructure:
+- Redis Pub/Sub for backend-to-backend events
+- WebSocket for bidirectional client-server communication
+- SSE for server-to-client streaming
+- Temporal for scheduled/workflow jobs
+
+CLI Tools:
+- Jinja2 for code templates
+- Typer for CLI commands
+- Rich for formatted output
+
+Testing:
+- pytest for integration tests
+- pyright for Python type checking
+- dart analyze for Dart validation
+- Real Redis/Temporal servers for integration testing
+
+Files Created in This Session:
+- /Users/udi/work/moinsen/ideas/schnitzel/feature_list_module_02_realtime_events.json (175 tests)
+- /Users/udi/work/moinsen/ideas/schnitzel/claude-progress.txt (updated)
+
+Next Steps:
+1. Import module_02 features to database:
+   autocoder-db import /Users/udi/work/moinsen/ideas/schnitzel/feature_list_module_02_realtime_events.json --project /Users/udi/work/moinsen/ideas/schnitzel --module module_02_realtime_events
+
+2. Verify import:
+   autocoder-db stats --project /Users/udi/work/moinsen/ideas/schnitzel
+
+3. Begin implementation (when ready):
+   /auto-coder:run --module module_02_realtime_events
+
+First Wave Should Focus On (10-12 features):
+1. Schema models include EventConfig for event definitions
+2. Schema models include StreamConfig for stream definitions
+3. Schema models include JobConfig for Temporal job definitions
+4. Event publisher generator file exists with correct structure
+5. Event publisher template creates EventPublisher base class
+6. Event publisher template generates event-specific Pydantic models
+7. SSE stream generator file exists with correct structure
+8. WebSocket handler generator file exists with correct structure
+9. Dart event client generator file exists with correct structure
+10. Temporal job generator file exists with correct structure
+11. BLoC state generator file exists with correct structure
+12. Templates directory includes all required Jinja2 templates
+
+Success Criteria for Module 02:
+
+Event Publishing:
+- Events publish correctly via WebSocket and Redis channels
+- Event payload types match between Python and Dart
+- Multiple channels per event work correctly
+- Type-safe publish methods per event
+- Events with no payload are handled gracefully
+
+Streaming:
+- SSE streams deliver real-time data with reconnection support
+- Event ID tracking enables resume from last received event
+- Multiple concurrent SSE connections work correctly
+- Slow clients are buffered without blocking server
+
+WebSocket:
+- Bidirectional communication works with message routing
+- ConnectionManager tracks multiple clients correctly
+- Heartbeat mechanism detects dead connections
+- Authentication works via query params or first message
+- Room/channel subscription enables targeted messaging
+
+Temporal Jobs:
+- Scheduled jobs have correct Temporal configuration
+- Cron schedules are parsed correctly
+- Retry policies are configured properly
+- Timeout configuration works as expected
+- Activity method stubs are generated
+
+BLoC State Management:
+- BLoCs manage feature state with all CRUD operations
+- Event classes (Load, Create, Update, Delete) are generated
+- State classes (Initial, Loading, Loaded, Error) are generated
+- Repository integration pattern is implemented
+- Optimistic updates work correctly
+
+Code Quality:
+- All generated Python code passes pyright with no errors
+- All generated Dart code passes dart analyze with no errors
+- Event payload types match between Python Pydantic and Dart freezed models
+- Generated code follows project naming conventions (PascalCase, snake_case, camelCase)
+- All code includes proper docstrings and type hints
+- Generated code follows Black/flake8 (Python) and dart format (Dart)
+
+Integration:
+- Full generation pipeline produces working code
+- End-to-end event flow from Python to Dart works
+- SSE/WebSocket connections are stable and reliable
+- Type safety is maintained throughout the stack
+- All generators integrate with CLI commands
+
+Module Completion Estimate:
+- 175 tests total (within 100-200 range)
+- Estimated waves: 14-20 waves (8-12 tests per wave)
+- Expected completion: After all P0 and P1 tests pass
+- P2 tests can be addressed in polish phase
+
+Implementation Order:
+Wave 1-2: Schema model extensions (EventConfig, StreamConfig, JobConfig)
+Wave 3-5: Event publisher generator and template
+Wave 6-8: SSE and WebSocket generators and templates
+Wave 9-11: Temporal job generator and template
+Wave 12-14: Dart event client generator and template
+Wave 15-17: BLoC state generator and templates
+Wave 18-20: Integration tests, CLI updates, validation, polish
+
+Notes for Implementation:
+- Module 02 extends Module 01 - reuse existing generators and templates
+- Schema models need new config classes for events, streams, and jobs
+- Focus on Jinja2 templates - they drive all code generation
+- Integration tests validate complete pipeline with real connections
+- Test type safety between Python and Dart rigorously
+- All generated code must compile and pass strict type checking
+- Use FoodieAI schema for realistic integration testing
+- Real-time features require Redis and Temporal servers for testing
+- Event types must match exactly between Python and Dart
+- BLoC pattern should follow flutter_bloc best practices

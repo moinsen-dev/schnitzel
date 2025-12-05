@@ -1,0 +1,425 @@
+<project_specification>
+  <project_name>Schnitzel Module 02 - Real-time &amp; Events</project_name>
+  <module_id>module_02_realtime_events</module_id>
+  <depends_on>module_01_api_layer</depends_on>
+
+  <overview>
+    Add real-time communication capabilities to the Schnitzel code generator framework:
+    event publishing via WebSocket and Redis Pub/Sub, SSE streaming, Temporal job
+    scheduling, and BLoC state management generation for Flutter.
+
+    This module creates 6 new generators and 8 new templates that extend the existing
+    schnitzel-cli tool built in Module 01.
+  </overview>
+
+  <technology_stack>
+    <cli>
+      <language>Python 3.11+</language>
+      <framework>Typer</framework>
+      <terminal_ui>Rich</terminal_ui>
+      <yaml_parsing>PyYAML</yaml_parsing>
+      <validation>Pydantic v2</validation>
+      <templating>Jinja2</templating>
+      <package_manager>UV</package_manager>
+    </cli>
+
+    <backend_runtime>
+      <framework>FastAPI</framework>
+      <websocket>FastAPI WebSocket</websocket>
+      <sse>FastAPI StreamingResponse</sse>
+      <cache>Redis (redis-py) with Pub/Sub</cache>
+      <jobs>Temporal (temporalio)</jobs>
+      <validation>Pydantic v2</validation>
+    </backend_runtime>
+
+    <frontend_runtime>
+      <framework>Flutter</framework>
+      <state_management>flutter_bloc</state_management>
+      <models>freezed + json_serializable</models>
+      <http>Dio</http>
+      <websocket>web_socket_channel</websocket>
+    </frontend_runtime>
+  </technology_stack>
+
+  <prerequisites>
+    <existing_codebase>
+      Module 01 (API Layer) must be completed with:
+      - schnitzel-cli/src/schnitzel/generators/python/models.py
+      - schnitzel-cli/src/schnitzel/generators/python/orm.py
+      - schnitzel-cli/src/schnitzel/generators/python/routes.py
+      - schnitzel-cli/src/schnitzel/generators/dart/models.py
+      - schnitzel-cli/src/schnitzel/generators/dart/api_client.py
+      - schnitzel-cli/src/schnitzel/schema/models.py (with EventConfig, StreamConfig, JobConfig)
+    </existing_codebase>
+    <environment_setup>
+      - Python 3.11+ with UV package manager
+      - Flutter SDK 3.x
+      - Redis server (for testing pub/sub)
+      - Temporal server (for testing jobs)
+    </environment_setup>
+  </prerequisites>
+
+  <core_features>
+    <event_publisher_generator>
+      - Generate event publishing infrastructure from schema events section
+      - Redis Pub/Sub integration for backend-to-backend communication
+      - WebSocket broadcast for client updates
+      - Event type definitions with Pydantic models
+      - Payload serialization with JSON
+      - Channel routing based on event configuration
+      - Output: backend/app/generated/events.py
+    </event_publisher_generator>
+
+    <sse_stream_generator>
+      - Generate SSE endpoints from schema streams section (type: sse)
+      - FastAPI StreamingResponse with async generators
+      - Chunk type definitions for structured data
+      - Reconnection support headers (Last-Event-ID)
+      - Event ID tracking for resume capability
+      - Output: backend/app/generated/streams.py
+    </sse_stream_generator>
+
+    <websocket_handler_generator>
+      - Generate WebSocket endpoints from schema streams section (type: websocket)
+      - Connection manager for tracking multiple clients
+      - Message routing by message type field
+      - Heartbeat/keepalive mechanism
+      - Authentication via query params or first message
+      - Room/channel subscription support
+      - Output: backend/app/generated/websocket.py
+    </websocket_handler_generator>
+
+    <dart_event_client_generator>
+      - Generate event subscription manager for Flutter
+      - SSE client with automatic reconnection logic
+      - WebSocket client with auto-reconnect and backoff
+      - Type-safe event deserialization using freezed models
+      - Stream controllers for BLoC integration
+      - Connection state management
+      - Output: packages/shared/lib/generated/events.dart
+    </dart_event_client_generator>
+
+    <temporal_job_generator>
+      - Generate Temporal workflow definitions from schema jobs section
+      - Activity implementations as method stubs
+      - Schedule configuration from cron expressions
+      - Retry policies from job configuration
+      - Timeout handling with configurable values
+      - Output: backend/app/generated/jobs.py
+    </temporal_job_generator>
+
+    <bloc_state_generator>
+      - Generate feature-specific BLoCs from schema models
+      - Event classes: Load, Create, Update, Delete per model
+      - State classes: Initial, Loading, Loaded, Error
+      - Repository integration pattern for data access
+      - Error handling with typed failure classes
+      - Optimistic updates support
+      - Output: packages/[feature]/lib/bloc/ directory per feature
+    </bloc_state_generator>
+  </core_features>
+
+  <files_to_create>
+    <generators>
+      - schnitzel-cli/src/schnitzel/generators/python/events.py (Event publisher generator)
+      - schnitzel-cli/src/schnitzel/generators/python/streams.py (SSE stream generator)
+      - schnitzel-cli/src/schnitzel/generators/python/websocket.py (WebSocket handler generator)
+      - schnitzel-cli/src/schnitzel/generators/python/jobs.py (Temporal job generator)
+      - schnitzel-cli/src/schnitzel/generators/dart/events.py (Dart event client generator)
+      - schnitzel-cli/src/schnitzel/generators/dart/bloc.py (BLoC state generator)
+    </generators>
+
+    <templates>
+      - schnitzel-cli/src/schnitzel/templates/python/events.py.j2 (Event infrastructure template)
+      - schnitzel-cli/src/schnitzel/templates/python/streams.py.j2 (SSE endpoint template)
+      - schnitzel-cli/src/schnitzel/templates/python/websocket.py.j2 (WebSocket handler template)
+      - schnitzel-cli/src/schnitzel/templates/python/jobs.py.j2 (Temporal workflow template)
+      - schnitzel-cli/src/schnitzel/templates/dart/events.dart.j2 (Dart event client template)
+      - schnitzel-cli/src/schnitzel/templates/dart/bloc.dart.j2 (BLoC main class template)
+      - schnitzel-cli/src/schnitzel/templates/dart/bloc_event.dart.j2 (BLoC events template)
+      - schnitzel-cli/src/schnitzel/templates/dart/bloc_state.dart.j2 (BLoC states template)
+    </templates>
+
+    <tests>
+      - schnitzel-cli/tests/integration/test_events_generation.py (Event generation tests)
+      - schnitzel-cli/tests/integration/test_streams_generation.py (SSE generation tests)
+      - schnitzel-cli/tests/integration/test_websocket_generation.py (WebSocket generation tests)
+      - schnitzel-cli/tests/integration/test_jobs_generation.py (Temporal job generation tests)
+      - schnitzel-cli/tests/integration/test_bloc_generation.py (BLoC generation tests)
+      - schnitzel-cli/tests/integration/test_dart_events_generation.py (Dart events generation tests)
+    </tests>
+  </files_to_create>
+
+  <schema_extensions>
+    <events_section>
+      Events are defined in the schema YAML under the 'events' key:
+      ```yaml
+      events:
+        order.placed:
+          payload:
+            order_id: uuid
+            customer_id: uuid
+            total: decimal
+          channels:
+            - websocket
+            - redis
+
+        inventory.low:
+          payload:
+            product_id: uuid
+            current_stock: integer
+            threshold: integer
+          channels:
+            - redis
+      ```
+    </events_section>
+
+    <streams_section>
+      Streams are defined under the 'streams' key:
+      ```yaml
+      streams:
+        order_updates:
+          type: sse
+          path: /orders/{order_id}/stream
+          events:
+            - order.status_changed
+            - order.item_added
+          auth: required
+
+        chat:
+          type: websocket
+          path: /ws/chat/{room_id}
+          messages:
+            - type: message
+              payload: {content: string, sender_id: uuid}
+            - type: typing
+              payload: {user_id: uuid, is_typing: boolean}
+          auth: required
+      ```
+    </streams_section>
+
+    <jobs_section>
+      Jobs are defined under the 'jobs' key:
+      ```yaml
+      jobs:
+        daily_report:
+          schedule: "0 0 * * *"
+          workflow: GenerateDailyReport
+          timeout: 30m
+          retry_policy:
+            max_attempts: 3
+            initial_interval: 1m
+
+        cleanup_expired:
+          schedule: "*/15 * * * *"
+          workflow: CleanupExpiredSessions
+          timeout: 5m
+      ```
+    </jobs_section>
+  </schema_extensions>
+
+  <implementation_steps>
+    <step number="1">
+      <title>Event Publisher Generator</title>
+      <tasks>
+        - Create Jinja2 template for event infrastructure (events.py.j2)
+        - Implement Redis Pub/Sub publisher class
+        - Implement WebSocket broadcast manager class
+        - Create event type registry with Pydantic models
+        - Write generator (events.py) that reads schema and renders template
+        - Handle channel routing based on event config
+      </tasks>
+      <output_files>
+        - schnitzel-cli/src/schnitzel/templates/python/events.py.j2
+        - schnitzel-cli/src/schnitzel/generators/python/events.py
+      </output_files>
+    </step>
+
+    <step number="2">
+      <title>SSE Stream Generator</title>
+      <tasks>
+        - Create Jinja2 template for SSE endpoints (streams.py.j2)
+        - Implement async generator pattern for streaming
+        - Add chunk serialization with event IDs
+        - Include reconnection headers (Cache-Control, Last-Event-ID)
+        - Write generator (streams.py) for SSE endpoint generation
+      </tasks>
+      <output_files>
+        - schnitzel-cli/src/schnitzel/templates/python/streams.py.j2
+        - schnitzel-cli/src/schnitzel/generators/python/streams.py
+      </output_files>
+    </step>
+
+    <step number="3">
+      <title>WebSocket Handler Generator</title>
+      <tasks>
+        - Create Jinja2 template for WebSocket handlers (websocket.py.j2)
+        - Implement ConnectionManager class for client tracking
+        - Add message routing by type field
+        - Include heartbeat mechanism
+        - Handle authentication via query params or first message
+        - Write generator (websocket.py) for WebSocket endpoint generation
+      </tasks>
+      <output_files>
+        - schnitzel-cli/src/schnitzel/templates/python/websocket.py.j2
+        - schnitzel-cli/src/schnitzel/generators/python/websocket.py
+      </output_files>
+    </step>
+
+    <step number="4">
+      <title>Dart Event Client Generator</title>
+      <tasks>
+        - Create Jinja2 template for Dart event client (events.dart.j2)
+        - Implement SSE client with reconnection logic
+        - Implement WebSocket client with auto-reconnect and exponential backoff
+        - Add type-safe event deserialization
+        - Create StreamControllers for BLoC integration
+        - Write generator (events.py in dart/) for client generation
+      </tasks>
+      <output_files>
+        - schnitzel-cli/src/schnitzel/templates/dart/events.dart.j2
+        - schnitzel-cli/src/schnitzel/generators/dart/events.py
+      </output_files>
+    </step>
+
+    <step number="5">
+      <title>Temporal Job Generator</title>
+      <tasks>
+        - Create Jinja2 template for Temporal workflows (jobs.py.j2)
+        - Parse cron expressions for schedule configuration
+        - Implement retry policy configuration
+        - Add timeout handling
+        - Generate activity method stubs
+        - Write generator (jobs.py) for workflow generation
+      </tasks>
+      <output_files>
+        - schnitzel-cli/src/schnitzel/templates/python/jobs.py.j2
+        - schnitzel-cli/src/schnitzel/generators/python/jobs.py
+      </output_files>
+    </step>
+
+    <step number="6">
+      <title>BLoC State Generator</title>
+      <tasks>
+        - Create Jinja2 templates for BLoC pattern (bloc.dart.j2, bloc_event.dart.j2, bloc_state.dart.j2)
+        - Generate Event classes (Load, Create, Update, Delete)
+        - Generate State classes (Initial, Loading, Loaded, Error)
+        - Implement repository integration pattern
+        - Add typed failure classes for error handling
+        - Write generator (bloc.py) for BLoC generation per model
+      </tasks>
+      <output_files>
+        - schnitzel-cli/src/schnitzel/templates/dart/bloc.dart.j2
+        - schnitzel-cli/src/schnitzel/templates/dart/bloc_event.dart.j2
+        - schnitzel-cli/src/schnitzel/templates/dart/bloc_state.dart.j2
+        - schnitzel-cli/src/schnitzel/generators/dart/bloc.py
+      </output_files>
+    </step>
+
+    <step number="7">
+      <title>Integration Tests - Events and Streams</title>
+      <tasks>
+        - Create test_events_generation.py with schema fixtures
+        - Test event publisher generation with multiple channels
+        - Test Redis and WebSocket output
+        - Create test_streams_generation.py
+        - Test SSE endpoint generation
+        - Test WebSocket handler generation
+        - Verify generated Python code passes pyright
+      </tasks>
+      <output_files>
+        - schnitzel-cli/tests/integration/test_events_generation.py
+        - schnitzel-cli/tests/integration/test_streams_generation.py
+        - schnitzel-cli/tests/integration/test_websocket_generation.py
+      </output_files>
+    </step>
+
+    <step number="8">
+      <title>Integration Tests - Jobs and BLoC</title>
+      <tasks>
+        - Create test_jobs_generation.py
+        - Test Temporal workflow generation
+        - Test cron schedule parsing
+        - Create test_bloc_generation.py
+        - Test BLoC event/state generation
+        - Test Dart event client generation
+        - Verify generated Dart code passes dart analyze
+      </tasks>
+      <output_files>
+        - schnitzel-cli/tests/integration/test_jobs_generation.py
+        - schnitzel-cli/tests/integration/test_bloc_generation.py
+        - schnitzel-cli/tests/integration/test_dart_events_generation.py
+      </output_files>
+    </step>
+
+    <step number="9">
+      <title>Update Generator Registry and CLI</title>
+      <tasks>
+        - Update schnitzel-cli/src/schnitzel/generators/__init__.py to export new generators
+        - Update CLI commands to include new generation targets
+        - Ensure generators are accessible via schnitzel generate command
+        - Add --events, --streams, --jobs, --blocs flags or subcommands
+      </tasks>
+      <output_files>
+        - schnitzel-cli/src/schnitzel/generators/__init__.py (update)
+        - schnitzel-cli/src/schnitzel/generators/python/__init__.py (update)
+        - schnitzel-cli/src/schnitzel/generators/dart/__init__.py (update)
+      </output_files>
+    </step>
+  </implementation_steps>
+
+  <naming_conventions>
+    <python>
+      - Classes: PascalCase (EventPublisher, ConnectionManager)
+      - Functions: snake_case (publish_event, broadcast_message)
+      - Files: snake_case (events.py, websocket.py)
+      - Constants: UPPER_SNAKE_CASE (DEFAULT_TIMEOUT, MAX_RETRIES)
+    </python>
+    <dart>
+      - Classes: PascalCase (OrderBloc, OrderEvent, OrderState)
+      - Files: snake_case (order_bloc.dart, order_event.dart)
+      - Variables: camelCase (orderRepository, currentState)
+    </dart>
+    <events>
+      - Event names: dot.notation (order.placed, inventory.low)
+      - Channels: lowercase (websocket, redis, sse)
+    </events>
+    <blocs>
+      - BLoC class: {Model}Bloc (OrderBloc, UserBloc)
+      - Events: {Model}{Action} (OrderLoad, OrderCreate, OrderUpdate, OrderDelete)
+      - States: {Model}State with sealed classes (OrderInitial, OrderLoading, OrderLoaded, OrderError)
+    </blocs>
+  </naming_conventions>
+
+  <zero_tolerance_policy>
+    - No errors: All generated code must compile/analyze clean
+    - No warnings: Strict linting compliance (pyright, dart analyze)
+    - No TODOs: Complete implementations only in generated code
+    - No mock data: Real structures and types
+    - Type safety: Event types must match between Python and Dart
+  </zero_tolerance_policy>
+
+  <success_criteria>
+    <functionality>
+      - Events publish correctly via WebSocket and Redis channels
+      - SSE streams deliver real-time data with reconnection support
+      - WebSocket bidirectional communication works with message routing
+      - Scheduled jobs have correct Temporal configuration
+      - BLoCs manage feature state with all CRUD operations
+    </functionality>
+
+    <code_quality>
+      - All generated Dart code passes dart analyze with no errors
+      - All generated Python code passes pyright with no errors
+      - Event payload types match between Python Pydantic and Dart freezed models
+      - Generated code follows project naming conventions
+    </code_quality>
+
+    <testing>
+      - Integration tests cover all 6 generators
+      - Tests use FoodieAI example schema for consistency
+      - Generated code compiles successfully in tests
+      - Event serialization/deserialization round-trips correctly
+    </testing>
+  </success_criteria>
+</project_specification>

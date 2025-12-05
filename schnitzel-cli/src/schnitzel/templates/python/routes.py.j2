@@ -8,6 +8,10 @@
 router = APIRouter()
 
 
+# =============================================================================
+# Route Endpoints
+# =============================================================================
+
 {% for route in routes %}
 @router.{{ route.method }}(
     "{{ route.path }}"{% if route.status_code %},

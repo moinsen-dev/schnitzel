@@ -5,11 +5,17 @@ import 'package:dio/dio.dart';
 import '../models/models.dart';
 {% endif %}
 
+
+// =============================================================================
+// API Client
+// =============================================================================
+
 class ApiClient {
   final Dio _dio;
 
   ApiClient(this._dio);
 
+  // API Methods
 {% for method in methods %}
 {% if method.description %}
   /// {{ method.description }}

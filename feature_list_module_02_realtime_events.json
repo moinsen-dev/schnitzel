@@ -1,0 +1,2013 @@
+[
+  {
+    "category": "functional",
+    "description": "Schema models include EventConfig for event definitions",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/schema/models.py",
+      "Verify EventConfig class exists with fields: name, payload (dict), channels (list)",
+      "Verify payload field accepts Dict[str, str] for type mapping",
+      "Verify channels field accepts List[Literal['websocket', 'redis', 'sse']]",
+      "Verify EventConfig integrates with SchnitzelSchema.events field"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Schema models include StreamConfig for stream definitions",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/schema/models.py",
+      "Verify StreamConfig class exists with fields: name, type, path, auth",
+      "Verify type field accepts Literal['sse', 'websocket']",
+      "Verify path field accepts string with path parameter placeholders",
+      "Verify auth field accepts Literal['required', 'optional', 'none']",
+      "Verify events field for SSE streams (List[str])",
+      "Verify messages field for WebSocket streams (List[MessageConfig])",
+      "Verify MessageConfig class with type and payload fields"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Schema models include JobConfig for Temporal job definitions",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/schema/models.py",
+      "Verify JobConfig class exists with fields: name, schedule, workflow, timeout",
+      "Verify schedule field accepts cron expression string",
+      "Verify workflow field accepts PascalCase workflow name",
+      "Verify timeout field accepts duration string (e.g., '30m', '1h')",
+      "Verify retry_policy field with RetryPolicy nested model",
+      "Verify RetryPolicy has max_attempts, initial_interval, backoff_coefficient"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event publisher generator file exists with correct structure",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/generators/python/events.py exists",
+      "Verify file imports Jinja2 Environment and Template",
+      "Verify generate_events function accepts schema parameter",
+      "Verify function reads events section from schema",
+      "Verify function loads events.py.j2 template",
+      "Verify function returns rendered Python code string"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event publisher template creates EventPublisher base class",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/templates/python/events.py.j2",
+      "Verify template includes EventPublisher class definition",
+      "Verify EventPublisher has redis_client: Redis parameter",
+      "Verify EventPublisher has websocket_manager: ConnectionManager parameter",
+      "Verify EventPublisher has publish method with event_name and payload parameters",
+      "Verify publish method routes to correct channels based on event config"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event publisher template generates event-specific Pydantic models",
+    "steps": [
+      "Create test schema with event: order.placed with payload {order_id: uuid, total: decimal}",
+      "Run event generator with test schema",
+      "Verify generated code includes OrderPlacedEvent class extending BaseModel",
+      "Verify class has order_id: UUID field",
+      "Verify class has total: Decimal field",
+      "Verify class has proper imports (UUID, Decimal, BaseModel)",
+      "Verify class name converts dot.notation to PascalCase correctly"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event publisher template generates Redis publish method",
+    "steps": [
+      "Create test schema with event using redis channel",
+      "Run event generator with test schema",
+      "Verify generated code includes _publish_redis method",
+      "Verify method accepts channel: str and message: str parameters",
+      "Verify method calls self.redis_client.publish(channel, message)",
+      "Verify method serializes payload to JSON before publishing",
+      "Verify method handles Redis connection errors"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event publisher template generates WebSocket broadcast method",
+    "steps": [
+      "Create test schema with event using websocket channel",
+      "Run event generator with test schema",
+      "Verify generated code includes _broadcast_websocket method",
+      "Verify method accepts message: str parameter",
+      "Verify method calls self.websocket_manager.broadcast(message)",
+      "Verify method handles disconnected clients gracefully",
+      "Verify method serializes payload to JSON"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event publisher generator handles multiple channels per event",
+    "steps": [
+      "Create test schema with event: inventory.low with channels: [redis, websocket]",
+      "Run event generator with test schema",
+      "Verify generated publish_inventory_low method publishes to both channels",
+      "Verify Redis publish is awaited",
+      "Verify WebSocket broadcast is awaited",
+      "Verify both channels receive same event payload",
+      "Verify error in one channel doesn't block the other"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event publisher generator creates type-safe publish methods per event",
+    "steps": [
+      "Create test schema with two events: order.placed and order.cancelled",
+      "Run event generator with test schema",
+      "Verify generated code has publish_order_placed method",
+      "Verify generated code has publish_order_cancelled method",
+      "Verify each method accepts typed parameters matching event payload",
+      "Verify methods validate payload types at runtime",
+      "Verify methods return None on success"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event publisher generator handles events with no payload",
+    "steps": [
+      "Create test schema with event: system.heartbeat with empty payload",
+      "Run event generator with test schema",
+      "Verify generated publish_system_heartbeat method has no parameters beyond self",
+      "Verify method publishes empty dict as payload",
+      "Verify channels receive event with no data",
+      "Verify no validation errors occur"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event publisher generator includes proper imports",
+    "steps": [
+      "Create test schema with events using various types (uuid, datetime, decimal)",
+      "Run event generator with test schema",
+      "Verify generated code imports UUID from uuid module",
+      "Verify generated code imports datetime from datetime module",
+      "Verify generated code imports Decimal from decimal module",
+      "Verify generated code imports BaseModel from pydantic",
+      "Verify generated code imports Redis from redis.asyncio",
+      "Verify generated code imports json module"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "SSE stream generator file exists with correct structure",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/generators/python/streams.py exists",
+      "Verify file imports Jinja2 Environment and Template",
+      "Verify generate_streams function accepts schema parameter",
+      "Verify function reads streams section from schema",
+      "Verify function filters streams by type='sse'",
+      "Verify function loads streams.py.j2 template",
+      "Verify function returns rendered Python code string"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "SSE stream template creates async generator endpoint",
+    "steps": [
+      "Create test schema with stream: order_updates, type: sse, path: /orders/{order_id}/stream",
+      "Run stream generator with test schema",
+      "Verify generated code includes async def order_updates_stream function",
+      "Verify function accepts order_id: UUID parameter",
+      "Verify function returns StreamingResponse",
+      "Verify function includes async generator pattern (async def _stream())",
+      "Verify generator yields Server-Sent Events format"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "SSE stream template includes reconnection headers",
+    "steps": [
+      "Create test schema with SSE stream",
+      "Run stream generator with test schema",
+      "Verify generated StreamingResponse includes Cache-Control: no-cache header",
+      "Verify includes X-Accel-Buffering: no header",
+      "Verify includes Connection: keep-alive header",
+      "Verify includes Content-Type: text/event-stream header",
+      "Verify supports Last-Event-ID header from request"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "SSE stream template generates event ID tracking",
+    "steps": [
+      "Create test schema with SSE stream",
+      "Run stream generator with test schema",
+      "Verify generated code maintains event_id counter",
+      "Verify each SSE message includes id: field",
+      "Verify event IDs increment sequentially",
+      "Verify Last-Event-ID from request is used as starting point",
+      "Verify clients can resume from last received event"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "SSE stream template formats events correctly",
+    "steps": [
+      "Create test schema with SSE stream",
+      "Run stream generator with test schema",
+      "Generate test event data",
+      "Verify SSE format: 'id: {event_id}\\n'",
+      "Verify SSE format: 'event: {event_type}\\n'",
+      "Verify SSE format: 'data: {json_payload}\\n\\n'",
+      "Verify newlines are properly escaped in data field",
+      "Verify format complies with SSE specification"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "SSE stream template handles authentication",
+    "steps": [
+      "Create test schema with SSE stream with auth: required",
+      "Run stream generator with test schema",
+      "Verify generated endpoint includes auth dependency",
+      "Verify endpoint accepts current_user parameter",
+      "Verify unauthenticated requests return 401",
+      "Verify authenticated requests succeed",
+      "Verify auth is optional when auth: optional in schema"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "SSE stream template subscribes to relevant events",
+    "steps": [
+      "Create test schema with SSE stream specifying events: [order.status_changed, order.item_added]",
+      "Run stream generator with test schema",
+      "Verify generated code subscribes to Redis channels for specified events",
+      "Verify generator yields only matching event types",
+      "Verify non-matching events are filtered out",
+      "Verify subscription cleanup on disconnect"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "WebSocket handler generator file exists with correct structure",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/generators/python/websocket.py exists",
+      "Verify file imports Jinja2 Environment and Template",
+      "Verify generate_websocket function accepts schema parameter",
+      "Verify function reads streams section from schema",
+      "Verify function filters streams by type='websocket'",
+      "Verify function loads websocket.py.j2 template",
+      "Verify function returns rendered Python code string"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "WebSocket template creates ConnectionManager class",
+    "steps": [
+      "Create test schema with WebSocket stream",
+      "Run websocket generator with test schema",
+      "Verify generated code includes ConnectionManager class",
+      "Verify class has active_connections: Dict[str, WebSocket] attribute",
+      "Verify class has connect(connection_id: str, websocket: WebSocket) method",
+      "Verify class has disconnect(connection_id: str) method",
+      "Verify class has broadcast(message: str) method",
+      "Verify class has send_personal(message: str, connection_id: str) method"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "WebSocket template creates endpoint with message routing",
+    "steps": [
+      "Create test schema with WebSocket stream defining messages: [{type: chat, payload: {content: str}}, {type: typing, payload: {is_typing: bool}}]",
+      "Run websocket generator with test schema",
+      "Verify generated endpoint accepts WebSocket parameter",
+      "Verify endpoint parses incoming JSON messages",
+      "Verify endpoint routes by message 'type' field",
+      "Verify each message type has dedicated handler function",
+      "Verify handler validates payload structure"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "WebSocket template implements heartbeat mechanism",
+    "steps": [
+      "Create test schema with WebSocket stream",
+      "Run websocket generator with test schema",
+      "Verify generated code sends ping messages every N seconds",
+      "Verify code expects pong responses",
+      "Verify connection is closed if pong not received",
+      "Verify heartbeat timeout is configurable",
+      "Verify heartbeat doesn't interfere with data messages"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "WebSocket template handles authentication via query params",
+    "steps": [
+      "Create test schema with WebSocket stream with auth: required",
+      "Run websocket generator with test schema",
+      "Verify generated endpoint accepts token query parameter",
+      "Verify endpoint validates token before accepting connection",
+      "Verify invalid token results in connection rejection",
+      "Verify valid token allows connection",
+      "Verify current_user is available in message handlers"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "WebSocket template supports authentication via first message",
+    "steps": [
+      "Create test schema with WebSocket stream with auth: required",
+      "Run websocket generator with test schema",
+      "Verify generated endpoint accepts connection without auth",
+      "Verify endpoint expects first message to contain auth token",
+      "Verify endpoint validates token from first message",
+      "Verify connection is closed if token invalid",
+      "Verify subsequent messages are processed after auth"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "WebSocket template implements room/channel subscription",
+    "steps": [
+      "Create test schema with WebSocket stream with path: /ws/chat/{room_id}",
+      "Run websocket generator with test schema",
+      "Verify generated endpoint accepts room_id parameter",
+      "Verify ConnectionManager tracks connections per room",
+      "Verify broadcast can target specific room",
+      "Verify connections in different rooms don't receive each other's messages",
+      "Verify clients can change rooms dynamically"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "WebSocket template handles connection errors gracefully",
+    "steps": [
+      "Create test schema with WebSocket stream",
+      "Run websocket generator with test schema",
+      "Verify generated code catches WebSocketDisconnect exception",
+      "Verify connection is removed from active_connections on disconnect",
+      "Verify disconnect is logged",
+      "Verify cleanup tasks run on disconnect",
+      "Verify server continues functioning after client disconnect"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "WebSocket template validates message payload schemas",
+    "steps": [
+      "Create test schema with WebSocket message: {type: order, payload: {order_id: uuid, items: list}}",
+      "Run websocket generator with test schema",
+      "Verify generated handler creates Pydantic model for payload",
+      "Verify handler validates payload against model",
+      "Verify invalid payload returns validation error to client",
+      "Verify valid payload proceeds to handler logic",
+      "Verify error messages are user-friendly"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Dart event client generator file exists with correct structure",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/generators/dart/events.py exists",
+      "Verify file imports Jinja2 Environment and Template",
+      "Verify generate_dart_events function accepts schema parameter",
+      "Verify function reads events section from schema",
+      "Verify function loads events.dart.j2 template",
+      "Verify function returns rendered Dart code string"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Dart event client template creates EventClient class",
+    "steps": [
+      "Create test schema with events",
+      "Run dart event generator with test schema",
+      "Verify generated code includes EventClient class",
+      "Verify class has baseUrl field",
+      "Verify class has sseClient and wsClient fields",
+      "Verify class has connect() method",
+      "Verify class has disconnect() method",
+      "Verify class has dispose() method for cleanup"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Dart event client template creates SSE client with reconnection",
+    "steps": [
+      "Create test schema with SSE stream",
+      "Run dart event generator with test schema",
+      "Verify generated SSEClient class exists",
+      "Verify class uses http package for SSE connection",
+      "Verify class maintains lastEventId for reconnection",
+      "Verify class auto-reconnects on connection loss",
+      "Verify reconnection uses exponential backoff",
+      "Verify class sends Last-Event-ID header on reconnect"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Dart event client template creates WebSocket client with auto-reconnect",
+    "steps": [
+      "Create test schema with WebSocket stream",
+      "Run dart event generator with test schema",
+      "Verify generated WebSocketClient class exists",
+      "Verify class uses web_socket_channel package",
+      "Verify class auto-reconnects on disconnect",
+      "Verify reconnection uses exponential backoff with max delay",
+      "Verify class tracks connection state (connected, connecting, disconnected)",
+      "Verify reconnect attempts have max retry limit"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Dart event client template deserializes events to typed models",
+    "steps": [
+      "Create test schema with event: order.placed with payload {order_id: uuid, total: decimal}",
+      "Run dart event generator with test schema",
+      "Verify generated code deserializes JSON to OrderPlacedEvent model",
+      "Verify model uses freezed for immutability",
+      "Verify model includes fromJson factory constructor",
+      "Verify all payload fields are properly typed",
+      "Verify deserialization errors are handled gracefully"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Dart event client template creates StreamControllers for BLoC integration",
+    "steps": [
+      "Create test schema with multiple events",
+      "Run dart event generator with test schema",
+      "Verify generated code creates StreamController per event type",
+      "Verify controllers are broadcast streams",
+      "Verify events are added to correct controller",
+      "Verify controllers are properly closed on dispose",
+      "Verify BLoCs can listen to specific event streams"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Dart event client template manages connection state",
+    "steps": [
+      "Create test schema with events",
+      "Run dart event generator with test schema",
+      "Verify generated code includes ConnectionState enum (disconnected, connecting, connected, reconnecting)",
+      "Verify code includes connectionState stream",
+      "Verify state updates on connect/disconnect/reconnect",
+      "Verify UI can observe connection state changes",
+      "Verify state is exposed as ValueNotifier or Stream"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Dart event client template handles SSE parsing correctly",
+    "steps": [
+      "Create test schema with SSE stream",
+      "Run dart event generator with test schema",
+      "Verify generated code parses 'id:' field",
+      "Verify code parses 'event:' field",
+      "Verify code parses 'data:' field",
+      "Verify code handles multiline data",
+      "Verify code handles comments (lines starting with :)",
+      "Verify code follows SSE specification"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Dart event client template includes authentication support",
+    "steps": [
+      "Create test schema with authenticated SSE/WebSocket streams",
+      "Run dart event generator with test schema",
+      "Verify generated code accepts auth token parameter",
+      "Verify SSE client sends Authorization header",
+      "Verify WebSocket client sends token as query param or first message",
+      "Verify token is refreshed on expiry",
+      "Verify connection is re-established after token refresh"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Temporal job generator file exists with correct structure",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/generators/python/jobs.py exists",
+      "Verify file imports Jinja2 Environment and Template",
+      "Verify generate_jobs function accepts schema parameter",
+      "Verify function reads jobs section from schema",
+      "Verify function loads jobs.py.j2 template",
+      "Verify function returns rendered Python code string"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Temporal job template creates workflow class per job",
+    "steps": [
+      "Create test schema with job: daily_report with workflow: GenerateDailyReport",
+      "Run job generator with test schema",
+      "Verify generated code includes GenerateDailyReport class with @workflow decorator",
+      "Verify class has @workflow.run method",
+      "Verify run method is async",
+      "Verify workflow name matches schema definition",
+      "Verify proper temporalio imports"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Temporal job template parses cron schedules correctly",
+    "steps": [
+      "Create test schema with job having schedule: '0 0 * * *' (daily at midnight)",
+      "Run job generator with test schema",
+      "Verify generated code includes schedule configuration",
+      "Verify schedule is in cron format",
+      "Verify schedule can be registered with Temporal",
+      "Verify multiple schedules can coexist",
+      "Verify schedule validation catches invalid cron expressions"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Temporal job template configures retry policies",
+    "steps": [
+      "Create test schema with job having retry_policy: {max_attempts: 3, initial_interval: 1m}",
+      "Run job generator with test schema",
+      "Verify generated workflow includes retry policy",
+      "Verify max_attempts is set correctly",
+      "Verify initial_interval is converted to timedelta",
+      "Verify backoff_coefficient defaults to 2.0 if not specified",
+      "Verify retry policy is applied to activities"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Temporal job template handles timeout configuration",
+    "steps": [
+      "Create test schema with job having timeout: '30m'",
+      "Run job generator with test schema",
+      "Verify generated workflow includes execution timeout",
+      "Verify timeout is converted from string to timedelta",
+      "Verify timeout format supports m (minutes), h (hours), d (days)",
+      "Verify workflow fails if timeout is exceeded",
+      "Verify timeout applies to entire workflow execution"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Temporal job template generates activity method stubs",
+    "steps": [
+      "Create test schema with job: daily_report",
+      "Run job generator with test schema",
+      "Verify generated code includes activity functions with @activity decorator",
+      "Verify activity names follow snake_case convention",
+      "Verify activities are called from workflow run method",
+      "Verify activity stubs include docstrings indicating implementation needed",
+      "Verify activity return types are properly annotated"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Temporal job template creates worker registration code",
+    "steps": [
+      "Create test schema with multiple jobs",
+      "Run job generator with test schema",
+      "Verify generated code includes worker setup function",
+      "Verify function registers all workflows",
+      "Verify function registers all activities",
+      "Verify worker connects to Temporal server",
+      "Verify worker can be started with single command"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Temporal job template includes proper imports",
+    "steps": [
+      "Create test schema with jobs",
+      "Run job generator with test schema",
+      "Verify generated code imports workflow, activity from temporalio",
+      "Verify imports WorkflowClient from temporalio.client",
+      "Verify imports Worker from temporalio.worker",
+      "Verify imports timedelta from datetime",
+      "Verify all Temporal decorators are imported"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "BLoC state generator file exists with correct structure",
+    "steps": [
+      "Check schnitzel-cli/src/schnitzel/generators/dart/bloc.py exists",
+      "Verify file imports Jinja2 Environment and Template",
+      "Verify generate_bloc function accepts schema and model parameters",
+      "Verify function loads bloc.dart.j2, bloc_event.dart.j2, bloc_state.dart.j2 templates",
+      "Verify function generates three files per model (bloc, event, state)",
+      "Verify function returns dict with file paths and contents"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "BLoC event template generates event classes for CRUD operations",
+    "steps": [
+      "Create test schema with model: Order",
+      "Run BLoC generator for Order model",
+      "Verify generated order_event.dart includes OrderLoad event",
+      "Verify includes OrderCreate event with order parameter",
+      "Verify includes OrderUpdate event with order parameter",
+      "Verify includes OrderDelete event with id parameter",
+      "Verify all events extend sealed class OrderEvent",
+      "Verify events use freezed for immutability"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "BLoC state template generates state classes for loading states",
+    "steps": [
+      "Create test schema with model: Order",
+      "Run BLoC generator for Order model",
+      "Verify generated order_state.dart includes OrderInitial state",
+      "Verify includes OrderLoading state",
+      "Verify includes OrderLoaded state with orders or order parameter",
+      "Verify includes OrderError state with error message",
+      "Verify all states extend sealed class OrderState",
+      "Verify states use freezed for immutability"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "BLoC main template creates BLoC class with event handlers",
+    "steps": [
+      "Create test schema with model: Order",
+      "Run BLoC generator for Order model",
+      "Verify generated order_bloc.dart includes OrderBloc class",
+      "Verify class extends Bloc<OrderEvent, OrderState>",
+      "Verify class has on<OrderLoad> handler",
+      "Verify class has on<OrderCreate> handler",
+      "Verify class has on<OrderUpdate> handler",
+      "Verify class has on<OrderDelete> handler",
+      "Verify handlers use emit() to change state"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "BLoC template integrates repository pattern",
+    "steps": [
+      "Create test schema with model: Order",
+      "Run BLoC generator for Order model",
+      "Verify generated BLoC accepts OrderRepository in constructor",
+      "Verify LoadEvent handler calls repository.getAll() or repository.getById()",
+      "Verify CreateEvent handler calls repository.create()",
+      "Verify UpdateEvent handler calls repository.update()",
+      "Verify DeleteEvent handler calls repository.delete()",
+      "Verify repository methods are awaited"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "BLoC template implements error handling with typed failures",
+    "steps": [
+      "Create test schema with model: Order",
+      "Run BLoC generator for Order model",
+      "Verify event handlers wrap repository calls in try-catch",
+      "Verify catch block emits OrderError state",
+      "Verify error messages are extracted from exceptions",
+      "Verify network errors and server errors are differentiated",
+      "Verify error state includes error type (network, validation, server)"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "BLoC template supports optimistic updates",
+    "steps": [
+      "Create test schema with model: Order",
+      "Run BLoC generator for Order model",
+      "Verify CreateEvent handler emits success state before API call completes",
+      "Verify UpdateEvent handler updates state optimistically",
+      "Verify DeleteEvent handler removes item from state immediately",
+      "Verify state is rolled back if API call fails",
+      "Verify rollback emits error state with original data"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "BLoC template generates proper imports",
+    "steps": [
+      "Create test schema with model: Order",
+      "Run BLoC generator for Order model",
+      "Verify generated files import flutter_bloc package",
+      "Verify imports freezed_annotation",
+      "Verify imports model class from generated models",
+      "Verify imports repository interface",
+      "Verify imports part directives for .freezed.dart and .g.dart files"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Integration test: Event generation pipeline produces valid Python code",
+    "steps": [
+      "Create FoodieAI test schema with events: order.placed, recipe.favorited",
+      "Run event generator with schema",
+      "Write generated code to temp file",
+      "Run pyright on generated file",
+      "Verify no type errors",
+      "Verify no warnings",
+      "Verify code compiles successfully",
+      "Verify EventPublisher class is properly typed",
+      "Verify event model classes validate correctly"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Integration test: SSE stream generation produces working FastAPI endpoint",
+    "steps": [
+      "Create FoodieAI test schema with SSE stream: recipe_updates",
+      "Run stream generator with schema",
+      "Write generated code to temp file",
+      "Import generated code in test FastAPI app",
+      "Start test server",
+      "Connect SSE client to endpoint",
+      "Publish test event",
+      "Verify client receives event",
+      "Verify SSE format is correct",
+      "Verify reconnection works after disconnect"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Integration test: WebSocket generation produces working bidirectional communication",
+    "steps": [
+      "Create FoodieAI test schema with WebSocket stream: chat",
+      "Run websocket generator with schema",
+      "Write generated code to temp file",
+      "Import generated code in test FastAPI app",
+      "Start test server",
+      "Connect WebSocket client",
+      "Send message from client",
+      "Verify server receives and routes message",
+      "Send message from server",
+      "Verify client receives message",
+      "Verify message type routing works",
+      "Disconnect and verify cleanup"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Integration test: Dart event client generation produces working client code",
+    "steps": [
+      "Create FoodieAI test schema with events and streams",
+      "Run dart event generator with schema",
+      "Write generated code to temp Dart project",
+      "Run dart analyze on generated code",
+      "Verify no errors or warnings",
+      "Verify code compiles successfully",
+      "Verify EventClient class exists",
+      "Verify SSEClient and WebSocketClient classes exist",
+      "Verify event models are properly typed with freezed"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Integration test: Temporal job generation produces valid workflow code",
+    "steps": [
+      "Create FoodieAI test schema with job: daily_digest with schedule",
+      "Run job generator with schema",
+      "Write generated code to temp file",
+      "Run pyright on generated file",
+      "Verify no type errors",
+      "Verify workflow class is properly decorated",
+      "Verify schedule configuration is valid",
+      "Verify retry policy is properly configured",
+      "Verify activities are properly defined"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Integration test: BLoC generation produces complete BLoC pattern implementation",
+    "steps": [
+      "Create FoodieAI test schema with model: Recipe",
+      "Run BLoC generator for Recipe model",
+      "Write generated files to temp Dart project",
+      "Run dart analyze on all generated files",
+      "Verify no errors or warnings",
+      "Verify recipe_bloc.dart compiles",
+      "Verify recipe_event.dart compiles",
+      "Verify recipe_state.dart compiles",
+      "Verify freezed code generation works",
+      "Verify BLoC can be instantiated in test"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Integration test: End-to-end event flow from Python to Dart",
+    "steps": [
+      "Create test schema with event: order.placed",
+      "Generate Python event publisher",
+      "Generate Dart event client",
+      "Start FastAPI server with WebSocket support",
+      "Start Redis server",
+      "Instantiate EventPublisher in Python",
+      "Connect Dart EventClient to server",
+      "Publish order.placed event from Python",
+      "Verify Dart client receives event",
+      "Verify event payload matches between Python and Dart",
+      "Verify type safety is maintained throughout",
+      "Disconnect and cleanup"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event generator handles events with complex nested payloads",
+    "steps": [
+      "Create test schema with event: order.completed with payload {order: {id: uuid, items: list, customer: {name: str, email: str}}}",
+      "Run event generator with schema",
+      "Verify generated code creates nested Pydantic models",
+      "Verify CustomerData model is created with name and email fields",
+      "Verify OrderData model includes customer: CustomerData field",
+      "Verify OrderCompletedEvent includes order: OrderData field",
+      "Verify serialization/deserialization works correctly"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event generator handles events with list payloads",
+    "steps": [
+      "Create test schema with event: batch.processed with payload {item_ids: list[uuid], status: str}",
+      "Run event generator with schema",
+      "Verify generated code creates BatchProcessedEvent with item_ids: List[UUID]",
+      "Verify generated code includes status: str field",
+      "Verify list serialization to JSON array works",
+      "Verify deserialization from JSON array works",
+      "Verify empty list is handled correctly"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "SSE stream generator handles multiple concurrent connections",
+    "steps": [
+      "Create test schema with SSE stream",
+      "Generate SSE endpoint code",
+      "Start FastAPI server with generated code",
+      "Open 10 concurrent SSE connections",
+      "Publish event to all connections",
+      "Verify all connections receive event",
+      "Close 5 connections",
+      "Publish another event",
+      "Verify remaining 5 connections receive event",
+      "Verify server doesn't crash or leak resources"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "SSE stream generator handles slow clients with buffering",
+    "steps": [
+      "Create test schema with SSE stream",
+      "Generate SSE endpoint code",
+      "Start FastAPI server with generated code",
+      "Connect SSE client that reads slowly",
+      "Publish 100 events rapidly",
+      "Verify client receives all events",
+      "Verify server doesn't block on slow client",
+      "Verify other clients are not affected",
+      "Verify buffer overflow is handled gracefully"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "WebSocket handler supports message acknowledgments",
+    "steps": [
+      "Create test schema with WebSocket stream",
+      "Run websocket generator with schema",
+      "Verify generated handler sends ack message after processing",
+      "Verify ack includes message ID from original message",
+      "Verify client can correlate acks with sent messages",
+      "Verify timeout if ack not received",
+      "Verify failed messages can be retried"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "WebSocket handler implements request-response pattern",
+    "steps": [
+      "Create test schema with WebSocket stream",
+      "Run websocket generator with schema",
+      "Generate handler for request message type",
+      "Verify handler sends response message with same correlation ID",
+      "Verify client can await response for specific request",
+      "Verify timeout if response not received",
+      "Verify multiple in-flight requests are supported"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "WebSocket handler handles malformed JSON gracefully",
+    "steps": [
+      "Create test schema with WebSocket stream",
+      "Generate WebSocket endpoint code",
+      "Start FastAPI server with generated code",
+      "Connect WebSocket client",
+      "Send invalid JSON message",
+      "Verify server sends error message to client",
+      "Verify connection remains open",
+      "Send valid JSON message",
+      "Verify server processes valid message correctly"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Dart event client exponential backoff works correctly",
+    "steps": [
+      "Create test schema with WebSocket stream",
+      "Generate Dart event client code",
+      "Start Dart client without server running",
+      "Verify first reconnect attempt after 1 second",
+      "Verify second reconnect attempt after 2 seconds",
+      "Verify third reconnect attempt after 4 seconds",
+      "Verify backoff caps at max delay (e.g., 30 seconds)",
+      "Verify backoff resets after successful connection",
+      "Start server and verify client connects"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Dart event client handles SSE connection errors",
+    "steps": [
+      "Create test schema with SSE stream",
+      "Generate Dart event client code",
+      "Start Dart client",
+      "Simulate network error during SSE connection",
+      "Verify client emits connection state: disconnected",
+      "Verify client attempts reconnection",
+      "Restore network",
+      "Verify client successfully reconnects",
+      "Verify events are received after reconnect"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Dart event client handles token refresh during connection",
+    "steps": [
+      "Create test schema with authenticated SSE/WebSocket stream",
+      "Generate Dart event client code",
+      "Connect with token expiring in 5 seconds",
+      "Wait for token to expire",
+      "Verify client detects 401 response",
+      "Verify client calls token refresh callback",
+      "Verify client reconnects with new token",
+      "Verify events continue to flow after reconnect"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Temporal job generator handles jobs without retry policy",
+    "steps": [
+      "Create test schema with job without retry_policy field",
+      "Run job generator with schema",
+      "Verify generated workflow uses default Temporal retry policy",
+      "Verify workflow doesn't crash if job fails",
+      "Verify default max_attempts is applied",
+      "Verify generated code includes comment about default retry"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Temporal job generator handles jobs without schedule",
+    "steps": [
+      "Create test schema with job without schedule field (manual trigger only)",
+      "Run job generator with schema",
+      "Verify generated workflow can be triggered manually",
+      "Verify no schedule registration code is generated",
+      "Verify workflow can still be executed on-demand",
+      "Verify generated code includes comment about manual execution"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Temporal job generator supports workflow parameters",
+    "steps": [
+      "Create test schema with job: generate_report with parameters: {start_date: date, end_date: date}",
+      "Run job generator with schema",
+      "Verify generated workflow run method accepts start_date and end_date parameters",
+      "Verify parameters are properly typed",
+      "Verify parameters are passed to activities",
+      "Verify workflow can be invoked with parameters"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "BLoC generator supports pagination for list loading",
+    "steps": [
+      "Create test schema with model: Recipe",
+      "Run BLoC generator with schema",
+      "Verify generated LoadEvent accepts page and page_size parameters",
+      "Verify repository.getAll() call includes pagination parameters",
+      "Verify LoadedState includes hasMore boolean",
+      "Verify LoadedState includes currentPage integer",
+      "Verify LoadMoreEvent is generated for infinite scrolling"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "BLoC generator supports filtering and sorting",
+    "steps": [
+      "Create test schema with model: Recipe",
+      "Run BLoC generator with schema",
+      "Verify generated LoadEvent accepts filters parameter",
+      "Verify generated LoadEvent accepts sortBy and sortOrder parameters",
+      "Verify repository call includes filter/sort parameters",
+      "Verify LoadedState preserves current filters",
+      "Verify events for changing filters and sorting"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "BLoC generator handles model with relationships",
+    "steps": [
+      "Create test schema with model: Order with relation to User",
+      "Run BLoC generator for Order model",
+      "Verify generated events include nested user data",
+      "Verify LoadedState properly types order.user relationship",
+      "Verify repository calls load related data",
+      "Verify Create/Update events accept nested objects"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Generator registry exports new event publisher generator",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/generators/python/__init__.py",
+      "Verify file imports generate_events from events module",
+      "Verify __all__ list includes 'generate_events'",
+      "Verify generator can be imported from parent package",
+      "Verify generator is accessible in CLI commands"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Generator registry exports new stream generators",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/generators/python/__init__.py",
+      "Verify file imports generate_streams from streams module",
+      "Verify file imports generate_websocket from websocket module",
+      "Verify __all__ list includes both generators",
+      "Verify generators are accessible from parent package"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Generator registry exports Temporal job generator",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/generators/python/__init__.py",
+      "Verify file imports generate_jobs from jobs module",
+      "Verify __all__ list includes 'generate_jobs'",
+      "Verify generator is accessible from parent package"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Generator registry exports Dart event client generator",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/generators/dart/__init__.py",
+      "Verify file imports generate_dart_events from events module",
+      "Verify __all__ list includes 'generate_dart_events'",
+      "Verify generator is accessible from parent package"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Generator registry exports BLoC state generator",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/generators/dart/__init__.py",
+      "Verify file imports generate_bloc from bloc module",
+      "Verify __all__ list includes 'generate_bloc'",
+      "Verify generator is accessible from parent package"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "CLI includes generate events command",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/cli.py or commands module",
+      "Verify CLI has 'generate events' subcommand or --events flag",
+      "Verify command calls generate_events function",
+      "Verify command accepts schema file path",
+      "Verify command writes output to correct location",
+      "Run 'schnitzel generate events --help' and verify help text"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "CLI includes generate streams command",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/cli.py or commands module",
+      "Verify CLI has 'generate streams' subcommand or --streams flag",
+      "Verify command calls generate_streams function",
+      "Verify command handles both SSE and WebSocket generation",
+      "Verify command writes output to correct locations",
+      "Run 'schnitzel generate streams --help' and verify help text"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "CLI includes generate jobs command",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/cli.py or commands module",
+      "Verify CLI has 'generate jobs' subcommand or --jobs flag",
+      "Verify command calls generate_jobs function",
+      "Verify command accepts schema file path",
+      "Verify command writes output to correct location",
+      "Run 'schnitzel generate jobs --help' and verify help text"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "CLI includes generate blocs command",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/cli.py or commands module",
+      "Verify CLI has 'generate blocs' subcommand or --blocs flag",
+      "Verify command calls generate_bloc function for each model",
+      "Verify command accepts schema file path",
+      "Verify command writes multiple files per model",
+      "Run 'schnitzel generate blocs --help' and verify help text"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "CLI generate command includes --all flag for Module 02 generators",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/cli.py",
+      "Verify 'generate --all' command includes event generator",
+      "Verify includes stream generators (SSE + WebSocket)",
+      "Verify includes job generator",
+      "Verify includes Dart event client generator",
+      "Verify includes BLoC generator",
+      "Verify output shows progress for each generator"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event types match between Python and Dart",
+    "steps": [
+      "Create test schema with event having payload: {id: uuid, count: int, price: decimal, active: bool, created: datetime}",
+      "Generate Python event publisher",
+      "Generate Dart event client",
+      "Compare Python types: UUID, int, Decimal, bool, datetime",
+      "Compare Dart types: String, int, double, bool, DateTime",
+      "Verify JSON serialization/deserialization works between both",
+      "Verify no type mismatches cause runtime errors"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Stream message types match between Python and Dart",
+    "steps": [
+      "Create test schema with WebSocket stream defining message types",
+      "Generate Python WebSocket handler",
+      "Generate Dart WebSocket client",
+      "Verify message payload types match between Python Pydantic and Dart freezed",
+      "Send message from Dart client to Python server",
+      "Verify server deserializes correctly",
+      "Send message from Python server to Dart client",
+      "Verify client deserializes correctly"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Generated code follows Python naming conventions",
+    "steps": [
+      "Generate all Python code (events, streams, websocket, jobs)",
+      "Verify all class names are PascalCase",
+      "Verify all function names are snake_case",
+      "Verify all file names are snake_case",
+      "Verify all constants are UPPER_SNAKE_CASE",
+      "Verify all variable names are snake_case",
+      "Run pyright and verify no naming convention warnings"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Generated code follows Dart naming conventions",
+    "steps": [
+      "Generate all Dart code (event client, BLoC)",
+      "Verify all class names are PascalCase",
+      "Verify all variable names are camelCase",
+      "Verify all file names are snake_case",
+      "Verify private members start with underscore",
+      "Run dart analyze and verify no naming convention warnings"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Generated Python code passes pyright strict mode",
+    "steps": [
+      "Generate all Python code for Module 02",
+      "Write generated code to temp directory",
+      "Create pyproject.toml with strict type checking",
+      "Run pyright with strict mode enabled",
+      "Verify no type errors",
+      "Verify no Any types unless necessary",
+      "Verify all function signatures have return type hints"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Generated Dart code passes dart analyze with pedantic rules",
+    "steps": [
+      "Generate all Dart code for Module 02",
+      "Write generated code to temp Dart project",
+      "Add pedantic or lints package to pubspec.yaml",
+      "Run dart analyze",
+      "Verify no errors",
+      "Verify no warnings",
+      "Verify code follows Dart style guide"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event publisher generator handles empty events section gracefully",
+    "steps": [
+      "Create test schema with no events section",
+      "Run event generator with schema",
+      "Verify generator returns empty string or minimal boilerplate",
+      "Verify no errors or exceptions are raised",
+      "Verify generated code is still valid Python (imports only)"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Stream generator handles empty streams section gracefully",
+    "steps": [
+      "Create test schema with no streams section",
+      "Run stream generator with schema",
+      "Verify generator returns empty string or minimal boilerplate",
+      "Verify no errors or exceptions are raised",
+      "Verify generated code is still valid Python"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Job generator handles empty jobs section gracefully",
+    "steps": [
+      "Create test schema with no jobs section",
+      "Run job generator with schema",
+      "Verify generator returns empty string or minimal boilerplate",
+      "Verify no errors or exceptions are raised",
+      "Verify generated code is still valid Python"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "BLoC generator handles model with no fields gracefully",
+    "steps": [
+      "Create test schema with model having empty fields dict",
+      "Run BLoC generator for model",
+      "Verify generator creates minimal BLoC implementation",
+      "Verify generated code compiles",
+      "Verify Load/Create/Update/Delete events still exist",
+      "Verify no null pointer exceptions"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event generator validates channel names",
+    "steps": [
+      "Create test schema with event having invalid channel: 'invalid_channel'",
+      "Run event generator with schema",
+      "Verify generator raises validation error",
+      "Verify error message lists valid channels: websocket, redis, sse",
+      "Verify error message is helpful and actionable"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Stream generator validates stream type",
+    "steps": [
+      "Create test schema with stream having invalid type: 'grpc'",
+      "Run stream generator with schema",
+      "Verify generator raises validation error",
+      "Verify error message lists valid types: sse, websocket",
+      "Verify error message is helpful"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Job generator validates cron expression format",
+    "steps": [
+      "Create test schema with job having invalid schedule: 'invalid cron'",
+      "Run job generator with schema",
+      "Verify generator validates cron expression",
+      "Verify generator raises error for invalid format",
+      "Verify error message explains cron format",
+      "Verify valid cron expressions are accepted"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Job generator validates timeout format",
+    "steps": [
+      "Create test schema with job having invalid timeout: '30 minutes'",
+      "Run job generator with schema",
+      "Verify generator validates timeout format",
+      "Verify error message explains valid formats: 30m, 1h, 2d",
+      "Verify valid timeout formats are accepted",
+      "Verify timeout is converted to timedelta correctly"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event generator handles payload type validation",
+    "steps": [
+      "Create test schema with event having invalid payload type: 'unknowntype'",
+      "Run event generator with schema",
+      "Verify generator validates payload field types",
+      "Verify generator raises error for unknown type",
+      "Verify error message lists valid types",
+      "Verify error includes field name and event name"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "WebSocket generator validates message type uniqueness",
+    "steps": [
+      "Create test schema with WebSocket stream having duplicate message types",
+      "Run websocket generator with schema",
+      "Verify generator detects duplicate message types",
+      "Verify generator raises validation error",
+      "Verify error message identifies duplicate types",
+      "Verify unique types are accepted"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Generated event publisher logs events for debugging",
+    "steps": [
+      "Generate event publisher code",
+      "Instantiate EventPublisher",
+      "Configure logger",
+      "Publish test event",
+      "Verify event publication is logged",
+      "Verify log includes event name and channel",
+      "Verify log level is appropriate (info or debug)",
+      "Verify errors are logged at error level"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Generated SSE endpoint logs connections and disconnections",
+    "steps": [
+      "Generate SSE endpoint code",
+      "Start FastAPI server",
+      "Connect SSE client",
+      "Verify connection is logged",
+      "Disconnect client",
+      "Verify disconnection is logged",
+      "Verify logs include client info (if available)",
+      "Verify error cases are logged"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Generated WebSocket handler logs messages",
+    "steps": [
+      "Generate WebSocket handler code",
+      "Start FastAPI server",
+      "Connect WebSocket client",
+      "Send message",
+      "Verify message receipt is logged",
+      "Verify log includes message type",
+      "Verify errors are logged with context",
+      "Verify heartbeats are logged at debug level"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Dart event client logs connection state changes",
+    "steps": [
+      "Generate Dart event client code",
+      "Add logging configuration",
+      "Instantiate EventClient",
+      "Attempt connection",
+      "Verify connection state changes are logged",
+      "Verify reconnection attempts are logged",
+      "Verify errors are logged with context",
+      "Verify log levels are appropriate"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event publisher handles Redis connection failures",
+    "steps": [
+      "Generate event publisher code",
+      "Instantiate EventPublisher with invalid Redis config",
+      "Attempt to publish event",
+      "Verify connection error is caught",
+      "Verify error is logged",
+      "Verify application doesn't crash",
+      "Verify WebSocket channel still works if configured"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "SSE endpoint handles client disconnect during send",
+    "steps": [
+      "Generate SSE endpoint code",
+      "Start FastAPI server",
+      "Connect SSE client",
+      "Disconnect client during event send",
+      "Verify server handles disconnect gracefully",
+      "Verify no exception propagates",
+      "Verify connection is cleaned up",
+      "Verify other clients are unaffected"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "WebSocket handler handles sudden client disconnect",
+    "steps": [
+      "Generate WebSocket handler code",
+      "Start FastAPI server",
+      "Connect WebSocket client",
+      "Kill client without proper close handshake",
+      "Verify server detects disconnect",
+      "Verify connection is removed from ConnectionManager",
+      "Verify cleanup tasks run",
+      "Verify no resource leaks"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Dart event client handles server restart",
+    "steps": [
+      "Generate Dart event client code",
+      "Connect client to server",
+      "Verify connection established",
+      "Restart server",
+      "Verify client detects disconnect",
+      "Verify client attempts reconnection",
+      "Verify client successfully reconnects after server restart",
+      "Verify events continue flowing after reconnect"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Temporal workflow handles activity failures with retry",
+    "steps": [
+      "Generate Temporal workflow with retry policy",
+      "Implement activity that fails first 2 attempts",
+      "Start workflow",
+      "Verify activity is retried",
+      "Verify retry delay follows initial_interval",
+      "Verify activity succeeds on 3rd attempt",
+      "Verify workflow completes successfully"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "BLoC handles repository errors gracefully",
+    "steps": [
+      "Generate BLoC for model",
+      "Mock repository to throw exception",
+      "Dispatch LoadEvent",
+      "Verify BLoC emits ErrorState",
+      "Verify error message is extracted from exception",
+      "Verify BLoC remains usable after error",
+      "Verify subsequent events can be processed"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Integration test: FoodieAI schema generates all Module 02 artifacts",
+    "steps": [
+      "Load FoodieAI example schema with events, streams, and jobs",
+      "Run all Module 02 generators",
+      "Verify events.py is generated",
+      "Verify streams.py is generated",
+      "Verify websocket.py is generated",
+      "Verify jobs.py is generated",
+      "Verify Dart events.dart is generated",
+      "Verify BLoCs are generated for all models",
+      "Verify all generated code compiles",
+      "Verify no errors or warnings"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Generated event models support JSON serialization",
+    "steps": [
+      "Generate event publisher with complex event",
+      "Create instance of generated event model",
+      "Serialize to JSON using model_dump_json()",
+      "Deserialize from JSON using model_validate_json()",
+      "Verify round-trip produces identical object",
+      "Verify UUID, datetime, Decimal types are handled correctly"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Generated Dart event models support JSON serialization",
+    "steps": [
+      "Generate Dart event client with complex event",
+      "Create instance of generated event model",
+      "Serialize to JSON using toJson()",
+      "Deserialize from JSON using fromJson()",
+      "Verify round-trip produces identical object",
+      "Verify DateTime and complex types are handled correctly"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "SSE stream handles long-running connections",
+    "steps": [
+      "Generate SSE endpoint code",
+      "Start FastAPI server",
+      "Connect SSE client",
+      "Keep connection open for 5 minutes",
+      "Send periodic events",
+      "Verify all events are received",
+      "Verify connection doesn't timeout",
+      "Verify no memory leaks",
+      "Disconnect cleanly"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "WebSocket handler enforces max connections per user",
+    "steps": [
+      "Generate WebSocket handler with user authentication",
+      "Configure max_connections_per_user = 3",
+      "Connect 3 WebSocket clients with same user",
+      "Verify all connections accepted",
+      "Attempt 4th connection with same user",
+      "Verify 4th connection is rejected or oldest is closed",
+      "Verify error message explains limit",
+      "Disconnect and verify count decrements"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Event publisher supports event filtering by subscriber",
+    "steps": [
+      "Generate event publisher code",
+      "Create subscriber interested in specific event types only",
+      "Publish multiple event types",
+      "Verify subscriber receives only subscribed events",
+      "Verify filtering works for both Redis and WebSocket channels",
+      "Verify performance is acceptable with many events"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "BLoC supports offline mode with local cache",
+    "steps": [
+      "Generate BLoC for model",
+      "Configure repository with local cache",
+      "Dispatch LoadEvent",
+      "Verify BLoC loads from cache first",
+      "Verify BLoC attempts API call in background",
+      "Verify cache is updated on successful API call",
+      "Verify cached data is used if API fails",
+      "Verify state reflects cache vs fresh data"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Temporal workflow supports long-running operations",
+    "steps": [
+      "Generate workflow with timeout: 2h",
+      "Implement activity that takes 30 minutes",
+      "Start workflow",
+      "Verify workflow continues executing",
+      "Verify workflow doesn't timeout prematurely",
+      "Verify workflow completes successfully",
+      "Verify total execution time is tracked"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Generated code includes docstrings and type hints",
+    "steps": [
+      "Generate all Module 02 code",
+      "Read generated Python files",
+      "Verify all classes have docstrings",
+      "Verify all functions have docstrings",
+      "Verify all parameters have type hints",
+      "Verify all return types are annotated",
+      "Read generated Dart files",
+      "Verify all public APIs have documentation comments"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Templates include generation metadata comments",
+    "steps": [
+      "Generate code from all templates",
+      "Read generated files",
+      "Verify header comment includes 'Generated by Schnitzel'",
+      "Verify comment includes generation timestamp",
+      "Verify comment includes schema version",
+      "Verify comment warns against manual editing",
+      "Verify metadata format is consistent across all templates"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "Generated Python code follows Black formatting",
+    "steps": [
+      "Generate all Python code for Module 02",
+      "Write generated code to temp directory",
+      "Run black formatter in check mode",
+      "Verify no formatting changes needed",
+      "Verify line length is within limits (88 chars default)",
+      "Verify imports are properly organized"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "Generated Python code passes flake8 linting",
+    "steps": [
+      "Generate all Python code for Module 02",
+      "Write generated code to temp directory",
+      "Run flake8 linter",
+      "Verify no linting errors",
+      "Verify no unused imports",
+      "Verify proper whitespace and indentation"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "Generated Dart code follows dart format style",
+    "steps": [
+      "Generate all Dart code for Module 02",
+      "Write generated code to temp Dart project",
+      "Run dart format in check mode",
+      "Verify no formatting changes needed",
+      "Verify line length is within limits (80 chars default)",
+      "Verify proper indentation and spacing"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "Event publisher code is well-organized with clear structure",
+    "steps": [
+      "Generate event publisher code",
+      "Review code structure",
+      "Verify imports are at top",
+      "Verify event models are grouped together",
+      "Verify EventPublisher class is clearly defined",
+      "Verify helper methods are organized logically",
+      "Verify code is easy to read and understand"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "SSE and WebSocket templates produce readable code",
+    "steps": [
+      "Generate SSE and WebSocket code",
+      "Review generated code",
+      "Verify proper use of whitespace",
+      "Verify logical grouping of related code",
+      "Verify comments explain complex logic",
+      "Verify variable names are descriptive",
+      "Verify code complexity is manageable"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "Temporal workflow code follows best practices",
+    "steps": [
+      "Generate Temporal workflow code",
+      "Review code structure",
+      "Verify workflow class is clearly defined",
+      "Verify activities are separated from workflow logic",
+      "Verify configuration is at top of file",
+      "Verify error handling is explicit",
+      "Verify code follows Temporal documentation patterns"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "BLoC code follows flutter_bloc best practices",
+    "steps": [
+      "Generate BLoC code for model",
+      "Review generated code",
+      "Verify events are in separate file",
+      "Verify states are in separate file",
+      "Verify BLoC class is in main file",
+      "Verify event handlers use on<Event> pattern",
+      "Verify state emissions use emit() method",
+      "Verify code follows flutter_bloc documentation patterns"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "Dart event client code is idiomatic Dart",
+    "steps": [
+      "Generate Dart event client code",
+      "Review code structure",
+      "Verify proper use of async/await",
+      "Verify proper use of Streams",
+      "Verify proper use of futures",
+      "Verify error handling uses try-catch",
+      "Verify code follows Dart style guide",
+      "Verify no Flutter-specific code in shared package"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "Generated code has consistent indentation",
+    "steps": [
+      "Generate all code for Module 02",
+      "Review Python files for 4-space indentation",
+      "Review Dart files for 2-space indentation",
+      "Verify no tabs are used",
+      "Verify nested blocks are properly indented",
+      "Verify consistency within each file"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "Generated code uses descriptive variable names",
+    "steps": [
+      "Generate all code for Module 02",
+      "Review variable names throughout",
+      "Verify no single-letter variables except loop counters",
+      "Verify names describe purpose clearly",
+      "Verify names follow language conventions",
+      "Verify acronyms are used appropriately"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "Generated code includes helpful inline comments",
+    "steps": [
+      "Generate all code for Module 02",
+      "Review inline comments",
+      "Verify complex logic has explanatory comments",
+      "Verify comments are not redundant with code",
+      "Verify comments are concise and clear",
+      "Verify no commented-out code",
+      "Verify TODO comments only if part of template design"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "Event model classes have clear structure",
+    "steps": [
+      "Generate event publisher code with multiple events",
+      "Review event model classes",
+      "Verify fields are listed first",
+      "Verify validators come after fields",
+      "Verify class structure is consistent across events",
+      "Verify inheritance is used appropriately"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "BLoC event and state classes use freezed properly",
+    "steps": [
+      "Generate BLoC code",
+      "Review event and state classes",
+      "Verify @freezed decorator is used",
+      "Verify classes are abstract",
+      "Verify factory constructors are used",
+      "Verify copyWith is available via freezed",
+      "Verify equality is handled by freezed"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "Generated imports are organized by category",
+    "steps": [
+      "Generate all code for Module 02",
+      "Review import statements",
+      "Verify Python imports grouped: stdlib, third-party, local",
+      "Verify Dart imports grouped: dart, package, relative",
+      "Verify import groups are separated by blank line",
+      "Verify imports are sorted alphabetically within groups"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "Generated code has appropriate blank line spacing",
+    "steps": [
+      "Generate all code for Module 02",
+      "Review blank line usage",
+      "Verify blank line after imports",
+      "Verify blank line between functions/methods",
+      "Verify blank line between class definitions",
+      "Verify no excessive blank lines",
+      "Verify logical sections are separated appropriately"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "CLI output for generation commands is formatted nicely",
+    "steps": [
+      "Run schnitzel generate events command",
+      "Review console output",
+      "Verify Rich formatting is used",
+      "Verify progress indicators are clear",
+      "Verify success messages are highlighted",
+      "Verify file paths are displayed",
+      "Verify output is easy to read"
+    ],
+    "passes": true
+  },
+  {
+    "category": "style",
+    "description": "Error messages from generators are helpful",
+    "steps": [
+      "Create invalid schema (missing required field)",
+      "Run generator",
+      "Review error message",
+      "Verify error clearly identifies the problem",
+      "Verify error includes context (model name, field name)",
+      "Verify error suggests how to fix",
+      "Verify error formatting uses Rich panel or similar"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator validates events section structure",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/schema/validator.py",
+      "Add validation for events section",
+      "Verify validator checks event names are dot.notation",
+      "Verify validator checks payload field types are valid",
+      "Verify validator checks channels are valid values",
+      "Create test schema with invalid event",
+      "Run validator and verify error is raised with helpful message"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator validates streams section structure",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/schema/validator.py",
+      "Add validation for streams section",
+      "Verify validator checks type is 'sse' or 'websocket'",
+      "Verify validator checks path is valid route",
+      "Verify validator checks auth is valid value",
+      "Create test schema with invalid stream",
+      "Run validator and verify error is raised"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Schema validator validates jobs section structure",
+    "steps": [
+      "Read schnitzel-cli/src/schnitzel/schema/validator.py",
+      "Add validation for jobs section",
+      "Verify validator checks schedule is valid cron expression",
+      "Verify validator checks workflow name is PascalCase",
+      "Verify validator checks timeout format is valid",
+      "Create test schema with invalid job",
+      "Run validator and verify error is raised"
+    ],
+    "passes": true
+  },
+  {
+    "category": "functional",
+    "description": "Documentation includes Module 02 generator examples",
+    "steps": [
+      "Check for documentation file (e.g., docs/generators.md)",
+      "Verify documentation includes event publisher example",
+      "Verify includes SSE stream example",
+      "Verify includes WebSocket example",
+      "Verify includes Temporal job example",
+      "Verify includes BLoC example",
+      "Verify examples show schema YAML and generated code output"
+    ],
+    "passes": true
+  }
+]

@@ -1,11 +1,21 @@
 part of '{{ model_name_snake }}_bloc.dart';
 
+
+// =============================================================================
+// Event Base Class
+// =============================================================================
+
 abstract class {{ model_name }}Event extends Equatable {
   const {{ model_name }}Event();
 
   @override
   List<Object?> get props => [];
 }
+
+
+// =============================================================================
+// Event Types
+// =============================================================================
 
 /// Load all {{ model_name }} items with pagination, filtering, and sorting
 class {{ model_name }}Load extends {{ model_name }}Event {
