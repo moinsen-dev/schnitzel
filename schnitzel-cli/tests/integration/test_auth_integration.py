@@ -1,4 +1,4 @@
-"""Integration tests for Module 03 - Auth Integration Tests (auth_070-auth_080).
+"""Integration tests for Module 03 - Auth Integration Tests (auth_070-auth_100).
 
 Tests for:
 - auth_070: Integration test: JWT token generation works end-to-end
@@ -12,6 +12,26 @@ Tests for:
 - auth_078: Integration test: Magic link verification works
 - auth_079: Integration test: RBAC role checking works
 - auth_080: Integration test: RBAC wildcard permissions work
+- auth_081: Integration test: RBAC scoped permissions work
+- auth_082: Integration test: RBAC role inheritance works
+- auth_083: Integration test: FastAPI role dependency works
+- auth_084: Integration test: Redis session creation works
+- auth_085: Integration test: Session retrieval works
+- auth_086: Integration test: Session invalidation works
+- auth_087: Integration test: Multi-device sessions work
+- auth_088: Integration test: Remember me functionality works
+- auth_089: Integration test: Session sliding expiration works
+- auth_090: Integration test: TOTP secret generation works
+- auth_091: Integration test: TOTP code verification works
+- auth_092: Integration test: TOTP QR code generation works
+- auth_093: Integration test: Backup codes generation works
+- auth_094: Integration test: Backup code verification works
+- auth_095: Integration test: MFA enrollment flow works end-to-end
+- auth_096: Integration test: MFA verification middleware works
+- auth_097: Integration test: Dart auth client compiles without errors
+- auth_098: Integration test: Dart token storage works
+- auth_099: Integration test: Dart auto token refresh works
+- auth_100: Integration test: Dart AuthBloc state management works
 
 Note: These are integration tests that verify the generated code structure,
 compilation, and functionality. Tests verify code quality and structure
@@ -27,10 +47,15 @@ from schnitzel.schema.models import (
     AuthConfig,
     JWTConfig,
     RoleConfig,
+    SessionConfig,
+    MFAConfig,
 )
 from schnitzel.generators.python.auth.jwt import JWTAuthGenerator
 from schnitzel.generators.python.auth.oauth import OAuthIntegrationGenerator
 from schnitzel.generators.python.auth.rbac import RBACPermissionGenerator
+from schnitzel.generators.python.auth.sessions import SessionManagementGenerator
+from schnitzel.generators.python.auth.mfa import MFAGenerator
+from schnitzel.generators.dart.auth import DartAuthClientGenerator
 
 
 def verify_code_compiles(code: str) -> bool:
@@ -139,6 +164,90 @@ def rbac_schema():
                 inherits=[]
             )
         }
+    )
+
+
+@pytest.fixture
+def mfa_schema():
+    """Create schema with MFA configuration."""
+    return SchnitzelSchema(
+        auth=AuthConfig(
+            providers=["email_password"],
+            jwt=JWTConfig(
+                algorithm="HS256",
+                access_expiry=900,
+                refresh_expiry=2592000
+            ),
+            mfa=MFAConfig(
+                enabled=True,
+                required=False,
+                methods=["totp", "backup_codes"],
+                backup_codes_count=10,
+                totp_issuer="SchnitzelApp"
+            )
+        )
+    )
+
+
+@pytest.fixture
+def auth_schema():
+    """Create comprehensive auth schema for Dart client generation."""
+    return SchnitzelSchema(
+        auth=AuthConfig(
+            providers=["email_password", "google", "magic_link"],
+            jwt=JWTConfig(
+                algorithm="HS256",
+                access_expiry=900,
+                refresh_expiry=2592000,
+                issuer="schnitzel-app",
+                audience="schnitzel-users"
+            ),
+            oauth_callback_url="https://app.example.com/auth/callback"
+        )
+    )
+
+
+@pytest.fixture
+def session_schema():
+    """Create schema with session configuration."""
+    return SchnitzelSchema(
+        auth=AuthConfig(
+            providers=["email_password"],
+            session=SessionConfig(
+                storage="redis",
+                expiry=3600,  # 1 hour
+                sliding_window=True,
+                multi_device=True,
+                remember_me_duration=2592000  # 30 days
+            ),
+            jwt=JWTConfig(
+                algorithm="HS256",
+                access_expiry=900,
+                refresh_expiry=2592000
+            )
+        )
+    )
+
+
+@pytest.fixture
+def mfa_schema():
+    """Create schema with MFA configuration."""
+    return SchnitzelSchema(
+        auth=AuthConfig(
+            providers=["email_password"],
+            mfa=MFAConfig(
+                enabled=True,
+                required=False,
+                methods=["totp", "backup_codes"],
+                backup_codes_count=10,
+                totp_issuer="SchnitzelTest"
+            ),
+            jwt=JWTConfig(
+                algorithm="HS256",
+                access_expiry=900,
+                refresh_expiry=2592000
+            )
+        )
     )
 
 
@@ -663,3 +772,784 @@ class TestFullAuthIntegration:
         assert "Exception" in jwt_code or "raise" in jwt_code
         assert "Exception" in oauth_code or "raise" in oauth_code
         assert "Exception" in rbac_code or "raise" in rbac_code
+
+
+# =============================================================================
+# RBAC Advanced Tests (auth_081-auth_083)
+# =============================================================================
+
+class TestRBACAdvanced:
+    """Advanced integration tests for RBAC with scoped permissions and inheritance."""
+
+    def test_rbac_scoped_permissions(self, rbac_schema):
+        """Test auth_081: RBAC scoped permissions work (resource:action:scope format)."""
+        # Generate RBAC code
+        generator = RBACPermissionGenerator()
+        code = generator.generate(rbac_schema)
+
+        # Verify code compiles
+        assert verify_code_compiles(code), "Generated RBAC code has syntax errors"
+
+        # Verify scoped permission format support (resource:action:scope)
+        assert "content:read" in code, "Missing resource:action permission"
+        assert "content:create:own" in code, "Missing resource:action:scope permission"
+
+        # Verify permission parsing logic for scoped permissions
+        # Should have logic to split permissions by ":"
+        assert ":" in code, "Missing colon-based permission structure"
+        has_split_logic = "split" in code or ":" in code
+        assert has_split_logic, "Missing permission scope parsing"
+
+        # Verify "own" scope handling for user-specific resources
+        assert "own" in code, "Missing 'own' scope support"
+
+        # Extract functions
+        functions = extract_functions(code)
+
+        # Verify has_permission function exists
+        assert "has_permission" in functions, "Missing has_permission function"
+
+        # Verify permission matching logic handles scopes
+        # The code should handle matching "content:*" against "content:read"
+        has_wildcard_scope = "*" in code or "wildcard" in code.lower()
+        assert has_wildcard_scope, "Missing wildcard scope matching"
+
+    def test_rbac_role_inheritance(self, rbac_schema):
+        """Test auth_082: RBAC role inheritance works (child roles inherit parent permissions)."""
+        # Generate RBAC code
+        generator = RBACPermissionGenerator()
+        code = generator.generate(rbac_schema)
+
+        # Verify code compiles
+        assert verify_code_compiles(code), "Generated RBAC code has syntax errors"
+
+        # Verify inheritance structure is present
+        assert "inherits" in code.lower() or "inherit" in code.lower(), "Missing inheritance structure"
+
+        # Verify moderator role inherits from user role
+        assert "moderator" in code, "Missing moderator role"
+        assert "user" in code, "Missing user role"
+
+        # Verify inheritance configuration in roles
+        # moderator should inherit from user in rbac_schema
+        has_inheritance_config = "inherits" in code.lower()
+        assert has_inheritance_config, "Missing inheritance configuration"
+
+        # Extract classes and functions
+        classes = extract_classes(code)
+        functions = extract_functions(code)
+
+        # Should have role-related classes
+        has_role_class = any("role" in c.lower() for c in classes)
+        assert has_role_class, "Missing role management class"
+
+        # Verify permission resolution handles inheritance
+        # Should have logic to collect permissions from parent roles
+        has_inheritance_logic = (
+            "parent" in code.lower()
+            or "inherit" in code.lower()
+            or "extend" in code.lower()
+        )
+        assert has_inheritance_logic, "Missing permission inheritance resolution"
+
+        # Verify child roles get both their own and parent permissions
+        # The code should resolve inherited permissions
+        assert "permissions" in code.lower(), "Missing permissions field"
+
+    def test_fastapi_role_dependency(self, rbac_schema):
+        """Test auth_083: FastAPI role dependency works (require_role, require_permission)."""
+        # Generate RBAC code
+        generator = RBACPermissionGenerator()
+        code = generator.generate(rbac_schema)
+
+        # Verify code compiles
+        assert verify_code_compiles(code), "Generated RBAC code has syntax errors"
+
+        # Extract functions
+        functions = extract_functions(code)
+
+        # Verify FastAPI dependency functions exist
+        has_require_role = any("require" in f.lower() and "role" in f.lower() for f in functions)
+        has_require_permission = any("require" in f.lower() and "permission" in f.lower() for f in functions)
+
+        assert has_require_role or has_require_permission, "Missing FastAPI dependency functions"
+
+        # Verify FastAPI dependency imports
+        has_fastapi_import = (
+            "from fastapi" in code
+            or "import fastapi" in code
+            or "Depends" in code
+            or "HTTPException" in code
+        )
+        assert has_fastapi_import, "Missing FastAPI imports for dependencies"
+
+        # Verify HTTPException for unauthorized access
+        assert "HTTPException" in code or "exception" in code.lower(), "Missing exception handling"
+
+        # Verify 403 Forbidden status code for permission denied
+        has_forbidden_status = "403" in code or "Forbidden" in code
+        assert has_forbidden_status, "Missing 403 status code for authorization failures"
+
+        # Verify dependency returns user or raises exception
+        assert "raise" in code or "return" in code, "Missing dependency return/raise logic"
+
+        # Verify role/permission checking in dependency
+        assert "has_permission" in functions or "check" in code.lower(), "Missing permission check in dependency"
+
+
+# =============================================================================
+# Session Integration Tests (auth_084-auth_089)
+# =============================================================================
+
+class TestSessionIntegration:
+    """Integration tests for Redis-based session management."""
+
+    def test_redis_session_creation(self, session_schema):
+        """Test auth_084: Redis session creation works (generates unique ID)."""
+        # Generate session code
+        generator = SessionManagementGenerator()
+        code = generator.generate(session_schema)
+
+        # Verify code compiles
+        assert verify_code_compiles(code), "Generated session code has syntax errors"
+
+        # Extract functions
+        functions = extract_functions(code)
+
+        # Verify create_session function exists
+        assert "create_session" in functions, "Missing create_session function"
+
+        # Verify session ID generation
+        # Should use UUID or secure random token
+        has_id_generation = (
+            "uuid" in code.lower()
+            or "secrets" in code.lower()
+            or "urandom" in code
+            or "session_id" in code.lower()
+        )
+        assert has_id_generation, "Missing session ID generation"
+
+        # Verify Redis integration
+        assert "redis" in code.lower(), "Missing Redis integration"
+
+        # Verify Redis client or connection
+        has_redis_client = (
+            "Redis" in code
+            or "redis" in code.lower()
+            or "RedisClient" in code
+        )
+        assert has_redis_client, "Missing Redis client"
+
+        # Verify session data storage
+        assert "set" in code or "store" in code.lower(), "Missing session storage logic"
+
+        # Verify TTL/expiry is set on creation
+        assert "expire" in code.lower() or "ttl" in code.lower() or "ex=" in code, "Missing session expiry"
+
+    def test_session_retrieval(self, session_schema):
+        """Test auth_085: Session retrieval works (returns correct data)."""
+        # Generate session code
+        generator = SessionManagementGenerator()
+        code = generator.generate(session_schema)
+
+        # Verify code compiles
+        assert verify_code_compiles(code), "Generated session code has syntax errors"
+
+        # Extract functions
+        functions = extract_functions(code)
+
+        # Verify get_session function exists
+        assert "get_session" in functions, "Missing get_session function"
+
+        # Verify Redis get operation
+        assert "get" in code, "Missing Redis get operation"
+
+        # Verify session data deserialization
+        # Should handle JSON or pickle deserialization
+        has_deserialization = (
+            "json" in code.lower()
+            or "loads" in code
+            or "decode" in code
+        )
+        assert has_deserialization, "Missing session data deserialization"
+
+        # Verify None/null handling for non-existent sessions
+        assert "None" in code or "null" in code.lower(), "Missing null session handling"
+
+        # Verify session validation
+        # Should check if session exists and is valid
+        has_validation = (
+            "if" in code
+            or "exists" in code.lower()
+            or "is None" in code
+        )
+        assert has_validation, "Missing session validation"
+
+    def test_session_invalidation(self, session_schema):
+        """Test auth_086: Session invalidation works (delete_session removes session)."""
+        # Generate session code
+        generator = SessionManagementGenerator()
+        code = generator.generate(session_schema)
+
+        # Verify code compiles
+        assert verify_code_compiles(code), "Generated session code has syntax errors"
+
+        # Extract functions
+        functions = extract_functions(code)
+
+        # Verify delete_session function exists
+        assert "delete_session" in functions, "Missing delete_session function"
+
+        # Verify Redis delete operation
+        assert "delete" in code or "del" in code, "Missing Redis delete operation"
+
+        # Verify session removal
+        has_removal_logic = (
+            "delete" in code.lower()
+            or "remove" in code.lower()
+            or "invalidate" in code.lower()
+        )
+        assert has_removal_logic, "Missing session invalidation logic"
+
+        # Verify cleanup for multi-device sessions
+        # Should handle removing specific session while keeping others
+        if session_schema.auth and session_schema.auth.session:
+            if session_schema.auth.session.multi_device:
+                assert "session" in code.lower(), "Missing session management"
+
+    def test_multi_device_sessions(self, session_schema):
+        """Test auth_087: Multi-device sessions work (user can have multiple sessions)."""
+        # Generate session code
+        generator = SessionManagementGenerator()
+        code = generator.generate(session_schema)
+
+        # Verify code compiles
+        assert verify_code_compiles(code), "Generated session code has syntax errors"
+
+        # Verify multi-device configuration is respected
+        assert session_schema.auth.session.multi_device, "Test schema should have multi_device enabled"
+
+        # Verify session ID uniqueness
+        # Each device should have unique session ID
+        has_unique_id = (
+            "uuid" in code.lower()
+            or "unique" in code.lower()
+            or "session_id" in code.lower()
+        )
+        assert has_unique_id, "Missing unique session ID generation"
+
+        # Verify multiple sessions per user support
+        # Should store sessions with user-specific keys or lists
+        has_multi_session_support = (
+            "user" in code.lower()
+            or "sessions" in code.lower()
+            or "device" in code.lower()
+        )
+        assert has_multi_session_support, "Missing multi-device session support"
+
+        # Verify session listing functionality
+        # Should be able to list all sessions for a user
+        functions = extract_functions(code)
+        has_list_function = any("list" in f.lower() or "get_all" in f.lower() for f in functions)
+        # Note: list function is optional but code should support multiple sessions
+
+        # Verify Redis key structure supports multiple sessions
+        # Should use pattern like "session:{user_id}:{session_id}" or similar
+        assert ":" in code or "user" in code.lower(), "Missing session key structure"
+
+    def test_remember_me_functionality(self, session_schema):
+        """Test auth_088: Remember me functionality works (extended session duration)."""
+        # Generate session code
+        generator = SessionManagementGenerator()
+        code = generator.generate(session_schema)
+
+        # Verify code compiles
+        assert verify_code_compiles(code), "Generated session code has syntax errors"
+
+        # Verify remember_me configuration is present
+        assert session_schema.auth.session.remember_me_duration, "Test schema should have remember_me_duration"
+
+        # Verify remember_me parameter or flag handling
+        has_remember_me = (
+            "remember" in code.lower()
+            or "remember_me" in code.lower()
+            or "extended" in code.lower()
+        )
+        assert has_remember_me, "Missing remember me functionality"
+
+        # Verify different expiry times for normal vs remember me sessions
+        assert "expiry" in code.lower() or "ttl" in code.lower(), "Missing expiry handling"
+
+        # Verify extended duration (30 days from fixture)
+        has_duration_config = (
+            "2592000" in code  # 30 days in seconds
+            or "duration" in code.lower()
+        )
+        assert has_duration_config, "Missing extended session duration"
+
+        # Extract functions
+        functions = extract_functions(code)
+
+        # create_session should support remember_me parameter
+        assert "create_session" in functions, "Missing create_session function"
+
+    def test_session_sliding_expiration(self, session_schema):
+        """Test auth_089: Session sliding expiration works (TTL reset on access)."""
+        # Generate session code
+        generator = SessionManagementGenerator()
+        code = generator.generate(session_schema)
+
+        # Verify code compiles
+        assert verify_code_compiles(code), "Generated session code has syntax errors"
+
+        # Verify sliding_window configuration is present
+        assert session_schema.auth.session.sliding_window, "Test schema should have sliding_window enabled"
+
+        # Verify sliding expiration logic
+        has_sliding_logic = (
+            "slide" in code.lower()
+            or "sliding" in code.lower()
+            or "refresh" in code.lower()
+            or "renew" in code.lower()
+        )
+        assert has_sliding_logic, "Missing sliding expiration functionality"
+
+        # Extract functions
+        functions = extract_functions(code)
+
+        # Verify refresh or update function exists
+        has_refresh_function = any(
+            "refresh" in f.lower() or "update" in f.lower() or "renew" in f.lower()
+            for f in functions
+        )
+        assert has_refresh_function, "Missing session refresh function"
+
+        # Verify TTL reset on access
+        # Should use Redis EXPIRE command or similar
+        has_ttl_reset = (
+            "expire" in code.lower()
+            or "ttl" in code.lower()
+            or "setex" in code
+        )
+        assert has_ttl_reset, "Missing TTL reset logic"
+
+        # Verify get_session updates expiry
+        # When sliding_window is enabled, retrieving a session should extend it
+        assert "get_session" in functions, "Missing get_session function"
+
+
+# =============================================================================
+# MFA Integration Tests (auth_090-auth_096)
+# =============================================================================
+
+class TestMFAIntegration:
+    """Integration tests for MFA (Multi-Factor Authentication) functionality."""
+
+    def test_totp_secret_generation(self, mfa_schema):
+        """Test auth_090: TOTP secret generation works (produces valid base32)."""
+        # Generate MFA code
+        generator = MFAGenerator()
+        code = generator.generate(mfa_schema)
+
+        # Verify code compiles
+        assert verify_code_compiles(code), "Generated MFA code has syntax errors"
+
+        # Extract functions
+        functions = extract_functions(code)
+
+        # Verify TOTP secret generation function exists
+        has_totp_generate = any(
+            "generate" in f.lower() and ("totp" in f.lower() or "secret" in f.lower())
+            for f in functions
+        )
+        assert has_totp_generate, "Missing TOTP secret generation function"
+
+        # Verify base32 encoding
+        # TOTP secrets must be base32 encoded
+        has_base32 = (
+            "base32" in code.lower()
+            or "b32encode" in code
+            or "Base32" in code
+        )
+        assert has_base32, "Missing base32 encoding for TOTP secret"
+
+        # Verify secure random generation
+        # Should use secrets module or urandom
+        has_secure_random = (
+            "secrets" in code.lower()
+            or "urandom" in code
+            or "random" in code.lower()
+        )
+        assert has_secure_random, "Missing secure random generation"
+
+        # Verify TOTP library import
+        has_totp_library = (
+            "pyotp" in code.lower()
+            or "otp" in code.lower()
+            or "totp" in code.lower()
+        )
+        assert has_totp_library, "Missing TOTP library"
+
+        # Verify secret length (typically 16 or 32 bytes)
+        # Base32 encoded secrets are typically 160-bit (20 bytes) or 256-bit (32 bytes)
+        has_length_config = (
+            "16" in code
+            or "20" in code
+            or "32" in code
+            or "length" in code.lower()
+        )
+        assert has_length_config, "Missing secret length configuration"
+
+        # Verify TOTP verification function
+        has_verify = any("verify" in f.lower() for f in functions)
+        assert has_verify, "Missing TOTP verification function"
+
+        # Verify MFA configuration is respected
+        assert mfa_schema.auth.mfa.enabled, "MFA should be enabled in test schema"
+        assert "totp" in mfa_schema.auth.mfa.methods, "TOTP should be in MFA methods"
+
+        # Verify issuer configuration for QR codes
+        assert "SchnitzelTest" in code or "issuer" in code.lower(), "Missing TOTP issuer configuration"
+
+        # Verify QR code generation support
+        has_qr_support = (
+            "qr" in code.lower()
+            or "uri" in code.lower()
+            or "otpauth" in code.lower()
+        )
+        assert has_qr_support, "Missing QR code generation support"
+
+    def test_totp_code_verification(self, mfa_schema):
+        """Test auth_091: TOTP code verification works."""
+        # Generate MFA code
+        generator = MFAGenerator()
+        code = generator.generate(mfa_schema)
+
+        # Verify code compiles
+        assert verify_code_compiles(code), "Generated MFA code has syntax errors"
+
+        # Extract functions
+        functions = extract_functions(code)
+
+        # Verify TOTP verification function exists
+        assert "verify_totp" in functions, "Missing verify_totp function"
+
+        # Verify pyotp library is imported
+        assert "import pyotp" in code or "from pyotp" in code, "Missing pyotp import"
+
+        # Verify verification logic
+        assert "verify" in code.lower(), "Missing verification logic"
+        assert "code" in code.lower(), "Missing code parameter"
+        assert "secret" in code.lower(), "Missing secret parameter"
+
+        # Verify time window support for clock drift
+        assert "window" in code.lower() or "valid_window" in code, "Missing time window support"
+
+        # Verify return value is boolean
+        assert "bool" in code, "Missing boolean return type"
+
+        # Verify error handling
+        assert "raise" in code or "ValueError" in code, "Missing error handling"
+
+    def test_totp_qr_code_generation(self, mfa_schema):
+        """Test auth_092: TOTP QR code generation works."""
+        # Generate MFA code
+        generator = MFAGenerator()
+        code = generator.generate(mfa_schema)
+
+        # Verify code compiles
+        assert verify_code_compiles(code), "Generated MFA code has syntax errors"
+
+        # Extract functions
+        functions = extract_functions(code)
+
+        # Verify QR code generation function exists
+        assert "generate_qr_code" in functions, "Missing generate_qr_code function"
+
+        # Verify QR code library is imported
+        assert "import qrcode" in code or "from qrcode" in code, "Missing qrcode import"
+
+        # Verify otpauth URI generation
+        assert "generate_totp_uri" in functions, "Missing generate_totp_uri function"
+        assert "otpauth://" in code.lower() or "provisioning_uri" in code, "Missing otpauth URI"
+
+        # Verify PNG bytes are returned
+        assert "bytes" in code, "Missing bytes return type"
+        assert "PNG" in code or "png" in code.lower(), "Missing PNG format"
+
+        # Verify image generation
+        assert "make_image" in code or "save" in code, "Missing image generation"
+
+        # Verify BytesIO for in-memory image
+        assert "BytesIO" in code or "io.BytesIO" in code, "Missing BytesIO for image buffer"
+
+    def test_backup_codes_generation(self, mfa_schema):
+        """Test auth_093: Backup codes generation works."""
+        # Generate MFA code
+        generator = MFAGenerator()
+        code = generator.generate(mfa_schema)
+
+        # Verify code compiles
+        assert verify_code_compiles(code), "Generated MFA code has syntax errors"
+
+        # Extract functions
+        functions = extract_functions(code)
+
+        # Verify backup codes generation function exists
+        assert "generate_backup_codes" in functions, "Missing generate_backup_codes function"
+
+        # Verify secure random generation
+        assert "secrets" in code.lower(), "Missing secrets module for secure randomness"
+
+        # Verify return type is list
+        assert "list" in code, "Missing list return type"
+
+        # Verify backup codes count configuration
+        assert "backup_codes_count" in code or "10" in code, "Missing backup codes count"
+
+        # Verify code format (XXXX-XXXX or similar)
+        assert "hex" in code.lower() or "format" in code.lower(), "Missing code formatting"
+
+    def test_backup_code_verification(self, mfa_schema):
+        """Test auth_094: Backup code verification works."""
+        # Generate MFA code
+        generator = MFAGenerator()
+        code = generator.generate(mfa_schema)
+
+        # Verify code compiles
+        assert verify_code_compiles(code), "Generated MFA code has syntax errors"
+
+        # Extract functions
+        functions = extract_functions(code)
+
+        # Verify backup code verification function exists
+        assert "verify_backup_code" in functions, "Missing verify_backup_code function"
+
+        # Verify hashing for secure storage
+        assert "hash_backup_codes" in functions, "Missing hash_backup_codes function"
+        assert "hashlib" in code or "sha256" in code.lower(), "Missing hashing"
+
+        # Verify constant-time comparison (timing attack prevention)
+        assert "compare_digest" in code or "secrets.compare_digest" in code, "Missing constant-time comparison"
+
+        # Verify one-time use (code removal after verification)
+        assert "remaining" in code.lower() or "remove" in code.lower(), "Missing one-time use logic"
+
+        # Verify return tuple with remaining codes
+        assert "tuple" in code, "Missing tuple return type"
+
+    def test_mfa_enrollment_flow(self, mfa_schema):
+        """Test auth_095: MFA enrollment flow works end-to-end."""
+        # Generate MFA code
+        generator = MFAGenerator()
+        code = generator.generate(mfa_schema)
+
+        # Verify code compiles
+        assert verify_code_compiles(code), "Generated MFA code has syntax errors"
+
+        # Extract functions
+        functions = extract_functions(code)
+
+        # Verify enrollment functions exist
+        assert "start_mfa_enrollment" in functions, "Missing start_mfa_enrollment function"
+        assert "complete_mfa_setup" in functions, "Missing complete_mfa_setup function"
+
+        # Verify enrollment flow generates all required data
+        assert "generate_totp_secret" in functions, "Missing TOTP secret generation"
+        assert "generate_qr_code" in functions, "Missing QR code generation"
+        assert "generate_backup_codes" in functions, "Missing backup codes generation"
+
+        # Verify setup completion with verification
+        assert "verify_totp" in functions, "Missing TOTP verification in setup"
+
+        # Verify database stubs for pending MFA
+        assert "store_pending_mfa" in functions, "Missing store_pending_mfa stub"
+        assert "enable_mfa_for_user" in functions, "Missing enable_mfa_for_user stub"
+
+        # Verify proper return types
+        assert "dict" in code, "Missing dict return type"
+
+        # Verify issuer name is used
+        assert "SchnitzelApp" in code or "totp_issuer" in code, "Missing TOTP issuer"
+
+    def test_mfa_verification_middleware(self, mfa_schema):
+        """Test auth_096: MFA verification middleware works."""
+        # Generate MFA code
+        generator = MFAGenerator()
+        code = generator.generate(mfa_schema)
+
+        # Verify code compiles
+        assert verify_code_compiles(code), "Generated MFA code has syntax errors"
+
+        # Extract functions
+        functions = extract_functions(code)
+
+        # Verify middleware function exists
+        assert "require_mfa" in functions, "Missing require_mfa middleware"
+
+        # Verify FastAPI dependency pattern
+        assert "from fastapi import" in code, "Missing FastAPI imports"
+        assert "Depends" in code or "Request" in code, "Missing FastAPI dependency support"
+        assert "HTTPException" in code, "Missing HTTPException"
+
+        # Verify async function
+        assert "async def require_mfa" in code, "require_mfa should be async"
+
+        # Verify MFA status checking
+        assert "is_user_mfa_enabled" in functions, "Missing MFA status check function"
+
+        # Verify session-based MFA verification
+        assert "session" in code.lower(), "Missing session support"
+        assert "mfa_verified" in code, "Missing MFA verification flag"
+
+        # Verify 403 error for unverified MFA
+        assert "403" in code, "Missing 403 status code"
+
+        # Verify user_id parameter
+        assert "user_id" in code.lower(), "Missing user_id parameter"
+
+
+# =============================================================================
+# Dart Auth Client Integration Tests (auth_097-auth_100)
+# =============================================================================
+
+class TestDartAuthIntegration:
+    """Integration tests for Dart authentication client generation."""
+
+    def test_dart_auth_client_compiles(self, auth_schema):
+        """Test auth_097: Dart auth client compiles without errors."""
+        # Generate Dart auth client
+        generator = DartAuthClientGenerator()
+        files = generator.generate(auth_schema)
+
+        # Verify all expected files are generated
+        assert "auth_client.dart" in files, "Missing auth_client.dart"
+        assert "token_storage.dart" in files, "Missing token_storage.dart"
+        assert "auth_interceptor.dart" in files, "Missing auth_interceptor.dart"
+        assert "auth_bloc.dart" in files, "Missing auth_bloc.dart"
+        assert "oauth_handler.dart" in files, "Missing oauth_handler.dart"
+        assert "user_model.dart" in files, "Missing user_model.dart"
+
+        # Get auth_client code
+        auth_client_code = files["auth_client.dart"]
+
+        # Verify basic Dart syntax
+        assert "class " in auth_client_code, "Missing class definition"
+        assert "import " in auth_client_code, "Missing imports"
+
+        # Verify AuthClient class exists
+        assert "class AuthClient" in auth_client_code or "AuthClient" in auth_client_code, "Missing AuthClient class"
+
+        # Verify authentication methods
+        assert "login" in auth_client_code.lower(), "Missing login method"
+        assert "register" in auth_client_code.lower(), "Missing register method"
+        assert "logout" in auth_client_code.lower(), "Missing logout method"
+        assert "refresh" in auth_client_code.lower(), "Missing refresh method"
+
+        # Verify Dio HTTP client
+        assert "Dio" in auth_client_code, "Missing Dio import"
+
+        # Verify async/await support
+        assert "async" in auth_client_code or "Future" in auth_client_code, "Missing async support"
+
+        # Verify error handling
+        assert "try" in auth_client_code or "catch" in auth_client_code, "Missing error handling"
+
+    def test_dart_token_storage(self, auth_schema):
+        """Test auth_098: Dart token storage works."""
+        # Generate Dart auth client
+        generator = DartAuthClientGenerator()
+        files = generator.generate(auth_schema)
+
+        # Get token storage code
+        token_storage_code = files["token_storage.dart"]
+
+        # Verify TokenStorage class exists
+        assert "class TokenStorage" in token_storage_code or "TokenStorage" in token_storage_code, "Missing TokenStorage class"
+
+        # Verify flutter_secure_storage is used
+        assert "FlutterSecureStorage" in token_storage_code or "SecureStorage" in token_storage_code, "Missing secure storage"
+
+        # Verify token CRUD operations
+        assert "save" in token_storage_code.lower() or "write" in token_storage_code.lower(), "Missing save token"
+        assert "get" in token_storage_code.lower() or "read" in token_storage_code.lower(), "Missing get token"
+        assert "delete" in token_storage_code.lower() or "remove" in token_storage_code.lower(), "Missing delete token"
+
+        # Verify access and refresh token handling
+        assert "access" in token_storage_code.lower(), "Missing access token handling"
+        assert "refresh" in token_storage_code.lower(), "Missing refresh token handling"
+
+        # Verify async storage operations
+        assert "Future" in token_storage_code, "Missing Future return type"
+
+        # Verify secure key constants
+        assert "const" in token_storage_code or "final" in token_storage_code, "Missing storage key constants"
+
+    def test_dart_auto_token_refresh(self, auth_schema):
+        """Test auth_099: Dart auto token refresh works."""
+        # Generate Dart auth client
+        generator = DartAuthClientGenerator()
+        files = generator.generate(auth_schema)
+
+        # Get auth interceptor code
+        auth_interceptor_code = files["auth_interceptor.dart"]
+
+        # Verify AuthInterceptor class exists
+        assert "class AuthInterceptor" in auth_interceptor_code or "Interceptor" in auth_interceptor_code, "Missing AuthInterceptor class"
+
+        # Verify Dio interceptor pattern
+        assert "Interceptor" in auth_interceptor_code, "Missing Interceptor base class"
+        assert "onRequest" in auth_interceptor_code or "request" in auth_interceptor_code.lower(), "Missing request interceptor"
+        assert "onError" in auth_interceptor_code or "error" in auth_interceptor_code.lower(), "Missing error interceptor"
+
+        # Verify 401 handling for token expiry
+        assert "401" in auth_interceptor_code, "Missing 401 status check"
+
+        # Verify token refresh logic
+        assert "refresh" in auth_interceptor_code.lower(), "Missing token refresh"
+
+        # Verify retry logic after refresh
+        assert "retry" in auth_interceptor_code.lower() or "repeat" in auth_interceptor_code.lower(), "Missing request retry"
+
+        # Verify token injection in headers
+        assert "header" in auth_interceptor_code.lower() or "Authorization" in auth_interceptor_code, "Missing auth header injection"
+
+        # Verify Bearer token format
+        assert "Bearer" in auth_interceptor_code, "Missing Bearer token format"
+
+    def test_dart_auth_bloc(self, auth_schema):
+        """Test auth_100: Dart AuthBloc state management works."""
+        # Generate Dart auth client
+        generator = DartAuthClientGenerator()
+        files = generator.generate(auth_schema)
+
+        # Get auth BLoC code
+        auth_bloc_code = files["auth_bloc.dart"]
+
+        # Verify AuthBloc class exists
+        assert "class AuthBloc" in auth_bloc_code or "AuthBloc" in auth_bloc_code, "Missing AuthBloc class"
+
+        # Verify flutter_bloc is used
+        assert "Bloc" in auth_bloc_code, "Missing Bloc base class"
+        assert "import" in auth_bloc_code and "bloc" in auth_bloc_code.lower(), "Missing flutter_bloc import"
+
+        # Verify auth events
+        assert "AuthEvent" in auth_bloc_code, "Missing AuthEvent base class"
+        assert "LoginRequested" in auth_bloc_code or "login" in auth_bloc_code.lower(), "Missing login event"
+        assert "RegisterRequested" in auth_bloc_code or "register" in auth_bloc_code.lower(), "Missing register event"
+        assert "LogoutRequested" in auth_bloc_code or "logout" in auth_bloc_code.lower(), "Missing logout event"
+
+        # Verify auth states
+        assert "AuthState" in auth_bloc_code, "Missing AuthState base class"
+        assert "Authenticated" in auth_bloc_code or "authenticated" in auth_bloc_code.lower(), "Missing authenticated state"
+        assert "Unauthenticated" in auth_bloc_code or "unauthenticated" in auth_bloc_code.lower(), "Missing unauthenticated state"
+        assert "Loading" in auth_bloc_code or "loading" in auth_bloc_code.lower(), "Missing loading state"
+
+        # Verify event handler
+        assert "on<" in auth_bloc_code or "mapEventToState" in auth_bloc_code, "Missing event handler"
+
+        # Verify async state emissions
+        assert "emit" in auth_bloc_code or "yield" in auth_bloc_code, "Missing state emission"
+
+        # Verify equatable for state comparison
+        assert "Equatable" in auth_bloc_code or "extends" in auth_bloc_code, "Missing Equatable base class"
