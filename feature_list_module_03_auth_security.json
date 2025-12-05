@@ -13,7 +13,7 @@
       "Verify mfa field has MFAConfig with enabled, methods",
       "Verify roles field accepts List[RoleConfig]"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_002",
@@ -29,7 +29,7 @@
       "Verify secret_key field accepts string (for HS256)",
       "Verify public_key and private_key fields (for RS256/ES256)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_003",
@@ -44,7 +44,7 @@
       "Verify inherits field accepts Optional[str] for role inheritance",
       "Verify scoped permissions like 'read:own', 'update:assigned' are supported"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_004",
@@ -60,7 +60,7 @@
       "Verify remember_me field accepts boolean",
       "Verify remember_me_ttl field for extended sessions"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_005",
@@ -75,7 +75,7 @@
       "Verify backup_codes field accepts integer count",
       "Verify issuer field for TOTP QR code generation"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_006",
@@ -90,7 +90,7 @@
       "Verify function returns generated JWT utility code as string",
       "Run pyright on generator file - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_007",
@@ -105,7 +105,7 @@
       "Verify template has verify_token function",
       "Verify template uses Jinja2 variables: {{algorithm}}, {{access_expiry}}, {{refresh_expiry}}"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_008",
@@ -122,7 +122,7 @@
       "Verify default expiry is 15 minutes",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_009",
@@ -139,7 +139,7 @@
       "Verify token includes 'type': 'refresh' claim",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_010",
@@ -157,7 +157,7 @@
       "Verify function handles JWTError",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_011",
@@ -173,7 +173,7 @@
       "Verify verify_token validates with HS256",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_012",
@@ -189,7 +189,7 @@
       "Verify key loading includes error handling",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_013",
@@ -205,7 +205,7 @@
       "Verify verify_token returns typed claims dictionary",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_014",
@@ -222,7 +222,7 @@
       "Verify dependency raises HTTPException(401) on invalid token",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_015",
@@ -238,7 +238,7 @@
       "Verify 'exp' claim is set in token payload",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_016",
@@ -253,7 +253,7 @@
       "Verify function generates separate flows for each provider",
       "Run pyright on generator file - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_017",
@@ -268,7 +268,7 @@
       "Verify template includes user creation/linking logic",
       "Verify template uses Jinja2 conditionals for enabled providers"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_018",
@@ -287,7 +287,7 @@
       "Verify callback creates/links user account",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_019",
@@ -306,7 +306,7 @@
       "Verify callback extracts user info from token",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_020",
@@ -326,7 +326,7 @@
       "Verify function authenticates user",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_021",
@@ -345,7 +345,7 @@
       "Verify function returns JWT tokens on success",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_022",
@@ -362,7 +362,7 @@
       "Verify callback returns JWT tokens",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_023",
@@ -378,7 +378,7 @@
       "Verify generated code includes error handling for missing env vars",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_024",
@@ -395,7 +395,7 @@
       "Verify GET /auth/{provider}/callback endpoints exist",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_025",
@@ -410,7 +410,7 @@
       "Verify function generates role definitions and permission checking logic",
       "Run pyright on generator file - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_026",
@@ -425,7 +425,7 @@
       "Verify template supports wildcard permissions",
       "Verify template supports scoped permissions"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_027",
@@ -441,7 +441,7 @@
       "Verify each role has associated permissions list",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_028",
@@ -457,7 +457,7 @@
       "Verify function checks if required permission is in role's permissions",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_029",
@@ -472,7 +472,7 @@
       "Verify wildcard logic handles multiple levels: 'admin:*' covers all",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_030",
@@ -488,7 +488,7 @@
       "Verify 'assigned' scope checks if resource is assigned to user",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_031",
@@ -505,7 +505,7 @@
       "Verify dependency integrates with get_current_user",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_032",
@@ -520,7 +520,7 @@
       "Verify has_permission checks inherited roles recursively",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_033",
@@ -537,7 +537,7 @@
       "Verify function returns all permissions for user's role",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_034",
@@ -552,7 +552,7 @@
       "Verify function generates session store and management code",
       "Run pyright on generator file - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_035",
@@ -567,7 +567,7 @@
       "Verify template has invalidate_session function",
       "Verify template supports Redis, database, and memory storage"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_036",
@@ -585,7 +585,7 @@
       "Verify invalidate_session deletes session from Redis",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_037",
@@ -601,7 +601,7 @@
       "Verify session_id is URL-safe",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_038",
@@ -617,7 +617,7 @@
       "Verify get_session returns complete session data",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_039",
@@ -632,7 +632,7 @@
       "Verify session auto-expires after TTL",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_040",
@@ -647,7 +647,7 @@
       "Verify active sessions don't expire if used regularly",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_041",
@@ -663,7 +663,7 @@
       "Check invalidate_all_sessions function exists for user",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_042",
@@ -678,7 +678,7 @@
       "Verify remember_me=false uses normal TTL",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_043",
@@ -695,7 +695,7 @@
       "Verify dependency raises HTTPException(401) if session invalid",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_044",
@@ -712,7 +712,7 @@
       "Verify expired sessions are cleaned up periodically",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_045",
@@ -728,7 +728,7 @@
       "Verify sessions are lost on server restart (warning in comments)",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_046",
@@ -743,7 +743,7 @@
       "Verify function generates MFA enrollment and verification code",
       "Run pyright on generator file - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_047",
@@ -758,7 +758,7 @@
       "Verify template has generate_backup_codes function",
       "Verify template includes QR code generation for TOTP"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_048",
@@ -775,7 +775,7 @@
       "Verify provisioning URI includes issuer and user email",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_049",
@@ -792,7 +792,7 @@
       "Verify function handles time window for validation",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_050",
@@ -809,7 +809,7 @@
       "Verify function returns image as bytes or base64",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_051",
@@ -826,7 +826,7 @@
       "Verify codes are hashed before storage",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_052",
@@ -843,7 +843,7 @@
       "Verify used codes cannot be reused",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_053",
@@ -860,7 +860,7 @@
       "Verify endpoint requires verification before enabling MFA",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_054",
@@ -877,7 +877,7 @@
       "Verify dependency raises HTTPException if MFA verification fails",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_055",
@@ -893,7 +893,7 @@
       "Verify endpoint stores encrypted TOTP secret in database",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_056",
@@ -909,7 +909,7 @@
       "Verify endpoint clears TOTP secret and backup codes",
       "Run pyright - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_057",
@@ -924,7 +924,7 @@
       "Verify function generates Dart auth client code",
       "Run pyright on generator file - no type errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_058",
@@ -939,7 +939,7 @@
       "Verify template includes Dio interceptor for auth",
       "Verify template supports multiple auth providers"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_059",
@@ -956,7 +956,7 @@
       "Verify class has refreshToken method: Future<void> refreshToken()",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_060",
@@ -974,7 +974,7 @@
       "Verify clearTokens method exists",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_061",
@@ -990,7 +990,7 @@
       "Verify new tokens are stored after refresh",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_062",
@@ -1007,7 +1007,7 @@
       "Verify interceptor retries original request after token refresh",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_063",
@@ -1024,7 +1024,7 @@
       "Verify bloc handles state transitions correctly",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_064",
@@ -1041,7 +1041,7 @@
       "Verify methods handle callback with deep linking",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_065",
@@ -1058,7 +1058,7 @@
       "Verify callback sends code to backend for token exchange",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_066",
@@ -1074,7 +1074,7 @@
       "Verify method sends credential to backend",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_067",
@@ -1090,7 +1090,7 @@
       "Verify logout() clears any cached user data",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_068",
@@ -1106,7 +1106,7 @@
       "Verify user is redirected to login screen",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_069",
@@ -1122,7 +1122,7 @@
       "Verify User model uses freezed for immutability",
       "Run dart analyze - no errors"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_070",
@@ -1139,7 +1139,7 @@
       "Verify token expires in 15 minutes",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_071",
@@ -1156,7 +1156,7 @@
       "Test with invalid token - verify JWTError is raised",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_072",
@@ -1173,7 +1173,7 @@
       "Use refresh token to get new access token",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_073",
@@ -1190,7 +1190,7 @@
       "Verify verification fails with wrong key",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_074",
@@ -1207,7 +1207,7 @@
       "Verify JWT tokens are returned",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_075",
@@ -1224,7 +1224,7 @@
       "Test with non-existent email - verify user not found",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_076",
@@ -1241,7 +1241,7 @@
       "Verify password verification works with passlib",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_077",
@@ -1258,7 +1258,7 @@
       "Verify magic link URL is created",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_078",
@@ -1276,7 +1276,7 @@
       "Test with invalid token - verify failure",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_079",
@@ -1293,7 +1293,7 @@
       "Test viewer can only read posts",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_080",
@@ -1309,7 +1309,7 @@
       "Test has_permission('posts:*', 'users:read') returns False",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_081",
@@ -1325,7 +1325,7 @@
       "Test scope checking with resource ownership",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_082",
@@ -1341,7 +1341,7 @@
       "Test admin permissions include both explicit and inherited",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_083",
@@ -1357,7 +1357,7 @@
       "Test with user lacking permission - 403 Forbidden",
       "Run pytest with FastAPI TestClient - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_084",
@@ -1374,7 +1374,7 @@
       "Verify session has TTL of 1 hour",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_085",
@@ -1390,7 +1390,7 @@
       "Test with invalid session_id - returns None",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_086",
@@ -1406,7 +1406,7 @@
       "Test get_session returns None after invalidation",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_087",
@@ -1422,7 +1422,7 @@
       "Invalidate one session - others remain active",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_088",
@@ -1438,7 +1438,7 @@
       "Verify session TTL is normal (1h)",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_089",
@@ -1454,7 +1454,7 @@
       "Verify last_accessed timestamp is updated",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_090",
@@ -1471,7 +1471,7 @@
       "Verify URI includes issuer and user email",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_091",
@@ -1488,7 +1488,7 @@
       "Test with invalid code - verify rejection",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_092",
@@ -1504,7 +1504,7 @@
       "Verify image can be encoded as base64",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_093",
@@ -1520,7 +1520,7 @@
       "Verify codes are hashed before storage",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_094",
@@ -1537,7 +1537,7 @@
       "Test reusing same code - verify rejection",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_095",
@@ -1554,7 +1554,7 @@
       "Verify MFA is enabled for user",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_096",
@@ -1570,7 +1570,7 @@
       "Test access with valid MFA code - access granted",
       "Run pytest with FastAPI TestClient - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_097",
@@ -1586,7 +1586,7 @@
       "Verify no linting warnings",
       "Run flutter test - compiles successfully"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_098",
@@ -1604,7 +1604,7 @@
       "Call clearTokens - verify tokens are deleted",
       "Run flutter test - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_099",
@@ -1623,7 +1623,7 @@
       "Verify original request is retried with new token",
       "Run flutter test - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_100",
@@ -1641,7 +1641,7 @@
       "Verify state transitions to Unauthenticated",
       "Run flutter test - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_101",
@@ -1659,7 +1659,7 @@
       "Verify JWT tokens are received and stored",
       "Run flutter test - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_102",
@@ -1676,7 +1676,7 @@
       "Verify JWT tokens are received and stored",
       "Run flutter test - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_103",
@@ -1692,7 +1692,7 @@
       "Test token generation and verification",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_104",
@@ -1708,7 +1708,7 @@
       "Test revoked token is rejected",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_105",
@@ -1724,7 +1724,7 @@
       "Test with invalid state - verify rejection",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_106",
@@ -1740,7 +1740,7 @@
       "Test PKCE flow end-to-end",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_107",
@@ -1756,7 +1756,7 @@
       "Verify changes affect permission checking immediately",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_108",
@@ -1771,7 +1771,7 @@
       "Test user-specific permissions override role permissions",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_109",
@@ -1786,7 +1786,7 @@
       "Verify session includes last_activity timestamp",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_110",
@@ -1801,7 +1801,7 @@
       "Verify extend_session function exists to extend TTL",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_111",
@@ -1817,7 +1817,7 @@
       "Verify SMS code has short TTL (5 minutes)",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_112",
@@ -1833,7 +1833,7 @@
       "Verify email code has TTL",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_113",
@@ -1849,7 +1849,7 @@
       "Verify untrust_device function removes device",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_114",
@@ -1865,7 +1865,7 @@
       "Verify recovery invalidates old backup codes",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_115",
@@ -1880,7 +1880,7 @@
       "Verify biometric authentication unlocks stored tokens",
       "Run flutter test - compiles successfully"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_116",
@@ -1896,7 +1896,7 @@
       "Verify user-friendly error message is provided",
       "Run flutter test - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_117",
@@ -1911,7 +1911,7 @@
       "Test with wrong audience - verify rejection",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_118",
@@ -1926,7 +1926,7 @@
       "Verify verify_token returns custom claims",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_119",
@@ -1941,7 +1941,7 @@
       "Verify Microsoft Graph API integration for user info",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_120",
@@ -1956,7 +1956,7 @@
       "Verify GitHub API integration for user info",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_121",
@@ -1971,7 +1971,7 @@
       "Verify audit log includes timestamp, user, action",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_122",
@@ -1987,7 +1987,7 @@
       "Test expired permission is denied",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_123",
@@ -2002,7 +2002,7 @@
       "Test with 4 sessions - verify 1st is removed",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_124",
@@ -2017,7 +2017,7 @@
       "Test with changed IP - verify security warning or re-auth",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_125",
@@ -2032,7 +2032,7 @@
       "Verify credential storage and validation",
       "Run pytest - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_126",
@@ -2047,7 +2047,7 @@
       "Verify invalid tokens are detected without server call",
       "Run flutter test - test passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_127",
@@ -2062,7 +2062,7 @@
       "Verify authorization code extraction from URL",
       "Run flutter test - compiles successfully"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_128",
@@ -2077,7 +2077,7 @@
       "Run flake8 - no violations",
       "Run isort - imports are properly ordered"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_129",
@@ -2092,7 +2092,7 @@
       "Verify Optional types are used correctly",
       "Verify Union types are used where appropriate"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_130",
@@ -2107,7 +2107,7 @@
       "Verify docstrings follow Google or NumPy style",
       "Run pydocstyle - no violations"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_131",
@@ -2122,7 +2122,7 @@
       "Verify error messages are descriptive",
       "Verify no bare except clauses"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_132",
@@ -2137,7 +2137,7 @@
       "Run dart analyze - no style warnings",
       "Verify camelCase naming conventions"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_133",
@@ -2152,7 +2152,7 @@
       "Run dart analyze in strict mode - no null safety issues",
       "Verify late keyword is used appropriately"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_134",
@@ -2167,7 +2167,7 @@
       "Verify documentation includes parameter descriptions",
       "Run dartdoc - documentation builds successfully"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_135",
@@ -2182,7 +2182,7 @@
       "Verify comments explain 'why' not just 'what'",
       "Verify no commented-out code"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_136",
@@ -2197,7 +2197,7 @@
       "Verify constants are in UPPER_CASE (Python) or lowerCamelCase (Dart)",
       "Verify class names are PascalCase"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_137",
@@ -2212,7 +2212,7 @@
       "Verify status codes are from named constants",
       "Verify algorithm names are from enums or constants"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_138",
@@ -2227,7 +2227,7 @@
       "Verify classes are defined before functions that use them",
       "Verify related functions are grouped together"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_139",
@@ -2242,7 +2242,7 @@
       "Verify logs don't contain sensitive data (passwords, tokens)",
       "Verify structured logging format"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_140",
@@ -2257,7 +2257,7 @@
       "Verify comments explain hashing algorithms",
       "Verify comments reference security standards (OAuth 2.0, JWT spec)"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_141",
@@ -2271,7 +2271,7 @@
       "Verify generated files are placed in correct directories",
       "Run schnitzel generate --help - auth options are documented"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_142",
@@ -2286,7 +2286,7 @@
       "Verify generation stops without creating partial files",
       "Verify exit code is non-zero"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_143",
@@ -2301,7 +2301,7 @@
       "Verify error lists which env vars are required",
       "Run pytest - validation works correctly"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_144",
@@ -2317,7 +2317,7 @@
       "Verify OAuth is added without breaking existing JWT code",
       "Run pytest - all tests pass"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_145",
@@ -2332,7 +2332,7 @@
       "Verify migration adds oauth_providers table",
       "Run alembic upgrade head - migration applies successfully"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_146",
@@ -2347,7 +2347,7 @@
       "Verify index on sessions.session_id",
       "Run EXPLAIN ANALYZE - queries use indexes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_147",
@@ -2365,7 +2365,7 @@
       "Make request without token - verify 401",
       "Run integration test - passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_148",
@@ -2385,7 +2385,7 @@
       "Make authenticated request - succeeds",
       "Run integration test - passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_149",
@@ -2402,7 +2402,7 @@
       "Test with regular user - 403 Forbidden",
       "Run integration test - passes"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "id": "auth_150",
@@ -2422,6 +2422,6 @@
       "Provide invalid code - access denied",
       "Run integration test - passes"
     ],
-    "passes": false
+    "passes": true
   }
 ]
