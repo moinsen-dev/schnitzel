@@ -1,0 +1,410 @@
+"""Generated MFA (Multi-Factor Authentication) utilities from Schnitzel schema."""
+
+import io
+import secrets
+from typing import Optional
+from pydantic import BaseModel
+import pyotp
+import qrcode
+from qrcode.image.pure import PyPNGImage
+
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+class MFAConfig(BaseModel):
+    """MFA configuration from schema."""
+
+    enabled: bool = {{ mfa_config.enabled | lower }}
+    required: bool = {{ mfa_config.required | lower }}
+    methods: list[str] = {{ mfa_config.methods | tojson }}
+    backup_codes_count: int = {{ mfa_config.backup_codes_count }}
+    totp_issuer: str = "{{ mfa_config.totp_issuer }}"
+
+
+# Default configuration (can be overridden)
+mfa_config = MFAConfig()
+
+
+# =============================================================================
+# TOTP Secret Generation
+# =============================================================================
+
+def generate_totp_secret(length: int = 32) -> str:
+    """Generate a base32-encoded TOTP secret.
+
+    Creates a cryptographically secure random secret that can be used
+    for TOTP (Time-based One-Time Password) authentication.
+
+    Args:
+        length: Length of the secret in bytes (default: 32, which produces
+                a 52-character base32 string). Must be at least 16 bytes
+                for security. Recommended: 32 bytes.
+
+    Returns:
+        Base32-encoded secret string (no padding characters)
+
+    Raises:
+        ValueError: If length is less than 16 bytes
+
+    Example:
+        >>> secret = generate_totp_secret()
+        >>> # Example output: "JBSWY3DPEHPK3PXP"
+        >>> # Save this secret securely in your database
+    """
+    if length < 16:
+        raise ValueError("TOTP secret must be at least 16 bytes for security")
+
+    # Generate cryptographically secure random bytes
+    random_bytes = secrets.token_bytes(length)
+
+    # Encode to base32 (without padding for cleaner storage)
+    secret = pyotp.random_base32(length)
+
+    return secret
+
+
+# =============================================================================
+# TOTP Verification
+# =============================================================================
+
+def verify_totp(secret: str, code: str, window: int = 1) -> bool:
+    """Verify a TOTP code against a secret.
+
+    Validates a 6-digit TOTP code provided by the user against the stored
+    secret. Includes a time window to account for clock drift.
+
+    Args:
+        secret: Base32-encoded TOTP secret (stored in database)
+        code: 6-digit TOTP code provided by the user
+        window: Number of time periods to check before and after current time
+                (default: 1, which checks 3 periods total: -30s, current, +30s)
+                Increase if users report validation issues, but larger windows
+                reduce security.
+
+    Returns:
+        True if the code is valid, False otherwise
+
+    Raises:
+        ValueError: If secret is empty or code format is invalid
+
+    Example:
+        >>> secret = "JBSWY3DPEHPK3PXP"
+        >>> user_code = "123456"  # From authenticator app
+        >>>
+        >>> if verify_totp(secret, user_code):
+        ...     print("Valid code!")
+        ... else:
+        ...     print("Invalid code!")
+    """
+    if not secret:
+        raise ValueError("TOTP secret cannot be empty")
+
+    if not code or not code.isdigit() or len(code) != 6:
+        raise ValueError("TOTP code must be a 6-digit number")
+
+    # Create TOTP instance with the secret
+    totp = pyotp.TOTP(secret)
+
+    # Verify the code with the specified time window
+    is_valid = totp.verify(code, valid_window=window)
+
+    return is_valid
+
+
+# =============================================================================
+# TOTP URI Generation (for QR Codes)
+# =============================================================================
+
+def generate_totp_uri(
+    secret: str,
+    email: str,
+    issuer: Optional[str] = None
+) -> str:
+    """Generate an otpauth:// URI for TOTP setup.
+
+    Creates a standardized URI that can be encoded into a QR code for
+    easy setup in authenticator apps (Google Authenticator, Authy, etc.).
+
+    Args:
+        secret: Base32-encoded TOTP secret
+        email: User's email address or account identifier
+        issuer: Optional issuer name (defaults to mfa_config.totp_issuer)
+                Shown in authenticator apps as the service name
+
+    Returns:
+        otpauth:// URI string suitable for QR code generation
+
+    Raises:
+        ValueError: If secret or email is empty
+
+    Example:
+        >>> secret = "JBSWY3DPEHPK3PXP"
+        >>> uri = generate_totp_uri(secret, "user@example.com", "MyApp")
+        >>> # URI: otpauth://totp/MyApp:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=MyApp
+    """
+    if not secret:
+        raise ValueError("TOTP secret cannot be empty")
+
+    if not email:
+        raise ValueError("Email cannot be empty")
+
+    # Use configured issuer if not provided
+    if issuer is None:
+        issuer = mfa_config.totp_issuer
+
+    # Create TOTP instance
+    totp = pyotp.TOTP(secret)
+
+    # Generate provisioning URI
+    uri = totp.provisioning_uri(
+        name=email,
+        issuer_name=issuer
+    )
+
+    return uri
+
+
+# =============================================================================
+# QR Code Generation
+# =============================================================================
+
+def generate_qr_code(uri: str, box_size: int = 10, border: int = 4) -> bytes:
+    """Generate a QR code image from an otpauth:// URI.
+
+    Creates a PNG image of a QR code that users can scan with their
+    authenticator app to set up TOTP.
+
+    Args:
+        uri: otpauth:// URI from generate_totp_uri()
+        box_size: Size of each box in pixels (default: 10)
+                  Larger values create bigger QR codes
+        border: Width of the border in boxes (default: 4)
+                QR code spec requires minimum 4
+
+    Returns:
+        PNG image data as bytes, ready to send to client or save to file
+
+    Raises:
+        ValueError: If URI is empty
+
+    Example:
+        >>> secret = generate_totp_secret()
+        >>> uri = generate_totp_uri(secret, "user@example.com")
+        >>> qr_bytes = generate_qr_code(uri)
+        >>>
+        >>> # Send to client
+        >>> return Response(content=qr_bytes, media_type="image/png")
+        >>>
+        >>> # Or save to file
+        >>> with open("qrcode.png", "wb") as f:
+        ...     f.write(qr_bytes)
+    """
+    if not uri:
+        raise ValueError("URI cannot be empty")
+
+    # Create QR code instance
+    qr = qrcode.QRCode(
+        version=1,  # Auto-adjust size based on data
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=box_size,
+        border=border,
+    )
+
+    # Add data to the QR code
+    qr.add_data(uri)
+    qr.make(fit=True)
+
+    # Create image
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    # Convert to PNG bytes
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    qr_bytes = buffer.getvalue()
+
+    return qr_bytes
+
+
+# =============================================================================
+# Backup Codes Generation
+# =============================================================================
+
+def generate_backup_codes(count: Optional[int] = None) -> list[str]:
+    """Generate backup codes for account recovery.
+
+    Creates a list of one-time use backup codes that users can use
+    if they lose access to their authenticator device.
+
+    Args:
+        count: Number of backup codes to generate
+               (defaults to mfa_config.backup_codes_count)
+
+    Returns:
+        List of backup code strings (format: XXXX-XXXX)
+
+    Example:
+        >>> codes = generate_backup_codes(10)
+        >>> # Example codes: ["A3F2-9B8C", "7D4E-1F6A", ...]
+        >>> # Store these securely (hashed) in your database
+    """
+    if count is None:
+        count = mfa_config.backup_codes_count
+
+    codes = []
+    for _ in range(count):
+        # Generate 8 random hex characters
+        code_bytes = secrets.token_bytes(4)
+        code_hex = code_bytes.hex().upper()
+
+        # Format as XXXX-XXXX
+        formatted_code = f"{code_hex[:4]}-{code_hex[4:]}"
+        codes.append(formatted_code)
+
+    return codes
+
+
+def verify_backup_code(code: str, stored_codes: list[str]) -> bool:
+    """Verify a backup code against stored codes.
+
+    Checks if the provided backup code matches any of the stored codes.
+    Uses constant-time comparison to prevent timing attacks.
+
+    Args:
+        code: Backup code provided by user (format: XXXX-XXXX)
+        stored_codes: List of hashed backup codes from database
+
+    Returns:
+        True if the code matches, False otherwise
+
+    Note:
+        You should hash backup codes before storing them in the database,
+        similar to how you hash passwords. After successful verification,
+        remove the used backup code from the database.
+
+    Example:
+        >>> stored_codes = ["A3F2-9B8C", "7D4E-1F6A"]  # In practice, these would be hashed
+        >>> user_code = "A3F2-9B8C"
+        >>>
+        >>> if verify_backup_code(user_code, stored_codes):
+        ...     # Remove the used code from database
+        ...     print("Valid backup code!")
+    """
+    if not code:
+        return False
+
+    # Normalize input (remove spaces, convert to uppercase)
+    normalized_code = code.strip().upper()
+
+    # Check against each stored code using constant-time comparison
+    for stored_code in stored_codes:
+        if secrets.compare_digest(normalized_code, stored_code.upper()):
+            return True
+
+    return False
+
+
+# =============================================================================
+# Complete MFA Setup Flow
+# =============================================================================
+
+def setup_mfa_for_user(email: str) -> dict:
+    """Complete MFA setup flow for a user.
+
+    Generates a secret, URI, QR code, and backup codes in one call.
+    Convenient for initial MFA setup endpoints.
+
+    Args:
+        email: User's email address
+
+    Returns:
+        Dictionary containing:
+        - secret: TOTP secret (store this in database)
+        - uri: otpauth:// URI
+        - qr_code: PNG image bytes
+        - backup_codes: List of backup codes (hash before storing)
+
+    Example:
+        >>> mfa_data = setup_mfa_for_user("user@example.com")
+        >>>
+        >>> # Store in database
+        >>> user.mfa_secret = mfa_data["secret"]
+        >>> user.backup_codes = [hash_code(code) for code in mfa_data["backup_codes"]]
+        >>>
+        >>> # Return QR code to user
+        >>> return {
+        ...     "qr_code": base64.b64encode(mfa_data["qr_code"]).decode(),
+        ...     "backup_codes": mfa_data["backup_codes"]
+        ... }
+    """
+    # Generate TOTP secret
+    secret = generate_totp_secret()
+
+    # Generate URI for QR code
+    uri = generate_totp_uri(secret, email)
+
+    # Generate QR code image
+    qr_code = generate_qr_code(uri)
+
+    # Generate backup codes
+    backup_codes = generate_backup_codes()
+
+    return {
+        "secret": secret,
+        "uri": uri,
+        "qr_code": qr_code,
+        "backup_codes": backup_codes,
+    }
+
+
+# =============================================================================
+# Utility Functions
+# =============================================================================
+
+def get_current_totp_code(secret: str) -> str:
+    """Get the current TOTP code for a secret.
+
+    Useful for testing or displaying the current code to users
+    during setup verification.
+
+    Args:
+        secret: Base32-encoded TOTP secret
+
+    Returns:
+        Current 6-digit TOTP code
+
+    Example:
+        >>> secret = "JBSWY3DPEHPK3PXP"
+        >>> code = get_current_totp_code(secret)
+        >>> print(f"Current code: {code}")
+    """
+    totp = pyotp.TOTP(secret)
+    return totp.now()
+
+
+def is_mfa_enabled() -> bool:
+    """Check if MFA is enabled in the configuration.
+
+    Returns:
+        True if MFA is enabled, False otherwise
+    """
+    return mfa_config.enabled
+
+
+def is_mfa_required() -> bool:
+    """Check if MFA is required for all users.
+
+    Returns:
+        True if MFA is required, False if optional
+    """
+    return mfa_config.required
+
+
+def get_supported_mfa_methods() -> list[str]:
+    """Get the list of supported MFA methods from configuration.
+
+    Returns:
+        List of supported MFA methods (e.g., ["totp", "backup_codes"])
+    """
+    return mfa_config.methods

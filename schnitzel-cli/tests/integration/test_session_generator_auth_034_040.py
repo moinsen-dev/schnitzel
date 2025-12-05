@@ -424,7 +424,9 @@ class TestMultiDeviceSupport:
 
         # Verify get_user_sessions method
         assert "def get_user_sessions(self, user_id: str) -> list[str]:" in code
-        assert 'self.redis.scan_iter("session:*")' in code
+        # Updated: Now uses efficient index-based lookup instead of scan
+        assert 'user_sessions_key = f"user_sessions:{user_id}"' in code
+        assert "self.redis.smembers(user_sessions_key)" in code
 
     def test_delete_user_sessions_method_exists(self):
         """Test that delete_user_sessions method exists."""
@@ -602,3 +604,507 @@ class TestConfigurationExtraction:
         assert config["sliding_window"] is True
         assert config["multi_device"] is True
         assert config["remember_me_duration"] is None
+
+
+# =============================================================================
+# Tests for Module 03 - Session Management Advanced (auth_041-045)
+# =============================================================================
+
+
+class TestMultiDeviceSessionsAdvanced:
+    """Tests for auth_041: Multi-device sessions with device metadata."""
+
+    def test_create_session_accepts_device_metadata(self):
+        """Test that create_session accepts device_name, ip_address, user_agent parameters."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="redis", multi_device=True)
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify device metadata parameters
+        assert "device_name: Optional[str] = None" in code
+        assert "ip_address: Optional[str] = None" in code
+        assert "user_agent: Optional[str] = None" in code
+
+    def test_device_metadata_stored_in_session(self):
+        """Test that device metadata is stored in session data."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="redis", multi_device=True)
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify device metadata is stored
+        assert 'session_data["device_name"] = device_name' in code
+        assert 'session_data["ip_address"] = ip_address' in code
+        assert 'session_data["user_agent"] = user_agent' in code
+
+    def test_user_sessions_index_created(self):
+        """Test that user sessions are tracked in Redis set."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="redis", multi_device=True)
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify user sessions index
+        assert 'user_sessions_key = f"user_sessions:{user_id}"' in code
+        assert "self.redis.sadd(user_sessions_key, session_id)" in code
+        assert "self.redis.expire(user_sessions_key" in code
+
+    def test_get_user_sessions_uses_index(self):
+        """Test that get_user_sessions uses efficient index lookup."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="redis", multi_device=True)
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify index-based lookup
+        assert "self.redis.smembers(user_sessions_key)" in code
+        # Should NOT use slow scan
+        assert 'scan_iter("session:*")' not in code
+
+    def test_delete_session_removes_from_index(self):
+        """Test that delete_session also removes from user sessions index."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="redis", multi_device=True)
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify index cleanup in delete_session
+        assert "self.redis.srem(user_sessions_key, session_id)" in code
+
+
+class TestRememberMeFunctionality:
+    """Tests for auth_042: Remember me functionality."""
+
+    def test_remember_me_parameter_exists(self):
+        """Test that create_session has remember_me parameter."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(
+                    storage="redis",
+                    remember_me_duration=2592000  # 30 days
+                )
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify remember_me parameter
+        assert "remember_me: bool = False" in code
+
+    def test_remember_me_extends_session_duration(self):
+        """Test that remember_me=True uses extended duration."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(
+                    storage="redis",
+                    expiry=3600,
+                    remember_me_duration=2592000
+                )
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify TTL logic
+        assert "if remember_me and session_config.remember_me_duration:" in code
+        assert "ttl = session_config.remember_me_duration" in code
+        assert 'session_data["remember_me"] = True' in code
+
+    def test_remember_me_config_rendered(self):
+        """Test that remember_me_duration config is rendered."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(
+                    storage="redis",
+                    remember_me_duration=604800  # 7 days
+                )
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify config value
+        assert "remember_me_duration: int = 604800" in code
+
+    def test_remember_me_documented_in_docstring(self):
+        """Test that remember_me functionality is documented."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(
+                    storage="redis",
+                    remember_me_duration=2592000
+                )
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Should have documentation about persistent cookies
+        assert "remember_me=True" in code.lower() or "Remember me" in code
+
+
+class TestFastAPIDependency:
+    """Tests for auth_043: FastAPI dependency for session validation."""
+
+    def test_get_current_session_function_exists(self):
+        """Test that get_current_session dependency exists."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="redis")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify dependency function
+        assert "async def get_current_session(" in code
+        assert "-> Dict[str, Any]:" in code
+
+    def test_dependency_extracts_from_cookie(self):
+        """Test that dependency extracts session_id from cookie."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="redis")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify cookie parameter
+        assert 'Cookie(None, alias="session_id")' in code or "Cookie(" in code
+
+    def test_dependency_extracts_from_header(self):
+        """Test that dependency extracts session_id from X-Session-ID header."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="redis")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify header parameter
+        assert 'Header(None, alias="X-Session-ID")' in code or "Header(" in code
+
+    def test_dependency_raises_401_if_no_session(self):
+        """Test that dependency raises HTTPException(401) if no session provided."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="redis")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify 401 error
+        assert "raise HTTPException(" in code
+        assert "status.HTTP_401_UNAUTHORIZED" in code
+        assert "No session provided" in code or "Invalid or expired session" in code
+
+    def test_dependency_raises_401_if_session_invalid(self):
+        """Test that dependency raises HTTPException(401) if session invalid/expired."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="redis")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify session validation
+        assert "if not session_data:" in code
+        assert "Invalid or expired session" in code
+
+    def test_dependency_returns_session_data(self):
+        """Test that dependency returns session data on success."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="redis")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify return statement
+        assert "return session_data" in code
+
+    def test_dependency_imports_fastapi_types(self):
+        """Test that FastAPI types are imported."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="redis")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify imports
+        assert "from fastapi import HTTPException, status, Cookie, Header" in code
+
+
+class TestDatabaseSessionStore:
+    """Tests for auth_044: Database-backed sessions."""
+
+    def test_database_session_store_class_exists(self):
+        """Test that DatabaseSessionStore class is generated for database storage."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="database")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify DatabaseSessionStore class
+        assert "class DatabaseSessionStore:" in code
+
+    def test_database_session_model_exists(self):
+        """Test that SessionModel SQLAlchemy model exists."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="database")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify SessionModel
+        assert "class SessionModel(Base):" in code
+        assert '__tablename__ = "sessions"' in code
+
+    def test_database_model_has_required_columns(self):
+        """Test that SessionModel has id, user_id, data, created_at, expires_at columns."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="database")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify columns
+        assert "id = Column(String" in code
+        assert "user_id = Column(String" in code
+        assert "data = Column(Text" in code
+        assert "created_at = Column(DateTime" in code
+        assert "expires_at = Column(DateTime" in code
+
+    def test_database_store_has_same_interface(self):
+        """Test that DatabaseSessionStore has same methods as RedisSessionStore."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="database")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify methods exist
+        assert "def create_session(" in code
+        assert "def get_session(" in code
+        assert "def update_session(" in code
+        assert "def delete_session(" in code
+        assert "def refresh_session(" in code
+        assert "def get_user_sessions(" in code
+        assert "def delete_user_sessions(" in code
+
+    def test_database_store_imports_sqlalchemy(self):
+        """Test that SQLAlchemy imports are present."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="database")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify SQLAlchemy imports
+        assert "from sqlalchemy import" in code
+        assert "declarative_base" in code
+        assert "sessionmaker" in code
+
+    def test_database_store_has_cleanup_method(self):
+        """Test that DatabaseSessionStore has cleanup_expired_sessions method."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="database")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify cleanup method
+        assert "def cleanup_expired_sessions(self) -> int:" in code
+
+    def test_database_schema_documented(self):
+        """Test that database schema is documented in docstring."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="database")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify schema documentation
+        assert "CREATE TABLE sessions" in code
+
+
+class TestMemorySessionStore:
+    """Tests for auth_045: In-memory sessions for development."""
+
+    def test_memory_session_store_class_exists(self):
+        """Test that MemorySessionStore class is generated for memory storage."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="memory")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify MemorySessionStore class
+        assert "class MemorySessionStore:" in code
+
+    def test_memory_store_has_warning(self):
+        """Test that MemorySessionStore has production warning."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="memory")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify warning
+        assert "WARNING" in code
+        assert "NOT suitable for production" in code or "not suitable for production" in code
+
+    def test_memory_store_uses_dict_storage(self):
+        """Test that MemorySessionStore uses dict for storage."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="memory")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify dict usage
+        assert "self._sessions:" in code
+        assert "Dict[str, Dict[str, Any]]" in code
+
+    def test_memory_store_simulates_ttl(self):
+        """Test that MemorySessionStore simulates TTL with timestamps."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="memory")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify TTL simulation
+        assert "_expires_at" in code
+        assert "datetime.fromisoformat" in code
+
+    def test_memory_store_has_same_interface(self):
+        """Test that MemorySessionStore has same methods as RedisSessionStore."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="memory")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify methods exist
+        assert "def create_session(" in code
+        assert "def get_session(" in code
+        assert "def update_session(" in code
+        assert "def delete_session(" in code
+        assert "def refresh_session(" in code
+        assert "def get_user_sessions(" in code
+        assert "def delete_user_sessions(" in code
+
+    def test_memory_store_has_cleanup_method(self):
+        """Test that MemorySessionStore has cleanup_expired_sessions method."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="memory")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Verify cleanup method
+        assert "def cleanup_expired_sessions(self) -> int:" in code
+
+    def test_memory_store_no_redis_imports(self):
+        """Test that MemorySessionStore doesn't require Redis."""
+        schema = SchnitzelSchema(
+            auth=AuthConfig(
+                session=SessionConfig(storage="memory")
+            )
+        )
+
+        generator = SessionManagementGenerator()
+        code = generator.generate(schema)
+
+        # Redis imports should be conditional
+        # When storage is memory, Redis shouldn't be imported
+        lines = code.split('\n')
+        redis_import_lines = [i for i, line in enumerate(lines) if 'from redis import Redis' in line]
+        # If Redis import exists, it should be inside a conditional block
+        if redis_import_lines:
+            # Check that there's a Jinja2 conditional nearby
+            for line_num in redis_import_lines:
+                # Check previous 5 lines for conditional
+                context = '\n'.join(lines[max(0, line_num-5):line_num+1])
+                # Should not have unconditional Redis import for memory storage
+                assert False, "Redis should not be imported unconditionally for memory storage"

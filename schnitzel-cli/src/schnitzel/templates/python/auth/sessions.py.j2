@@ -4,8 +4,16 @@ import json
 import secrets
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
+{% if session_config.storage == "redis" %}
 from redis import Redis
 from redis.exceptions import RedisError
+{% endif %}
+{% if session_config.storage == "database" %}
+from sqlalchemy import create_engine, Column, String, Text, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session as DBSession
+{% endif %}
+from fastapi import HTTPException, status, Cookie, Header
 
 
 # =============================================================================
@@ -93,16 +101,35 @@ class SessionStore:
         user_id: str,
         data: Optional[Dict[str, Any]] = None,
         remember_me: bool = False,
+        device_name: Optional[str] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
     ) -> str:
         """Create a new session with unique session ID.
 
         Generates a secure random session ID using secrets.token_urlsafe,
         stores user data as JSON in Redis, and sets TTL for automatic expiry.
 
+        {% if session_config.multi_device %}
+        Multi-device support is enabled. Device metadata (device_name, ip_address, user_agent)
+        will be stored with the session. The session is also tracked in a user-specific index
+        for listing all active sessions per user.
+        {% endif %}
+
+        {% if session_config.remember_me_duration %}
+        Remember me functionality is enabled. When remember_me=True, the session will use
+        an extended TTL of {{ session_config.remember_me_duration }} seconds instead of the
+        default {{ session_config.expiry }} seconds. This allows for persistent login across
+        browser sessions via secure cookies.
+        {% endif %}
+
         Args:
             user_id: User identifier to associate with session
             data: Optional additional session data to store
             remember_me: If True, use extended remember_me_duration for TTL
+            device_name: Optional device name for multi-device tracking (e.g., "iPhone 12")
+            ip_address: Optional IP address for security auditing
+            user_agent: Optional User-Agent string for device identification
 
         Returns:
             Unique session ID
@@ -113,7 +140,11 @@ class SessionStore:
         Example:
             >>> session_id = store.create_session(
             ...     "user-123",
-            ...     {"email": "user@example.com", "role": "admin"}
+            ...     {"email": "user@example.com", "role": "admin"},
+            ...     remember_me=True,
+            ...     device_name="Chrome on MacBook",
+            ...     ip_address="192.168.1.100",
+            ...     user_agent="Mozilla/5.0..."
             ... )
         """
         # Generate unique session ID (32 bytes = 43 characters base64url)
@@ -126,6 +157,16 @@ class SessionStore:
             "last_accessed": datetime.utcnow().isoformat(),
         }
 
+        # Add device metadata for multi-device support
+        {% if session_config.multi_device %}
+        if device_name:
+            session_data["device_name"] = device_name
+        if ip_address:
+            session_data["ip_address"] = ip_address
+        if user_agent:
+            session_data["user_agent"] = user_agent
+        {% endif %}
+
         # Merge additional data
         if data:
             session_data.update(data)
@@ -133,13 +174,24 @@ class SessionStore:
         # Determine TTL
         if remember_me and session_config.remember_me_duration:
             ttl = session_config.remember_me_duration
+            session_data["remember_me"] = True
         else:
             ttl = session_config.expiry
+            session_data["remember_me"] = False
 
         # Store in Redis with TTL
         key = self._get_session_key(session_id)
         try:
             self.redis.setex(key, ttl, json.dumps(session_data))
+
+            {% if session_config.multi_device %}
+            # Track session in user-specific index for multi-device support
+            user_sessions_key = f"user_sessions:{user_id}"
+            self.redis.sadd(user_sessions_key, session_id)
+            # Set expiry on the user sessions index (slightly longer than max session TTL)
+            max_ttl = session_config.remember_me_duration or session_config.expiry
+            self.redis.expire(user_sessions_key, max_ttl + 3600)
+            {% endif %}
         except RedisError as e:
             raise RedisError(f"Failed to create session: {e}")
 
@@ -235,6 +287,11 @@ class SessionStore:
     def delete_session(self, session_id: str) -> bool:
         """Delete a session.
 
+        {% if session_config.multi_device %}
+        When multi-device support is enabled, this also removes the session from
+        the user's session index.
+        {% endif %}
+
         Args:
             session_id: Session identifier
 
@@ -247,6 +304,17 @@ class SessionStore:
         key = self._get_session_key(session_id)
 
         try:
+            {% if session_config.multi_device %}
+            # Get user_id before deleting to clean up index
+            session_json = self.redis.get(key)
+            if session_json:
+                session_data = json.loads(session_json)
+                user_id = session_data.get("user_id")
+                if user_id:
+                    user_sessions_key = f"user_sessions:{user_id}"
+                    self.redis.srem(user_sessions_key, session_id)
+            {% endif %}
+
             result = self.redis.delete(key)
             return result > 0
         except RedisError:
@@ -284,10 +352,12 @@ class SessionStore:
     def get_user_sessions(self, user_id: str) -> list[str]:
         """Get all active session IDs for a user.
 
-        Only works if multi_device is enabled. Scans all session keys
-        and returns those belonging to the specified user.
-
-        Note: This operation can be slow on large datasets due to Redis SCAN.
+        {% if session_config.multi_device %}
+        Uses the user-specific session index "user_sessions:{user_id}" for efficient lookup.
+        Returns only sessions that still exist (filters out expired sessions from the index).
+        {% else %}
+        Multi-device support is disabled, this will return an empty list.
+        {% endif %}
 
         Args:
             user_id: User identifier
@@ -298,25 +368,36 @@ class SessionStore:
         Example:
             >>> sessions = store.get_user_sessions("user-123")
             >>> print(f"User has {len(sessions)} active sessions")
+            >>> for session_id in sessions:
+            ...     session_data = store.get_session(session_id)
+            ...     print(f"Device: {session_data.get('device_name')}")
+            ...     print(f"IP: {session_data.get('ip_address')}")
         """
         if not session_config.multi_device:
             return []
 
         try:
-            user_sessions = []
-            # Scan for all session keys
-            for key in self.redis.scan_iter("session:*"):
-                session_json = self.redis.get(key)
-                if session_json:
-                    session_data = json.loads(session_json)
-                    if session_data.get("user_id") == user_id:
-                        # Extract session_id from key "session:{session_id}"
-                        session_id = key.split(":", 1)[1]
-                        user_sessions.append(session_id)
+            {% if session_config.multi_device %}
+            # Use user-specific index for efficient lookup
+            user_sessions_key = f"user_sessions:{user_id}"
+            session_ids = self.redis.smembers(user_sessions_key)
 
-            return user_sessions
+            # Filter out expired sessions (not in Redis anymore)
+            active_sessions = []
+            for session_id in session_ids:
+                key = self._get_session_key(session_id)
+                if self.redis.exists(key):
+                    active_sessions.append(session_id)
+                else:
+                    # Clean up expired session from index
+                    self.redis.srem(user_sessions_key, session_id)
 
-        except (RedisError, json.JSONDecodeError):
+            return active_sessions
+            {% else %}
+            return []
+            {% endif %}
+
+        except RedisError:
             return []
 
     def delete_user_sessions(self, user_id: str) -> int:
@@ -342,3 +423,654 @@ class SessionStore:
                 deleted_count += 1
 
         return deleted_count
+
+
+{% if session_config.storage == "database" %}
+# =============================================================================
+# Database Session Store (SQLAlchemy-based)
+# =============================================================================
+
+Base = declarative_base()
+
+
+class SessionModel(Base):
+    """SQLAlchemy model for session storage."""
+
+    __tablename__ = "sessions"
+
+    id = Column(String(64), primary_key=True)  # session_id
+    user_id = Column(String(255), nullable=False, index=True)
+    data = Column(Text, nullable=False)  # JSON-serialized session data
+    created_at = Column(DateTime, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+
+
+class DatabaseSessionStore:
+    """Database-backed session store using SQLAlchemy.
+
+    Features:
+    - Sessions stored in database table (persistent across restarts)
+    - Automatic expiry via expires_at timestamp
+    - Index on user_id for multi-device queries
+    - Index on expires_at for cleanup queries
+
+    Database Schema:
+        CREATE TABLE sessions (
+            id VARCHAR(64) PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL,
+            data TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            expires_at TIMESTAMP NOT NULL
+        );
+        CREATE INDEX idx_sessions_user_id ON sessions(user_id);
+        CREATE INDEX idx_sessions_expires_at ON sessions(expires_at);
+
+    Example:
+        >>> from sqlalchemy import create_engine
+        >>> engine = create_engine("postgresql://user:pass@localhost/db")
+        >>> store = DatabaseSessionStore(engine)
+        >>> session_id = store.create_session("user-123", {"email": "user@example.com"})
+    """
+
+    def __init__(self, engine):
+        """Initialize database session store.
+
+        Args:
+            engine: SQLAlchemy engine instance
+        """
+        self.engine = engine
+        self.SessionLocal = sessionmaker(bind=engine)
+
+        # Create tables if they don't exist
+        Base.metadata.create_all(engine)
+
+    def create_session(
+        self,
+        user_id: str,
+        data: Optional[Dict[str, Any]] = None,
+        remember_me: bool = False,
+        device_name: Optional[str] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> str:
+        """Create a new session in the database.
+
+        Args:
+            user_id: User identifier
+            data: Optional additional session data
+            remember_me: If True, use extended TTL
+            device_name: Optional device name
+            ip_address: Optional IP address
+            user_agent: Optional User-Agent string
+
+        Returns:
+            Unique session ID
+        """
+        session_id = secrets.token_urlsafe(32)
+
+        session_data = {
+            "user_id": user_id,
+            "created_at": datetime.utcnow().isoformat(),
+            "last_accessed": datetime.utcnow().isoformat(),
+        }
+
+        {% if session_config.multi_device %}
+        if device_name:
+            session_data["device_name"] = device_name
+        if ip_address:
+            session_data["ip_address"] = ip_address
+        if user_agent:
+            session_data["user_agent"] = user_agent
+        {% endif %}
+
+        if data:
+            session_data.update(data)
+
+        if remember_me and session_config.remember_me_duration:
+            ttl = session_config.remember_me_duration
+            session_data["remember_me"] = True
+        else:
+            ttl = session_config.expiry
+            session_data["remember_me"] = False
+
+        created_at = datetime.utcnow()
+        expires_at = created_at + timedelta(seconds=ttl)
+
+        db = self.SessionLocal()
+        try:
+            session_model = SessionModel(
+                id=session_id,
+                user_id=user_id,
+                data=json.dumps(session_data),
+                created_at=created_at,
+                expires_at=expires_at,
+            )
+            db.add(session_model)
+            db.commit()
+            return session_id
+        finally:
+            db.close()
+
+    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve session from database.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            Session data or None if not found/expired
+        """
+        db = self.SessionLocal()
+        try:
+            session_model = db.query(SessionModel).filter(
+                SessionModel.id == session_id,
+                SessionModel.expires_at > datetime.utcnow()
+            ).first()
+
+            if not session_model:
+                return None
+
+            session_data = json.loads(session_model.data)
+            session_data["last_accessed"] = datetime.utcnow().isoformat()
+
+            # Update last_accessed and refresh expiry if sliding window enabled
+            {% if session_config.sliding_window %}
+            session_model.data = json.dumps(session_data)
+            session_model.expires_at = datetime.utcnow() + timedelta(seconds=session_config.expiry)
+            db.commit()
+            {% endif %}
+
+            return session_data
+        finally:
+            db.close()
+
+    def update_session(self, session_id: str, data: Dict[str, Any]) -> bool:
+        """Update session data in database.
+
+        Args:
+            session_id: Session identifier
+            data: Data to merge into session
+
+        Returns:
+            True if updated, False if not found
+        """
+        db = self.SessionLocal()
+        try:
+            session_model = db.query(SessionModel).filter(
+                SessionModel.id == session_id,
+                SessionModel.expires_at > datetime.utcnow()
+            ).first()
+
+            if not session_model:
+                return False
+
+            session_data = json.loads(session_model.data)
+            session_data.update(data)
+            session_data["last_accessed"] = datetime.utcnow().isoformat()
+
+            session_model.data = json.dumps(session_data)
+            db.commit()
+            return True
+        finally:
+            db.close()
+
+    def delete_session(self, session_id: str) -> bool:
+        """Delete session from database.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            True if deleted, False if not found
+        """
+        db = self.SessionLocal()
+        try:
+            result = db.query(SessionModel).filter(SessionModel.id == session_id).delete()
+            db.commit()
+            return result > 0
+        finally:
+            db.close()
+
+    def refresh_session(self, session_id: str) -> bool:
+        """Refresh session expiry timestamp.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            True if refreshed, False if not found
+        """
+        db = self.SessionLocal()
+        try:
+            session_model = db.query(SessionModel).filter(
+                SessionModel.id == session_id,
+                SessionModel.expires_at > datetime.utcnow()
+            ).first()
+
+            if not session_model:
+                return False
+
+            session_model.expires_at = datetime.utcnow() + timedelta(seconds=session_config.expiry)
+            db.commit()
+            return True
+        finally:
+            db.close()
+
+    def get_user_sessions(self, user_id: str) -> list[str]:
+        """Get all active session IDs for a user from database.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            List of active session IDs
+        """
+        {% if session_config.multi_device %}
+        db = self.SessionLocal()
+        try:
+            sessions = db.query(SessionModel.id).filter(
+                SessionModel.user_id == user_id,
+                SessionModel.expires_at > datetime.utcnow()
+            ).all()
+            return [s.id for s in sessions]
+        finally:
+            db.close()
+        {% else %}
+        return []
+        {% endif %}
+
+    def delete_user_sessions(self, user_id: str) -> int:
+        """Delete all sessions for a user from database.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            Number of sessions deleted
+        """
+        db = self.SessionLocal()
+        try:
+            result = db.query(SessionModel).filter(SessionModel.user_id == user_id).delete()
+            db.commit()
+            return result
+        finally:
+            db.close()
+
+    def cleanup_expired_sessions(self) -> int:
+        """Clean up expired sessions from database.
+
+        Should be run periodically as a background task.
+
+        Returns:
+            Number of expired sessions deleted
+        """
+        db = self.SessionLocal()
+        try:
+            result = db.query(SessionModel).filter(
+                SessionModel.expires_at <= datetime.utcnow()
+            ).delete()
+            db.commit()
+            return result
+        finally:
+            db.close()
+{% endif %}
+
+
+{% if session_config.storage == "memory" %}
+# =============================================================================
+# In-Memory Session Store (Development/Testing Only)
+# =============================================================================
+
+class MemorySessionStore:
+    """In-memory session store for development and testing.
+
+    WARNING: This is NOT suitable for production use. Sessions are stored in memory
+    and will be lost when the application restarts. Use Redis or Database storage
+    for production deployments.
+
+    Features:
+    - Simple dict-based storage
+    - Simulates TTL with timestamp checking
+    - Thread-safe with manual locking (consider using threading.Lock for production-like testing)
+    - No persistence across restarts
+
+    Example:
+        >>> store = MemorySessionStore()
+        >>> session_id = store.create_session("user-123", {"email": "user@example.com"})
+        >>> session_data = store.get_session(session_id)
+    """
+
+    def __init__(self):
+        """Initialize in-memory session store."""
+        self._sessions: Dict[str, Dict[str, Any]] = {}
+        {% if session_config.multi_device %}
+        self._user_sessions: Dict[str, set] = {}  # user_id -> set of session_ids
+        {% endif %}
+
+    def create_session(
+        self,
+        user_id: str,
+        data: Optional[Dict[str, Any]] = None,
+        remember_me: bool = False,
+        device_name: Optional[str] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> str:
+        """Create a new session in memory.
+
+        Args:
+            user_id: User identifier
+            data: Optional additional session data
+            remember_me: If True, use extended TTL
+            device_name: Optional device name
+            ip_address: Optional IP address
+            user_agent: Optional User-Agent string
+
+        Returns:
+            Unique session ID
+        """
+        session_id = secrets.token_urlsafe(32)
+
+        session_data = {
+            "user_id": user_id,
+            "created_at": datetime.utcnow().isoformat(),
+            "last_accessed": datetime.utcnow().isoformat(),
+        }
+
+        {% if session_config.multi_device %}
+        if device_name:
+            session_data["device_name"] = device_name
+        if ip_address:
+            session_data["ip_address"] = ip_address
+        if user_agent:
+            session_data["user_agent"] = user_agent
+        {% endif %}
+
+        if data:
+            session_data.update(data)
+
+        if remember_me and session_config.remember_me_duration:
+            ttl = session_config.remember_me_duration
+            session_data["remember_me"] = True
+        else:
+            ttl = session_config.expiry
+            session_data["remember_me"] = False
+
+        # Store expiry timestamp
+        expires_at = datetime.utcnow() + timedelta(seconds=ttl)
+        session_data["_expires_at"] = expires_at.isoformat()
+
+        self._sessions[session_id] = session_data
+
+        {% if session_config.multi_device %}
+        # Track in user sessions index
+        if user_id not in self._user_sessions:
+            self._user_sessions[user_id] = set()
+        self._user_sessions[user_id].add(session_id)
+        {% endif %}
+
+        return session_id
+
+    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve session from memory.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            Session data or None if not found/expired
+        """
+        session_data = self._sessions.get(session_id)
+        if not session_data:
+            return None
+
+        # Check expiry
+        expires_at = datetime.fromisoformat(session_data["_expires_at"])
+        if datetime.utcnow() > expires_at:
+            # Session expired, remove it
+            self.delete_session(session_id)
+            return None
+
+        # Update last accessed
+        session_data["last_accessed"] = datetime.utcnow().isoformat()
+
+        # Refresh expiry if sliding window enabled
+        {% if session_config.sliding_window %}
+        new_expires_at = datetime.utcnow() + timedelta(seconds=session_config.expiry)
+        session_data["_expires_at"] = new_expires_at.isoformat()
+        {% endif %}
+
+        # Return copy without internal fields
+        result = {k: v for k, v in session_data.items() if not k.startswith("_")}
+        return result
+
+    def update_session(self, session_id: str, data: Dict[str, Any]) -> bool:
+        """Update session data in memory.
+
+        Args:
+            session_id: Session identifier
+            data: Data to merge into session
+
+        Returns:
+            True if updated, False if not found
+        """
+        session_data = self._sessions.get(session_id)
+        if not session_data:
+            return False
+
+        # Check expiry
+        expires_at = datetime.fromisoformat(session_data["_expires_at"])
+        if datetime.utcnow() > expires_at:
+            self.delete_session(session_id)
+            return False
+
+        session_data.update(data)
+        session_data["last_accessed"] = datetime.utcnow().isoformat()
+        return True
+
+    def delete_session(self, session_id: str) -> bool:
+        """Delete session from memory.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            True if deleted, False if not found
+        """
+        session_data = self._sessions.pop(session_id, None)
+        if not session_data:
+            return False
+
+        {% if session_config.multi_device %}
+        # Remove from user sessions index
+        user_id = session_data.get("user_id")
+        if user_id and user_id in self._user_sessions:
+            self._user_sessions[user_id].discard(session_id)
+            if not self._user_sessions[user_id]:
+                del self._user_sessions[user_id]
+        {% endif %}
+
+        return True
+
+    def refresh_session(self, session_id: str) -> bool:
+        """Refresh session expiry in memory.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            True if refreshed, False if not found
+        """
+        session_data = self._sessions.get(session_id)
+        if not session_data:
+            return False
+
+        # Check if still valid
+        expires_at = datetime.fromisoformat(session_data["_expires_at"])
+        if datetime.utcnow() > expires_at:
+            self.delete_session(session_id)
+            return False
+
+        # Refresh expiry
+        new_expires_at = datetime.utcnow() + timedelta(seconds=session_config.expiry)
+        session_data["_expires_at"] = new_expires_at.isoformat()
+        return True
+
+    def get_user_sessions(self, user_id: str) -> list[str]:
+        """Get all active session IDs for a user from memory.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            List of active session IDs
+        """
+        {% if session_config.multi_device %}
+        if user_id not in self._user_sessions:
+            return []
+
+        # Filter out expired sessions
+        active_sessions = []
+        for session_id in list(self._user_sessions[user_id]):
+            session_data = self._sessions.get(session_id)
+            if session_data:
+                expires_at = datetime.fromisoformat(session_data["_expires_at"])
+                if datetime.utcnow() <= expires_at:
+                    active_sessions.append(session_id)
+                else:
+                    # Clean up expired session
+                    self.delete_session(session_id)
+            else:
+                # Session missing, clean up index
+                self._user_sessions[user_id].discard(session_id)
+
+        return active_sessions
+        {% else %}
+        return []
+        {% endif %}
+
+    def delete_user_sessions(self, user_id: str) -> int:
+        """Delete all sessions for a user from memory.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            Number of sessions deleted
+        """
+        session_ids = self.get_user_sessions(user_id)
+        deleted_count = 0
+
+        for session_id in session_ids:
+            if self.delete_session(session_id):
+                deleted_count += 1
+
+        return deleted_count
+
+    def cleanup_expired_sessions(self) -> int:
+        """Clean up expired sessions from memory.
+
+        Returns:
+            Number of expired sessions deleted
+        """
+        expired_sessions = []
+        for session_id, session_data in self._sessions.items():
+            expires_at = datetime.fromisoformat(session_data["_expires_at"])
+            if datetime.utcnow() > expires_at:
+                expired_sessions.append(session_id)
+
+        for session_id in expired_sessions:
+            self.delete_session(session_id)
+
+        return len(expired_sessions)
+{% endif %}
+
+
+# =============================================================================
+# FastAPI Dependency for Session Validation
+# =============================================================================
+
+async def get_current_session(
+    session_id: Optional[str] = Cookie(None, alias="session_id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+) -> Dict[str, Any]:
+    """FastAPI dependency to validate and retrieve current session.
+
+    Extracts session ID from either:
+    1. Cookie named "session_id" (recommended for browser clients)
+    2. Header "X-Session-ID" (for API clients, mobile apps)
+
+    Cookie takes precedence if both are provided.
+
+    Args:
+        session_id: Session ID from cookie
+        x_session_id: Session ID from header
+
+    Returns:
+        Session data dictionary containing user_id and other session fields
+
+    Raises:
+        HTTPException: 401 Unauthorized if session is invalid, expired, or missing
+
+    Example:
+        >>> from fastapi import FastAPI, Depends
+        >>> app = FastAPI()
+        >>>
+        >>> @app.get("/profile")
+        >>> async def get_profile(session: Dict = Depends(get_current_session)):
+        ...     user_id = session["user_id"]
+        ...     return {"user_id": user_id, "email": session.get("email")}
+        >>>
+        >>> # Usage with cookie:
+        >>> # GET /profile
+        >>> # Cookie: session_id=abc123...
+        >>>
+        >>> # Usage with header:
+        >>> # GET /profile
+        >>> # X-Session-ID: abc123...
+    """
+    # Extract session ID from cookie or header
+    effective_session_id = session_id or x_session_id
+
+    if not effective_session_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No session provided. Include session_id cookie or X-Session-ID header.",
+            headers={"WWW-Authenticate": "Session"},
+        )
+
+    # Initialize appropriate session store based on configuration
+    {% if session_config.storage == "redis" %}
+    # TODO: Configure Redis connection from environment variables
+    # redis_client = Redis(host=os.getenv("REDIS_HOST", "localhost"), ...)
+    # store = SessionStore(redis_client=redis_client)
+    store = SessionStore()  # Uses default localhost connection
+    {% elif session_config.storage == "database" %}
+    # TODO: Configure database connection from environment variables
+    # from sqlalchemy import create_engine
+    # engine = create_engine(os.getenv("DATABASE_URL"))
+    # store = DatabaseSessionStore(engine)
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Database session store not configured. Set up SQLAlchemy engine."
+    )
+    {% elif session_config.storage == "memory" %}
+    # WARNING: Using in-memory sessions - not suitable for production!
+    # Create a global instance or use dependency injection
+    global _memory_store
+    if "_memory_store" not in globals():
+        _memory_store = MemorySessionStore()
+    store = _memory_store
+    {% endif %}
+
+    # Retrieve session data
+    session_data = store.get_session(effective_session_id)
+
+    if not session_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired session. Please log in again.",
+            headers={"WWW-Authenticate": "Session"},
+        )
+
+    return session_data
