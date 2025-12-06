@@ -4,8 +4,10 @@ Generates the main.dart entry point for Flutter applications with:
 - MaterialApp.router setup with go_router
 - Theme configuration
 - App initialization
+- MultiRepositoryProvider for BLoC pattern
 """
 
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -47,6 +49,34 @@ class FlutterAppMainGenerator:
         parts = name.replace('-', '_').split('_')
         return ' '.join(part.capitalize() for part in parts)
 
+    def _to_snake_case(self, name: str) -> str:
+        """Convert PascalCase to snake_case.
+
+        Args:
+            name: The name to convert
+
+        Returns:
+            snake_case version of the name
+        """
+        s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+        return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+    def _get_crud_models(self, schema: SchnitzelSchema) -> list[str]:
+        """Get list of model names that have CRUD enabled.
+
+        Args:
+            schema: The Schnitzel schema
+
+        Returns:
+            List of model names with crud: true
+        """
+        crud_models = []
+        if schema.models:
+            for model_name, model in schema.models.items():
+                if model.crud:
+                    crud_models.append(model_name)
+        return crud_models
+
     def generate(self, schema: SchnitzelSchema) -> str:
         """Generate main.dart content for a Flutter app.
 
@@ -69,39 +99,35 @@ class FlutterAppMainGenerator:
         # Generate import for router
         app_class_name = self._to_pascal_case(package_name)
 
+        # Get CRUD models for repository providers
+        crud_models = self._get_crud_models(schema)
+
+        # Build repository imports and providers
+        repo_imports = ""
+        repo_providers = ""
+        if crud_models:
+            repo_imports = f"import 'repositories/repositories.dart';\n"
+            repo_providers = self._generate_repository_providers(crud_models)
+
+        # Build the MaterialApp with or without providers
+        if crud_models:
+            app_content = self._generate_app_with_providers(
+                app_name, app_class_name, repo_providers
+            )
+        else:
+            app_content = self._generate_simple_app(app_name, app_class_name)
+
         return f'''import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:{shared_package}/generated/api_client.dart';
 import 'package:dio/dio.dart';
 import 'router.dart';
-
+{repo_imports}
 void main() {{
   runApp(const {app_class_name}App());
 }}
 
-class {app_class_name}App extends StatelessWidget {{
-  const {app_class_name}App({{super.key}});
-
-  @override
-  Widget build(BuildContext context) {{
-    return MaterialApp.router(
-      title: '{app_name}',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.deepPurple,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
-      themeMode: ThemeMode.system,
-      routerConfig: router,
-      debugShowCheckedModeBanner: false,
-    );
-  }}
-}}
+{app_content}
 
 /// API Client singleton for the app.
 /// Configure the base URL to match your backend server.
@@ -135,6 +161,105 @@ class ApiClientProvider {{
   }}
 }}
 '''
+
+    def _generate_repository_providers(self, crud_models: list[str]) -> str:
+        """Generate RepositoryProvider list for MultiRepositoryProvider.
+
+        Args:
+            crud_models: List of model names with CRUD enabled
+
+        Returns:
+            Dart code for repository providers
+        """
+        providers = []
+        for model_name in crud_models:
+            pascal_name = self._to_pascal_case(model_name)
+            providers.append(
+                f"        RepositoryProvider<{pascal_name}Repository>(\n"
+                f"          create: (_) => {pascal_name}RepositoryImpl(\n"
+                f"            apiClient: ApiClientProvider.instance,\n"
+                f"          ),\n"
+                f"        ),"
+            )
+        return "\n".join(providers)
+
+    def _generate_app_with_providers(
+        self, app_name: str, app_class_name: str, repo_providers: str
+    ) -> str:
+        """Generate app class with MultiRepositoryProvider.
+
+        Args:
+            app_name: Display name for the app
+            app_class_name: PascalCase class name
+            repo_providers: Generated repository providers code
+
+        Returns:
+            Dart code for the app class with providers
+        """
+        return f'''class {app_class_name}App extends StatelessWidget {{
+  const {app_class_name}App({{super.key}});
+
+  @override
+  Widget build(BuildContext context) {{
+    return MultiRepositoryProvider(
+      providers: [
+{repo_providers}
+      ],
+      child: MaterialApp.router(
+        title: '{app_name}',
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+          useMaterial3: true,
+        ),
+        darkTheme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.deepPurple,
+            brightness: Brightness.dark,
+          ),
+          useMaterial3: true,
+        ),
+        themeMode: ThemeMode.system,
+        routerConfig: router,
+        debugShowCheckedModeBanner: false,
+      ),
+    );
+  }}
+}}'''
+
+    def _generate_simple_app(self, app_name: str, app_class_name: str) -> str:
+        """Generate simple app class without providers.
+
+        Args:
+            app_name: Display name for the app
+            app_class_name: PascalCase class name
+
+        Returns:
+            Dart code for a simple app class
+        """
+        return f'''class {app_class_name}App extends StatelessWidget {{
+  const {app_class_name}App({{super.key}});
+
+  @override
+  Widget build(BuildContext context) {{
+    return MaterialApp.router(
+      title: '{app_name}',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
+      ),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.deepPurple,
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+      ),
+      themeMode: ThemeMode.system,
+      routerConfig: router,
+      debugShowCheckedModeBanner: false,
+    );
+  }}
+}}'''
 
     def generate_to_file(
         self,

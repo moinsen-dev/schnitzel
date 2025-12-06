@@ -67,6 +67,12 @@ class BlocStateGenerator:
 
         model = schema.models[model_name]
 
+        # Get package name for imports
+        package_name = "app"
+        if schema.meta:
+            package_name = schema.meta.name.lower().replace('-', '_')
+        shared_package = f"{package_name}_shared"
+
         # Generate file names
         snake_name = self._to_snake_case(model_name)
         bloc_file = f"{snake_name}_bloc.dart"
@@ -75,9 +81,9 @@ class BlocStateGenerator:
 
         # Generate content for each file
         return {
-            bloc_file: self._generate_bloc_class(model_name, model),
-            event_file: self._generate_event_class(model_name, model),
-            state_file: self._generate_state_class(model_name, model),
+            bloc_file: self._generate_bloc_class(model_name, model, shared_package),
+            event_file: self._generate_event_class(model_name, model, shared_package),
+            state_file: self._generate_state_class(model_name, model, shared_package),
         }
 
     def generate_to_file(
@@ -150,12 +156,13 @@ class BlocStateGenerator:
 
         return result
 
-    def _generate_bloc_class(self, model_name: str, model: Model) -> str:
+    def _generate_bloc_class(self, model_name: str, model: Model, shared_package: str) -> str:
         """Generate the BLoC class file.
 
         Args:
             model_name: Name of the model (e.g., "Order")
             model: Model definition from schema
+            shared_package: Name of the shared package for imports
 
         Returns:
             Dart BLoC class code
@@ -164,6 +171,8 @@ class BlocStateGenerator:
 
         return f"""import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:{shared_package}/models/models.dart';
+import '../repositories/repositories.dart';
 
 part '{snake_name}_event.dart';
 part '{snake_name}_state.dart';
@@ -174,6 +183,7 @@ class {model_name}Bloc extends Bloc<{model_name}Event, {model_name}State> {{
 
   {model_name}Bloc({{required this.repository}}) : super({model_name}Initial()) {{
     on<{model_name}Load>(_onLoad);
+    on<{model_name}LoadById>(_onLoadById);
     on<{model_name}LoadMore>(_onLoadMore);
     on<{model_name}Filter>(_onFilter);
     on<{model_name}Sort>(_onSort);
@@ -380,15 +390,26 @@ class {model_name}Bloc extends Bloc<{model_name}Event, {model_name}State> {{
       emit({model_name}Error(message: error.toString()));
     }}
   }}
+
+  Future<void> _onLoadById({model_name}LoadById event, Emitter<{model_name}State> emit) async {{
+    emit({model_name}Loading());
+    try {{
+      final item = await repository.getById(event.id);
+      emit({model_name}DetailLoaded(item: item));
+    }} catch (error) {{
+      emit({model_name}Error(message: error.toString()));
+    }}
+  }}
 }}
 """
 
-    def _generate_event_class(self, model_name: str, model: Model) -> str:
+    def _generate_event_class(self, model_name: str, model: Model, shared_package: str) -> str:
         """Generate the Event class file.
 
         Args:
             model_name: Name of the model (e.g., "Order")
             model: Model definition from schema
+            shared_package: Name of the shared package (unused, part of inherits imports)
 
         Returns:
             Dart event classes code
@@ -423,6 +444,16 @@ class {model_name}Load extends {model_name}Event {{
 
   @override
   List<Object?> get props => [page, pageSize, filters, sortBy, sortOrder];
+}}
+
+/// Load a single {model_name} by ID
+class {model_name}LoadById extends {model_name}Event {{
+  final String id;
+
+  const {model_name}LoadById({{required this.id}});
+
+  @override
+  List<Object?> get props => [id];
 }}
 
 /// Load more {model_name} items for infinite scrolling
@@ -503,12 +534,13 @@ class {model_name}Refresh extends {model_name}Event {{
 }}
 """
 
-    def _generate_state_class(self, model_name: str, model: Model) -> str:
+    def _generate_state_class(self, model_name: str, model: Model, shared_package: str) -> str:
         """Generate the State class file.
 
         Args:
             model_name: Name of the model (e.g., "Order")
             model: Model definition from schema
+            shared_package: Name of the shared package (unused, part of inherits imports)
 
         Returns:
             Dart state classes code
@@ -565,6 +597,16 @@ class {model_name}Loaded extends {model_name}State {{
         currentSortOrder,
         isFromCache,
       ];
+}}
+
+/// Detail loaded state with single item
+class {model_name}DetailLoaded extends {model_name}State {{
+  final {model_name} item;
+
+  const {model_name}DetailLoaded({{required this.item}});
+
+  @override
+  List<Object?> get props => [item];
 }}
 
 /// Error state with message

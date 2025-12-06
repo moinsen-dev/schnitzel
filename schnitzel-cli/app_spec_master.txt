@@ -1,0 +1,74 @@
+<master_specification>
+  <project_name>Schnitzel Framework - Missing Features</project_name>
+
+  <overview>
+    Schnitzel is a full-stack code generation framework that generates Flutter apps,
+    FastAPI backends, and Docker infrastructure from a single YAML schema. This spec
+    covers the remaining ~30% of PRD features not yet implemented.
+
+    The framework already has:
+    - CLI commands: init, generate, validate, migrate, serve
+    - Schema parsing with models, fields, relations, CRUD, auth, RBAC
+    - Generators: Python (Pydantic, SQLAlchemy, FastAPI), Dart (Freezed, API client, BLoC)
+    - Docker Compose generation
+    - Post-generation automation (pub get, build_runner, uv sync)
+  </overview>
+
+  <technology_stack>
+    <language>Python 3.12+</language>
+    <package_manager>uv</package_manager>
+    <cli_framework>Click</cli_framework>
+    <templating>Python f-strings and string generation</templating>
+    <yaml_parsing>PyYAML with ruamel.yaml</yaml_parsing>
+    <testing>pytest with pytest-cov</testing>
+    <generated_targets>
+      <flutter>Dart 3.x, Flutter 3.x, Freezed, flutter_bloc, go_router</flutter>
+      <python>FastAPI, SQLAlchemy, Pydantic, Alembic</python>
+      <docker>Docker Compose, Dockerfile</docker>
+    </generated_targets>
+  </technology_stack>
+
+  <existing_code_patterns>
+    <generators>
+      - Location: src/schnitzel/generators/{dart,python,docker}/
+      - Pattern: Class with generate() returning string, generate_to_file() writing to disk
+      - Imports from: schnitzel.schema.models.SchnitzelSchema
+      - Header comment with version, timestamp, source schema
+    </generators>
+
+    <cli_commands>
+      - Location: src/schnitzel/cli/commands/{command}.py
+      - Pattern: Click command with @click.command() decorator
+      - Rich console for output formatting
+      - Consistent --force, --dry-run, --quiet flags
+    </cli_commands>
+
+    <schema_models>
+      - Location: src/schnitzel/schema/models.py
+      - Pattern: Pydantic BaseModel classes
+      - SchnitzelSchema as root with meta, models, endpoints, auth, etc.
+    </schema_models>
+  </existing_code_patterns>
+
+  <file_naming_conventions>
+    - Generators: lowercase_with_underscores.py
+    - CLI commands: lowercase_with_underscores.py
+    - Generated Dart: snake_case.dart
+    - Generated Python: snake_case.py
+  </file_naming_conventions>
+
+  <success_criteria>
+    <functionality>
+      - All new features integrate seamlessly with existing generators
+      - New CLI commands follow existing patterns
+      - Generated code passes flutter analyze and mypy
+      - Tests achieve 80%+ coverage on new code
+    </functionality>
+
+    <quality>
+      - Consistent code style with existing codebase
+      - Proper error handling and user feedback
+      - Documentation for new features
+    </quality>
+  </success_criteria>
+</master_specification>

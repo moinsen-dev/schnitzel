@@ -38,6 +38,8 @@ from schnitzel.generators.dart.app_main import FlutterAppMainGenerator
 from schnitzel.generators.dart.router import FlutterRouterGenerator
 from schnitzel.generators.dart.screens import FlutterScreensGenerator
 from schnitzel.generators.dart.app_pubspec import FlutterAppPubspecGenerator
+from schnitzel.generators.dart.bloc import BlocStateGenerator
+from schnitzel.generators.dart.repository import DartRepositoryGenerator
 from schnitzel.generators.docker.dockerfile import DockerfileGenerator
 from schnitzel.utils.logging import get_logger
 from schnitzel.utils.network_errors import NetworkErrorHandler
@@ -1039,6 +1041,135 @@ def _generate_flutter_pubspec(schema, output_dir: Path, dry_run: bool = False) -
     return None
 
 
+def _generate_flutter_bloc(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> list[dict]:
+    """Generate Flutter BLoC files for each CRUD model.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        List of dictionaries with file info for each generated BLoC file
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating Flutter BLoCs...[/blue]")
+
+    # Determine output path: output_dir/apps/{app_name}/lib/bloc
+    app_name = _get_app_dir_name(schema)
+    bloc_output_dir = output_dir / "apps" / app_name / "lib" / "bloc"
+
+    # Get CRUD models
+    crud_models = {}
+    if schema.models:
+        for model_name, model in schema.models.items():
+            if model.crud:
+                crud_models[model_name] = model
+
+    if not crud_models:
+        if not _is_quiet_mode() and not dry_run:
+            console.print("[yellow]No CRUD models found - skipping BLoC generation[/yellow]")
+        return []
+
+    generated_files = []
+    generator = BlocStateGenerator()
+
+    for model_name in crud_models:
+        # Convert to snake_case for file name
+        import re
+        s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', model_name)
+        snake_name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+        bloc_file = bloc_output_dir / f"{snake_name}_bloc.dart"
+
+        if bloc_file.exists() and not force and not dry_run:
+            console.print(f"[yellow]Warning: {bloc_file} already exists. Use --force to overwrite.[/yellow]")
+            continue
+
+        if dry_run:
+            generated_files.append({'path': bloc_file, 'size': 0, 'type': 'flutter_bloc'})
+            continue
+
+        try:
+            # BlocStateGenerator returns Dict[Path, int] for 3 files (bloc, event, state)
+            files = generator.generate_to_file(
+                schema, model_name, bloc_output_dir, schema_source=schema_path.name
+            )
+            for file_path, file_size in files.items():
+                generated_files.append({'path': file_path, 'size': file_size, 'type': 'flutter_bloc'})
+        except Exception as e:
+            console.print(f"[red]✗ Failed to generate BLoC for {model_name}:[/red] {e}")
+
+    # Generate barrel file
+    if not dry_run and generated_files:
+        barrel_file = bloc_output_dir / "bloc.dart"
+        barrel_content = "// Generated barrel file for BLoCs\n\n"
+        for model_name in crud_models:
+            import re
+            s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', model_name)
+            snake_name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+            barrel_content += f"export '{snake_name}_bloc.dart';\n"
+
+        bloc_output_dir.mkdir(parents=True, exist_ok=True)
+        barrel_file.write_text(barrel_content, encoding="utf-8")
+        generated_files.append({'path': barrel_file, 'size': len(barrel_content), 'type': 'flutter_bloc_barrel'})
+
+    bloc_count = len([f for f in generated_files if f['type'] == 'flutter_bloc'])
+    if not _is_quiet_mode() and not dry_run:
+        console.print(f"[green]✓ Generated apps/{app_name}/lib/bloc/[/green] ({bloc_count} BLoCs)")
+
+    return generated_files
+
+
+def _generate_flutter_repositories(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
+    """Generate Flutter repository classes for BLoC pattern.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        Dictionary with file info or None if skipped
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating Flutter repositories...[/blue]")
+
+    # Determine output path: output_dir/apps/{app_name}/lib/repositories
+    app_name = _get_app_dir_name(schema)
+    repo_output_dir = output_dir / "apps" / app_name / "lib" / "repositories"
+
+    # Check if repositories.dart already exists
+    repo_file = repo_output_dir / "repositories.dart"
+    if repo_file.exists() and not force and not dry_run:
+        console.print(f"[yellow]Warning: {repo_file} already exists. Use --force to overwrite.[/yellow]")
+        return None
+
+    if dry_run:
+        return {'path': repo_file, 'size': 0, 'type': 'flutter_repositories'}
+
+    # Generate repositories
+    generator = DartRepositoryGenerator()
+    output_file, size = generator.generate_to_file(schema, repo_output_dir, schema_source=schema_path.name)
+
+    # Count CRUD models
+    crud_count = 0
+    if schema.models:
+        crud_count = sum(1 for m in schema.models.values() if m.crud)
+
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated apps/{app_name}/lib/repositories/repositories.dart[/green] ({crud_count} repositories)")
+
+    return {
+        'path': output_file,
+        'size': size,
+        'type': 'flutter_repositories'
+    }
+
+
 def _generate_auth(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> list[dict]:
     """Generate authentication utilities based on schema configuration.
 
@@ -1353,13 +1484,13 @@ def _run_generation(
         if target == "python":
             generation_steps = ["requirements", "settings", "database", "python", "orm", "routes", "main", "dockerfile", "auth"]
         elif target == "dart":
-            generation_steps = ["dart", "dart_api", "flutter_pubspec", "flutter_main", "flutter_widget_test", "flutter_router", "flutter_screens"]
+            generation_steps = ["dart", "dart_api", "flutter_pubspec", "flutter_main", "flutter_widget_test", "flutter_router", "flutter_screens", "flutter_bloc", "flutter_repositories"]
         elif target == "docker":
             generation_steps = ["docker", "dockerfile"]
         elif target == "auth":
             generation_steps = ["auth"]
         elif target == "all":
-            generation_steps = ["requirements", "settings", "database", "python", "orm", "routes", "main", "dockerfile", "auth", "dart", "dart_api", "flutter_pubspec", "flutter_main", "flutter_widget_test", "flutter_router", "flutter_screens", "docker"]
+            generation_steps = ["requirements", "settings", "database", "python", "orm", "routes", "main", "dockerfile", "auth", "dart", "dart_api", "flutter_pubspec", "flutter_main", "flutter_widget_test", "flutter_router", "flutter_screens", "flutter_bloc", "flutter_repositories", "docker"]
 
         # Handle dry-run mode
         if dry_run:
@@ -1486,6 +1617,19 @@ def _run_generation(
                     for result in screen_results:
                         generated_files.append(result)
                         total_size += result['size']
+                elif step == "flutter_bloc":
+                    bloc_results = _generate_flutter_bloc(schema, output_path, schema_path, force, dry_run)
+                    for result in bloc_results:
+                        generated_files.append(result)
+                        total_size += result['size']
+                elif step == "flutter_repositories":
+                    result = _generate_flutter_repositories(schema, output_path, schema_path, force, dry_run)
+                    if result:
+                        gen = DartRepositoryGenerator()
+                        content = gen.generate_all_repositories(schema)
+                        result['size'] = len(content.encode('utf-8'))
+                        generated_files.append(result)
+                        total_size += result['size']
                 elif step == "dockerfile":
                     result = _generate_dockerfile(schema, output_path, schema_path, force, dry_run)
                     if result:
@@ -1527,6 +1671,9 @@ def _run_generation(
                         'flutter_main': 'Flutter main.dart',
                         'flutter_router': 'Flutter router.dart',
                         'flutter_screen': 'Flutter screen',
+                        'flutter_bloc': 'Flutter BLoC',
+                        'flutter_bloc_barrel': 'Flutter BLoC barrel export',
+                        'flutter_repositories': 'Flutter repositories',
                         'docker': 'Docker Compose',
                         'auth_jwt': 'JWT Authentication',
                         'auth_oauth': 'OAuth Integration',
@@ -1653,6 +1800,14 @@ def _run_generation(
                             screen_results = _generate_flutter_screens(schema, output_path, schema_path, force, dry_run)
                             for result in screen_results:
                                 generated_files.append(result['path'])
+                        elif step == "flutter_bloc":
+                            bloc_results = _generate_flutter_bloc(schema, output_path, schema_path, force, dry_run)
+                            for result in bloc_results:
+                                generated_files.append(result['path'])
+                        elif step == "flutter_repositories":
+                            result = _generate_flutter_repositories(schema, output_path, schema_path, force, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
                         elif step == "docker":
                             result = _generate_docker(schema_path, output_path, force, dry_run, schema=schema)
                             if result:
@@ -1743,6 +1898,14 @@ def _run_generation(
                     elif step == "flutter_screens":
                         screen_results = _generate_flutter_screens(schema, output_path, schema_path, force, dry_run)
                         for result in screen_results:
+                            generated_files.append(result['path'])
+                    elif step == "flutter_bloc":
+                        bloc_results = _generate_flutter_bloc(schema, output_path, schema_path, force, dry_run)
+                        for result in bloc_results:
+                            generated_files.append(result['path'])
+                    elif step == "flutter_repositories":
+                        result = _generate_flutter_repositories(schema, output_path, schema_path, force, dry_run)
+                        if result:
                             generated_files.append(result['path'])
                     elif step == "docker":
                         result = _generate_docker(schema_path, output_path, force, dry_run, schema=schema)

@@ -1,9 +1,9 @@
 """Flutter screens generator for Schnitzel schemas.
 
-Generates CRUD screens for each model:
-- List screen with pagination
-- Detail screen
-- Form screen (create/edit)
+Generates CRUD screens for each model using BLoC pattern:
+- List screen with pagination (uses BlocBuilder)
+- Detail screen (uses BlocBuilder)
+- Form screen (create/edit) with BLoC
 - Home screen with navigation
 """
 
@@ -16,7 +16,7 @@ from schnitzel.schema.models import SchnitzelSchema, DART_TYPE_MAP
 
 
 class FlutterScreensGenerator:
-    """Generates Flutter CRUD screens for models."""
+    """Generates Flutter CRUD screens for models with BLoC pattern."""
 
     def __init__(self):
         """Initialize the Flutter screens generator."""
@@ -200,7 +200,7 @@ class _NavCard extends StatelessWidget {{
 '''
 
     def generate_list_screen(self, model_name: str, model: Any, schema: SchnitzelSchema) -> str:
-        """Generate list screen for a model."""
+        """Generate list screen for a model using BLoC pattern."""
         snake_name = self._to_snake_case(model_name)
         plural_name = self._pluralize(snake_name)
         pascal_name = self._to_pascal_case(model_name)
@@ -227,91 +227,27 @@ class _NavCard extends StatelessWidget {{
         title_field = self._to_camel_case(display_fields[0]) if display_fields else 'id'
 
         return f'''import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:{shared_package}/models/models.dart';
-import '../main.dart';
+import '../bloc/{snake_name}_bloc.dart';
+import '../repositories/repositories.dart';
 
-class {pascal_name}ListScreen extends StatefulWidget {{
+class {pascal_name}ListScreen extends StatelessWidget {{
   const {pascal_name}ListScreen({{super.key}});
 
   @override
-  State<{pascal_name}ListScreen> createState() => _{pascal_name}ListScreenState();
+  Widget build(BuildContext context) {{
+    return BlocProvider(
+      create: (context) => {pascal_name}Bloc(
+        repository: context.read<{pascal_name}Repository>(),
+      )..add(const {pascal_name}Load()),
+      child: const _{pascal_name}ListView(),
+    );
+  }}
 }}
 
-class _{pascal_name}ListScreenState extends State<{pascal_name}ListScreen> {{
-  List<{pascal_name}>? _items;
-  bool _loading = true;
-  String? _error;
-  final int _page = 1;
-  static const int _limit = 20;
-
-  @override
-  void initState() {{
-    super.initState();
-    _loadItems();
-  }}
-
-  Future<void> _loadItems() async {{
-    setState(() {{
-      _loading = true;
-      _error = null;
-    }});
-
-    try {{
-      final items = await ApiClientProvider.instance.list{pascal_name}s(
-        page: _page,
-        limit: _limit,
-      );
-      setState(() {{
-        _items = items;
-        _loading = false;
-      }});
-    }} catch (e) {{
-      setState(() {{
-        _error = e.toString();
-        _loading = false;
-      }});
-    }}
-  }}
-
-  Future<void> _deleteItem(String id) async {{
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirm Delete'),
-        content: const Text('Are you sure you want to delete this {title.lower()}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {{
-      try {{
-        await ApiClientProvider.instance.delete{pascal_name}(id);
-        _loadItems();
-        if (mounted) {{
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('{title} deleted successfully')),
-          );
-        }}
-      }} catch (e) {{
-        if (mounted) {{
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')),
-          );
-        }}
-      }}
-    }}
-  }}
+class _{pascal_name}ListView extends StatelessWidget {{
+  const _{pascal_name}ListView({{super.key}});
 
   @override
   Widget build(BuildContext context) {{
@@ -321,7 +257,7 @@ class _{pascal_name}ListScreenState extends State<{pascal_name}ListScreen> {{
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadItems,
+            onPressed: () => context.read<{pascal_name}Bloc>().add(const {pascal_name}Refresh()),
           ),
         ],
       ),
@@ -329,95 +265,136 @@ class _{pascal_name}ListScreenState extends State<{pascal_name}ListScreen> {{
         onPressed: () => context.go('/{plural_name}/new'),
         child: const Icon(Icons.add),
       ),
-      body: _buildBody(),
-    );
-  }}
+      body: BlocConsumer<{pascal_name}Bloc, {pascal_name}State>(
+        listener: (context, state) {{
+          if (state is {pascal_name}Error) {{
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Error: ${{state.message}}')),
+            );
+          }}
+        }},
+        builder: (context, state) {{
+          if (state is {pascal_name}Initial || state is {pascal_name}Loading) {{
+            return const Center(child: CircularProgressIndicator());
+          }}
 
-  Widget _buildBody() {{
-    if (_loading) {{
-      return const Center(child: CircularProgressIndicator());
-    }}
+          if (state is {pascal_name}Error) {{
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text('Error: ${{state.message}}'),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => context.read<{pascal_name}Bloc>().add(const {pascal_name}Load()),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            );
+          }}
 
-    if (_error != null) {{
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.red),
-            const SizedBox(height: 16),
-            Text('Error: $_error'),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loadItems,
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      );
-    }}
-
-    if (_items == null || _items!.isEmpty) {{
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.inbox, size: 48, color: Colors.grey),
-            const SizedBox(height: 16),
-            const Text('No {plural_title.lower()} found'),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: () => context.go('/{plural_name}/new'),
-              icon: const Icon(Icons.add),
-              label: const Text('Create {title}'),
-            ),
-          ],
-        ),
-      );
-    }}
-
-    return RefreshIndicator(
-      onRefresh: _loadItems,
-      child: ListView.builder(
-        itemCount: _items!.length,
-        itemBuilder: (context, index) {{
-          final item = _items![index];
-          return ListTile(
-            title: Text(item.{title_field}.toString()),
-            subtitle: {f"Text('{subtitle}')" if subtitle else "null"},
-            trailing: PopupMenuButton<String>(
-              onSelected: (value) {{
-                switch (value) {{
-                  case 'view':
-                    context.go('/{plural_name}/${{item.id}}');
-                    break;
-                  case 'edit':
-                    context.go('/{plural_name}/${{item.id}}/edit');
-                    break;
-                  case 'delete':
-                    _deleteItem(item.id.toString());
-                    break;
-                }}
-              }},
-              itemBuilder: (context) => [
-                const PopupMenuItem(value: 'view', child: Text('View')),
-                const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: Text('Delete', style: TextStyle(color: Colors.red)),
+          if (state is {pascal_name}Loaded) {{
+            if (state.items.isEmpty) {{
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.inbox, size: 48, color: Colors.grey),
+                    const SizedBox(height: 16),
+                    const Text('No {plural_title.lower()} found'),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: () => context.go('/{plural_name}/new'),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Create {title}'),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            onTap: () => context.go('/{plural_name}/${{item.id}}'),
-          );
+              );
+            }}
+
+            return RefreshIndicator(
+              onRefresh: () async {{
+                context.read<{pascal_name}Bloc>().add(const {pascal_name}Refresh());
+              }},
+              child: ListView.builder(
+                itemCount: state.items.length,
+                itemBuilder: (context, index) {{
+                  final item = state.items[index];
+                  return ListTile(
+                    title: Text(item.{title_field}.toString()),
+                    subtitle: {f"Text('{subtitle}')" if subtitle else "null"},
+                    trailing: PopupMenuButton<String>(
+                      onSelected: (value) {{
+                        switch (value) {{
+                          case 'view':
+                            context.go('/{plural_name}/${{item.id}}');
+                            break;
+                          case 'edit':
+                            context.go('/{plural_name}/${{item.id}}/edit');
+                            break;
+                          case 'delete':
+                            _confirmDelete(context, item.id.toString());
+                            break;
+                        }}
+                      }},
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(value: 'view', child: Text('View')),
+                        const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Delete', style: TextStyle(color: Colors.red)),
+                        ),
+                      ],
+                    ),
+                    onTap: () => context.go('/{plural_name}/${{item.id}}'),
+                  );
+                }},
+              ),
+            );
+          }}
+
+          return const SizedBox.shrink();
         }},
       ),
     );
+  }}
+
+  void _confirmDelete(BuildContext context, String id) async {{
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirm Delete'),
+        content: const Text('Are you sure you want to delete this {title.lower()}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {{
+      context.read<{pascal_name}Bloc>().add({pascal_name}Delete(id: id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('{title} deleted')),
+      );
+    }}
   }}
 }}
 '''
 
     def generate_detail_screen(self, model_name: str, model: Any, schema: SchnitzelSchema) -> str:
-        """Generate detail screen for a model."""
+        """Generate detail screen for a model using BLoC pattern."""
         snake_name = self._to_snake_case(model_name)
         plural_name = self._pluralize(snake_name)
         pascal_name = self._to_pascal_case(model_name)
@@ -439,88 +416,31 @@ class _{pascal_name}ListScreenState extends State<{pascal_name}ListScreen> {{
         detail_fields_code = '\n'.join(detail_fields)
 
         return f'''import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:{shared_package}/models/models.dart';
-import '../main.dart';
+import '../bloc/{snake_name}_bloc.dart';
+import '../repositories/repositories.dart';
 
-class {pascal_name}DetailScreen extends StatefulWidget {{
+class {pascal_name}DetailScreen extends StatelessWidget {{
   final String id;
 
   const {pascal_name}DetailScreen({{super.key, required this.id}});
 
   @override
-  State<{pascal_name}DetailScreen> createState() => _{pascal_name}DetailScreenState();
+  Widget build(BuildContext context) {{
+    return BlocProvider(
+      create: (context) => {pascal_name}Bloc(
+        repository: context.read<{pascal_name}Repository>(),
+      )..add({pascal_name}LoadById(id: id)),
+      child: _{pascal_name}DetailView(id: id),
+    );
+  }}
 }}
 
-class _{pascal_name}DetailScreenState extends State<{pascal_name}DetailScreen> {{
-  {pascal_name}? _item;
-  bool _loading = true;
-  String? _error;
+class _{pascal_name}DetailView extends StatelessWidget {{
+  final String id;
 
-  @override
-  void initState() {{
-    super.initState();
-    _loadItem();
-  }}
-
-  Future<void> _loadItem() async {{
-    setState(() {{
-      _loading = true;
-      _error = null;
-    }});
-
-    try {{
-      final item = await ApiClientProvider.instance.get{pascal_name}(widget.id);
-      setState(() {{
-        _item = item;
-        _loading = false;
-      }});
-    }} catch (e) {{
-      setState(() {{
-        _error = e.toString();
-        _loading = false;
-      }});
-    }}
-  }}
-
-  Future<void> _deleteItem() async {{
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirm Delete'),
-        content: const Text('Are you sure you want to delete this {title.lower()}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {{
-      try {{
-        await ApiClientProvider.instance.delete{pascal_name}(widget.id);
-        if (mounted) {{
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('{title} deleted successfully')),
-          );
-          context.go('/{plural_name}');
-        }}
-      }} catch (e) {{
-        if (mounted) {{
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')),
-          );
-        }}
-      }}
-    }}
-  }}
+  const _{pascal_name}DetailView({{super.key, required this.id}});
 
   @override
   Widget build(BuildContext context) {{
@@ -530,60 +450,89 @@ class _{pascal_name}DetailScreenState extends State<{pascal_name}DetailScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.edit),
-            onPressed: () => context.go('/{plural_name}/${{widget.id}}/edit'),
+            onPressed: () => context.go('/{plural_name}/$id/edit'),
           ),
           IconButton(
             icon: const Icon(Icons.delete),
-            onPressed: _deleteItem,
+            onPressed: () => _confirmDelete(context),
           ),
         ],
       ),
-      body: _buildBody(),
+      body: BlocBuilder<{pascal_name}Bloc, {pascal_name}State>(
+        builder: (context, state) {{
+          if (state is {pascal_name}Initial || state is {pascal_name}Loading) {{
+            return const Center(child: CircularProgressIndicator());
+          }}
+
+          if (state is {pascal_name}Error) {{
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text('Error: ${{state.message}}'),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => context.read<{pascal_name}Bloc>().add({pascal_name}LoadById(id: id)),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            );
+          }}
+
+          if (state is {pascal_name}DetailLoaded) {{
+            final item = state.item;
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+{detail_fields_code}
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }}
+
+          return const Center(child: Text('{title} not found'));
+        }},
+      ),
     );
   }}
 
-  Widget _buildBody() {{
-    if (_loading) {{
-      return const Center(child: CircularProgressIndicator());
-    }}
-
-    if (_error != null) {{
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.red),
-            const SizedBox(height: 16),
-            Text('Error: $_error'),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loadItem,
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      );
-    }}
-
-    if (_item == null) {{
-      return const Center(child: Text('{title} not found'));
-    }}
-
-    final item = _item!;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-{detail_fields_code}
-            ],
+  void _confirmDelete(BuildContext context) async {{
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirm Delete'),
+        content: const Text('Are you sure you want to delete this {title.lower()}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
           ),
-        ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
       ),
     );
+
+    if (confirmed == true && context.mounted) {{
+      context.read<{pascal_name}Bloc>().add({pascal_name}Delete(id: id));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('{title} deleted')),
+      );
+      context.go('/{plural_name}');
+    }}
   }}
 }}
 

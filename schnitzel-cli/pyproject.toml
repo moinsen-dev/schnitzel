@@ -57,4 +57,5 @@ members = [
     "examples/test-app/backend/app",
     "examples/my-blog/backend/app",
     "examples/prompt-duel/backend/app",
+    "my-blog/backend/app",
 ]

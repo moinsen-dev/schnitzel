@@ -33,6 +33,8 @@ dependencies:
   flutter:
     sdk: flutter
   dio: ^5.9.0
+  flutter_bloc: ^9.0.0
+  equatable: ^2.0.7
   my_blog_shared:
     path: ../../packages/shared
 

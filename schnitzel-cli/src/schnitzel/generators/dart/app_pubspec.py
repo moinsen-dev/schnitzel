@@ -4,6 +4,8 @@ Updates the app's pubspec.yaml to add required dependencies:
 - Reference to shared package
 - dio for HTTP client
 - go_router for navigation
+- flutter_bloc for state management
+- equatable for value equality in BLoC states
 """
 
 from datetime import datetime
@@ -67,6 +69,16 @@ class FlutterAppPubspecGenerator:
             deps['dio'] = '^5.9.0'
             changes_made = True
 
+        # Add flutter_bloc for state management
+        if 'flutter_bloc' not in deps:
+            deps['flutter_bloc'] = '^9.0.0'
+            changes_made = True
+
+        # Add equatable for value equality in BLoC states
+        if 'equatable' not in deps:
+            deps['equatable'] = '^2.0.7'
+            changes_made = True
+
         # Add shared package dependency if not present
         if shared_package not in deps:
             deps[shared_package] = {
@@ -100,6 +112,8 @@ class FlutterAppPubspecGenerator:
         in_dependencies = False
         dependencies_added = False
         dio_exists = 'dio:' in content
+        flutter_bloc_exists = 'flutter_bloc:' in content
+        equatable_exists = 'equatable:' in content
         shared_exists = f'{shared_package}:' in content
 
         for i, line in enumerate(lines):
@@ -123,6 +137,10 @@ class FlutterAppPubspecGenerator:
                     if 'sdk: flutter' in line:
                         if not dio_exists:
                             result_lines.append('  dio: ^5.9.0')
+                        if not flutter_bloc_exists:
+                            result_lines.append('  flutter_bloc: ^9.0.0')
+                        if not equatable_exists:
+                            result_lines.append('  equatable: ^2.0.7')
                         if not shared_exists:
                             result_lines.append(f'  {shared_package}:')
                             result_lines.append('    path: ../../packages/shared')
