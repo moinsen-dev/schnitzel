@@ -1,0 +1,171 @@
+<module_specification>
+  <module_name>Field Validation Rules</module_name>
+  <module_id>module_01_field_validation</module_id>
+  <depends_on>module_00_test_infrastructure</depends_on>
+  <inherit_from>app_spec_master.txt</inherit_from>
+  <priority>HIGH</priority>
+
+  <overview>
+    Add support for field-level validation rules in the schema. These rules generate
+    validation code in both Python (Pydantic validators) and Dart (form validators).
+  </overview>
+
+  <core_features>
+    <schema_syntax>
+      - Add `rules:` key to field definitions
+      - Support: pattern (regex), min, max, range, not_in, one_of, email, url, uuid
+      - Support custom error messages
+      - Example:
+        ```yaml
+        email:
+          type: string
+          rules:
+            pattern: "^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+$"
+            message: "Invalid email format"
+        age:
+          type: int
+          rules:
+            range: [18, 120]
+            message: "Age must be between 18 and 120"
+        status:
+          type: string
+          rules:
+            one_of: [draft, published, archived]
+        ```
+    </schema_syntax>
+
+    <python_validation>
+      - Generate Pydantic field_validator decorators
+      - Generate custom validator functions
+      - Proper error messages with field context
+    </python_validation>
+
+    <dart_validation>
+      - Generate FormField validators for Flutter forms
+      - Generate model-level validation methods
+      - Integration with form_screen.dart generation
+    </dart_validation>
+  </core_features>
+
+  <files_to_modify>
+    <file>src/schnitzel/schema/models.py</file>
+    <reason>Add FieldValidationRule model</reason>
+
+    <file>src/schnitzel/generators/python/models.py</file>
+    <reason>Generate Pydantic validators from rules</reason>
+
+    <file>src/schnitzel/generators/dart/models.py</file>
+    <reason>Generate Dart validation methods from rules</reason>
+
+    <file>src/schnitzel/generators/dart/screens.py</file>
+    <reason>Add form validators to form screens</reason>
+  </files_to_modify>
+
+  <implementation_steps>
+    <step number="1">
+      <title>Schema Model Extension</title>
+      <tasks>
+        - Add FieldValidationRule Pydantic model
+        - Add rules: Optional[FieldValidationRule] to Field model
+        - Parse and validate rule definitions
+      </tasks>
+    </step>
+
+    <step number="2">
+      <title>Python Validator Generation</title>
+      <tasks>
+        - Extend PydanticModelGenerator to emit @field_validator
+        - Map rule types to Pydantic validation code
+        - Handle custom error messages
+      </tasks>
+    </step>
+
+    <step number="3">
+      <title>Dart Validator Generation</title>
+      <tasks>
+        - Add validation method generation to DartModelGenerator
+        - Generate FormFieldValidator functions
+        - Integrate with form screen TextFormField.validator
+      </tasks>
+    </step>
+
+    <step number="4">
+      <title>Testing and Documentation</title>
+      <tasks>
+        - Add validation rules to example schemas
+        - Test generated validators work correctly
+        - Document new schema syntax
+      </tasks>
+    </step>
+  </implementation_steps>
+
+  <example_output>
+    <python>
+```python
+from pydantic import BaseModel, field_validator
+import re
+
+class User(BaseModel):
+    email: str
+    age: int
+    status: str
+
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        pattern = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
+        if not re.match(pattern, v):
+            raise ValueError('Invalid email format')
+        return v
+
+    @field_validator('age')
+    @classmethod
+    def validate_age(cls, v: int) -> int:
+        if not (18 <= v <= 120):
+            raise ValueError('Age must be between 18 and 120')
+        return v
+
+    @field_validator('status')
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        allowed = ['draft', 'published', 'archived']
+        if v not in allowed:
+            raise ValueError(f'Status must be one of: {allowed}')
+        return v
+```
+    </python>
+
+    <dart>
+```dart
+class UserValidators {
+  static String? validateEmail(String? value) {
+    if (value == null || value.isEmpty) return 'Email is required';
+    final pattern = RegExp(r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$');
+    if (!pattern.hasMatch(value)) return 'Invalid email format';
+    return null;
+  }
+
+  static String? validateAge(int? value) {
+    if (value == null) return 'Age is required';
+    if (value < 18 || value > 120) return 'Age must be between 18 and 120';
+    return null;
+  }
+
+  static String? validateStatus(String? value) {
+    if (value == null || value.isEmpty) return 'Status is required';
+    const allowed = ['draft', 'published', 'archived'];
+    if (!allowed.contains(value)) return 'Status must be one of: $allowed';
+    return null;
+  }
+}
+```
+    </dart>
+  </example_output>
+
+  <success_criteria>
+    - Schema with rules: parses without errors
+    - Python models include working validators
+    - Dart forms include working validators
+    - Validation errors display correctly in UI
+  </success_criteria>
+</module_specification>

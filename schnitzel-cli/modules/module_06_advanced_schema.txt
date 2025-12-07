@@ -1,0 +1,205 @@
+<module_specification>
+  <module_name>Advanced Schema Features</module_name>
+  <module_id>module_06_advanced_schema</module_id>
+  <depends_on>module_05_ai_features</depends_on>
+  <inherit_from>app_spec_master.txt</inherit_from>
+  <priority>LOW</priority>
+
+  <overview>
+    Advanced schema features for complex business logic:
+    - State machines for status fields
+    - Computed fields (virtual and stored)
+    - Triggers and hooks (before_create, after_update, etc.)
+  </overview>
+
+  <core_features>
+    <state_machines>
+      - Define allowed transitions for status fields
+      - Guards for transition validation
+      - Events triggered on transitions
+      - Example:
+        ```yaml
+        status:
+          type: state_machine
+          initial: draft
+          states: [draft, review, published, archived]
+          transitions:
+            - from: draft, to: review, guard: has_content
+            - from: review, to: published, guard: is_approved
+            - from: [draft, review, published], to: archived
+        ```
+    </state_machines>
+
+    <computed_fields>
+      - Virtual fields calculated on read
+      - Stored fields calculated and persisted
+      - Expression-based calculations
+      - Example:
+        ```yaml
+        full_name:
+          type: computed
+          expression: "first_name + ' ' + last_name"
+          stored: false
+        total_price:
+          type: computed
+          expression: "quantity * unit_price"
+          stored: true
+        ```
+    </computed_fields>
+
+    <triggers>
+      - before_create, after_create
+      - before_update, after_update
+      - before_delete, after_delete
+      - Custom trigger actions
+      - Example:
+        ```yaml
+        triggers:
+          before_create:
+            - set: created_at, value: now()
+            - validate: email_unique
+          after_create:
+            - emit: user.created
+            - call: send_welcome_email
+        ```
+    </triggers>
+  </core_features>
+
+  <files_to_modify>
+    <file>src/schnitzel/schema/models.py</file>
+    <reason>Add StateMachine, ComputedField, Trigger models</reason>
+
+    <file>src/schnitzel/generators/python/models.py</file>
+    <reason>Generate Python code for state machines, computed fields</reason>
+
+    <file>src/schnitzel/generators/python/routes.py</file>
+    <reason>Add trigger execution to CRUD routes</reason>
+
+    <file>src/schnitzel/generators/dart/models.py</file>
+    <reason>Generate Dart computed field getters</reason>
+  </files_to_modify>
+
+  <implementation_steps>
+    <step number="1">
+      <title>Schema Model Extensions</title>
+      <tasks>
+        - Add StateMachineField Pydantic model
+        - Add ComputedField Pydantic model
+        - Add Trigger and TriggerAction models
+        - Update Field model to support these types
+      </tasks>
+    </step>
+
+    <step number="2">
+      <title>State Machine Generation</title>
+      <tasks>
+        - Generate Python StateMachine class using transitions library
+        - Generate transition methods with guards
+        - Generate Dart state enum and transition methods
+        - Add state validation to API routes
+      </tasks>
+    </step>
+
+    <step number="3">
+      <title>Computed Fields Generation</title>
+      <tasks>
+        - Generate Python @property for virtual fields
+        - Generate SQLAlchemy hybrid_property for stored fields
+        - Generate Dart getters for computed fields
+        - Handle expression parsing and code generation
+      </tasks>
+    </step>
+
+    <step number="4">
+      <title>Triggers Generation</title>
+      <tasks>
+        - Generate Python trigger execution in routes
+        - Integrate with SQLAlchemy events
+        - Generate event emission code
+        - Support custom action handlers
+      </tasks>
+    </step>
+  </implementation_steps>
+
+  <example_output>
+    <state_machine_python>
+```python
+from transitions import Machine
+
+class PostStateMachine:
+    states = ['draft', 'review', 'published', 'archived']
+
+    transitions = [
+        {'trigger': 'submit', 'source': 'draft', 'dest': 'review',
+         'conditions': 'has_content'},
+        {'trigger': 'approve', 'source': 'review', 'dest': 'published',
+         'conditions': 'is_approved'},
+        {'trigger': 'archive', 'source': ['draft', 'review', 'published'],
+         'dest': 'archived'},
+    ]
+
+    def __init__(self, post):
+        self.post = post
+        self.machine = Machine(
+            model=self,
+            states=self.states,
+            transitions=self.transitions,
+            initial=post.status
+        )
+
+    def has_content(self):
+        return bool(self.post.content)
+
+    def is_approved(self):
+        return self.post.approved_by is not None
+```
+    </state_machine_python>
+
+    <computed_field_python>
+```python
+class User(Base):
+    first_name = Column(String)
+    last_name = Column(String)
+
+    @hybrid_property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}"
+
+    @full_name.expression
+    def full_name(cls):
+        return cls.first_name + ' ' + cls.last_name
+```
+    </computed_field_python>
+
+    <trigger_python>
+```python
+@router.post("/users", response_model=UserRead)
+async def create_user(user: UserCreate, db: Session = Depends(get_db)):
+    # before_create triggers
+    user_dict = user.model_dump()
+    user_dict['created_at'] = datetime.utcnow()
+
+    # validate email_unique
+    if db.query(User).filter(User.email == user.email).first():
+        raise HTTPException(400, "Email already exists")
+
+    db_user = User(**user_dict)
+    db.add(db_user)
+    db.commit()
+
+    # after_create triggers
+    await emit_event('user.created', db_user.id)
+    await send_welcome_email(db_user.email)
+
+    return db_user
+```
+    </trigger_python>
+  </example_output>
+
+  <success_criteria>
+    - State machine transitions work correctly
+    - Computed fields calculate on read
+    - Triggers execute at correct lifecycle points
+    - All features have proper error handling
+  </success_criteria>
+</module_specification>

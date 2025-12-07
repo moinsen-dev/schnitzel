@@ -42,6 +42,12 @@ class RequirementsGenerator:
             "",
             "# Utilities",
             "python-multipart>=0.0.6",  # For form data
+            "",
+            "# Testing",
+            "pytest>=8.0.0",
+            "pytest-asyncio>=0.23.0",
+            "pytest-mock>=3.14.0",
+            "factory-boy>=3.3.0",  # Test factories
         ]
 
         return "\n".join(requirements) + "\n"

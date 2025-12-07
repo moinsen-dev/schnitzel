@@ -1,0 +1,973 @@
+[
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator class exists and can be imported",
+    "steps": [
+      "Navigate to src/schnitzel/generators/dart/",
+      "Verify test_factory.py file exists",
+      "Import DartTestFactoryGenerator from schnitzel.generators.dart.test_factory",
+      "Verify class has generate() and generate_to_file() methods",
+      "Verify no import errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator generates valid factory class for single model",
+    "steps": [
+      "Create SchnitzelSchema with one CRUD model (User with id, email, name fields)",
+      "Instantiate DartTestFactoryGenerator",
+      "Call generate() method with schema",
+      "Verify output contains 'class UserFactory'",
+      "Verify output contains 'import package:faker_dart/faker_dart.dart'",
+      "Verify output contains static create() method",
+      "Verify output returns valid Dart code (no syntax errors)"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator generates factories for multiple CRUD models",
+    "steps": [
+      "Create SchnitzelSchema with 3 CRUD models (User, Post, Comment)",
+      "Instantiate DartTestFactoryGenerator",
+      "Call generate() method with schema",
+      "Verify output contains 'class UserFactory'",
+      "Verify output contains 'class PostFactory'",
+      "Verify output contains 'class CommentFactory'",
+      "Verify all factories have create() methods",
+      "Verify factories are in separate files or properly organized"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator handles String fields with faker_dart email generator",
+    "steps": [
+      "Create model with email field (type: String)",
+      "Generate factory code",
+      "Verify email field uses _faker.internet.email()",
+      "Verify email can be overridden in create() parameters",
+      "Verify generated code compiles without errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator handles String fields with faker_dart name generator",
+    "steps": [
+      "Create model with name field (type: String)",
+      "Generate factory code",
+      "Verify name field uses _faker.person.fullName() or similar",
+      "Verify name can be overridden in create() parameters",
+      "Verify generated code compiles without errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator handles UUID/ID fields with faker_dart uuid generator",
+    "steps": [
+      "Create model with id field (type: String, description: UUID)",
+      "Generate factory code",
+      "Verify id field uses _faker.datatype.uuid()",
+      "Verify id can be overridden in create() parameters",
+      "Verify generated code compiles without errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator handles DateTime fields appropriately",
+    "steps": [
+      "Create model with createdAt field (type: DateTime)",
+      "Generate factory code",
+      "Verify createdAt uses DateTime.now() or _faker.date.recent()",
+      "Verify createdAt can be overridden in create() parameters",
+      "Verify generated code compiles without errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator handles int fields with appropriate generators",
+    "steps": [
+      "Create model with age field (type: int)",
+      "Generate factory code",
+      "Verify age uses _faker.datatype.number() or similar",
+      "Verify age can be overridden in create() parameters",
+      "Verify generated code compiles without errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator handles double/float fields with appropriate generators",
+    "steps": [
+      "Create model with price field (type: double)",
+      "Generate factory code",
+      "Verify price uses _faker.datatype.float() or similar",
+      "Verify price can be overridden in create() parameters",
+      "Verify generated code compiles without errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator handles bool fields with appropriate generators",
+    "steps": [
+      "Create model with isActive field (type: bool)",
+      "Generate factory code",
+      "Verify isActive uses _faker.datatype.boolean() or true/false",
+      "Verify isActive can be overridden in create() parameters",
+      "Verify generated code compiles without errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator generates createList() method for bulk creation",
+    "steps": [
+      "Create model User",
+      "Generate factory code",
+      "Verify output contains static createList(int count) method",
+      "Verify createList uses List.generate(count, (_) => create())",
+      "Verify generated code compiles without errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator writes to correct output directory",
+    "steps": [
+      "Create SchnitzelSchema with User model",
+      "Create temp output directory",
+      "Call generate_to_file() with output_dir",
+      "Verify file created at output_dir/test/factories/user_factory.dart",
+      "Verify file permissions are correct",
+      "Verify file contains valid Dart code"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator includes proper header comment with version and timestamp",
+    "steps": [
+      "Generate factory code",
+      "Verify header comment contains 'Generated by Schnitzel Framework'",
+      "Verify header contains version number",
+      "Verify header contains timestamp",
+      "Verify header mentions source schema file"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator skips non-CRUD models",
+    "steps": [
+      "Create SchnitzelSchema with 2 models: User (crud: true), Settings (crud: false)",
+      "Generate factory code",
+      "Verify output contains UserFactory",
+      "Verify output does NOT contain SettingsFactory",
+      "Verify no errors thrown"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator class exists and can be imported",
+    "steps": [
+      "Navigate to src/schnitzel/generators/python/",
+      "Verify test_factory.py file exists",
+      "Import PythonTestFactoryGenerator from schnitzel.generators.python.test_factory",
+      "Verify class has generate() and generate_to_file() methods",
+      "Verify no import errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator generates valid factory_boy Factory for single model",
+    "steps": [
+      "Create SchnitzelSchema with one CRUD model (User with id, email, name)",
+      "Instantiate PythonTestFactoryGenerator",
+      "Call generate() method with schema",
+      "Verify output contains 'import factory'",
+      "Verify output contains 'class UserFactory(factory.Factory):'",
+      "Verify output contains 'class Meta: model = User'",
+      "Verify output returns valid Python code (no syntax errors)"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator generates factories for multiple CRUD models",
+    "steps": [
+      "Create SchnitzelSchema with 3 CRUD models (User, Post, Comment)",
+      "Instantiate PythonTestFactoryGenerator",
+      "Call generate() method with schema",
+      "Verify output contains UserFactory, PostFactory, CommentFactory",
+      "Verify all have proper Meta.model settings",
+      "Verify valid Python code"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator handles email fields with factory.Sequence",
+    "steps": [
+      "Create model with email field",
+      "Generate factory code",
+      "Verify email uses factory.Sequence(lambda n: f'user{n}@example.com')",
+      "Verify generated code has no syntax errors",
+      "Verify imports include factory.Sequence"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator handles name fields with factory.Faker",
+    "steps": [
+      "Create model with name field",
+      "Generate factory code",
+      "Verify name uses factory.Faker('name')",
+      "Verify generated code has no syntax errors",
+      "Verify imports include factory.Faker or just factory"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator handles UUID fields with factory.LazyFunction",
+    "steps": [
+      "Create model with id field (UUID type)",
+      "Generate factory code",
+      "Verify id uses factory.LazyFunction(lambda: str(uuid4()))",
+      "Verify imports include 'from uuid import uuid4'",
+      "Verify generated code has no syntax errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator handles DateTime fields with factory.LazyFunction",
+    "steps": [
+      "Create model with created_at field (DateTime type)",
+      "Generate factory code",
+      "Verify created_at uses factory.LazyFunction(datetime.utcnow)",
+      "Verify imports include 'from datetime import datetime'",
+      "Verify generated code has no syntax errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator handles int fields appropriately",
+    "steps": [
+      "Create model with age field (int type)",
+      "Generate factory code",
+      "Verify age uses factory.Faker('pyint') or hardcoded value",
+      "Verify generated code has no syntax errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator handles float fields appropriately",
+    "steps": [
+      "Create model with price field (float type)",
+      "Generate factory code",
+      "Verify price uses factory.Faker('pyfloat') or similar",
+      "Verify generated code has no syntax errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator handles bool fields appropriately",
+    "steps": [
+      "Create model with is_active field (bool type)",
+      "Generate factory code",
+      "Verify is_active uses factory.Faker('pybool') or True/False",
+      "Verify generated code has no syntax errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator handles relationships with factory.SubFactory",
+    "steps": [
+      "Create SchnitzelSchema with User and Post models, Post has author relation to User",
+      "Generate factory code",
+      "Verify PostFactory contains author = factory.SubFactory(UserFactory)",
+      "Verify imports include factory.SubFactory or just factory",
+      "Verify generated code has no syntax errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator writes to correct output directory",
+    "steps": [
+      "Create SchnitzelSchema with User model",
+      "Create temp output directory",
+      "Call generate_to_file() with output_dir",
+      "Verify file created at output_dir/tests/factories.py or factories/user_factory.py",
+      "Verify file permissions are correct",
+      "Verify file contains valid Python code"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator includes proper header comment",
+    "steps": [
+      "Generate factory code",
+      "Verify header comment contains 'Generated by Schnitzel Framework'",
+      "Verify header contains version number",
+      "Verify header contains timestamp",
+      "Verify header mentions source schema file"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator skips non-CRUD models",
+    "steps": [
+      "Create SchnitzelSchema with User (crud: true) and Settings (crud: false)",
+      "Generate factory code",
+      "Verify output contains UserFactory",
+      "Verify output does NOT contain SettingsFactory",
+      "Verify no errors thrown"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartMocksGenerator class exists and can be imported",
+    "steps": [
+      "Navigate to src/schnitzel/generators/dart/",
+      "Verify test_mocks.py file exists",
+      "Import DartMocksGenerator from schnitzel.generators.dart.test_mocks",
+      "Verify class has generate() and generate_to_file() methods",
+      "Verify no import errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartMocksGenerator generates MockRepository using Mockito",
+    "steps": [
+      "Create SchnitzelSchema with User CRUD model",
+      "Instantiate DartMocksGenerator",
+      "Call generate() method",
+      "Verify output contains @GenerateMocks([UserRepository])",
+      "Verify output imports mockito package",
+      "Verify output contains proper annotation for build_runner",
+      "Verify generated code is valid Dart"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartMocksGenerator generates FakeRepository with in-memory storage",
+    "steps": [
+      "Create SchnitzelSchema with User CRUD model",
+      "Instantiate DartMocksGenerator",
+      "Call generate() method",
+      "Verify output contains 'class FakeUserRepository implements UserRepository'",
+      "Verify output contains 'final List<User> _storage = []'",
+      "Verify output implements CRUD methods (create, read, update, delete)",
+      "Verify generated code is valid Dart"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartMocksGenerator FakeRepository implements create() method",
+    "steps": [
+      "Generate FakeUserRepository",
+      "Verify create() method exists",
+      "Verify create() adds item to _storage",
+      "Verify create() returns the created item or Future<void>",
+      "Verify method signature matches repository interface"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartMocksGenerator FakeRepository implements read/list methods",
+    "steps": [
+      "Generate FakeUserRepository",
+      "Verify findById() or getById() method exists",
+      "Verify findAll() or list() method exists",
+      "Verify methods return items from _storage",
+      "Verify method signatures match repository interface"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartMocksGenerator FakeRepository implements update() method",
+    "steps": [
+      "Generate FakeUserRepository",
+      "Verify update() method exists",
+      "Verify update() modifies item in _storage",
+      "Verify method signature matches repository interface"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartMocksGenerator FakeRepository implements delete() method",
+    "steps": [
+      "Generate FakeUserRepository",
+      "Verify delete() or deleteById() method exists",
+      "Verify delete() removes item from _storage",
+      "Verify method signature matches repository interface"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartMocksGenerator generates mocks for multiple repositories",
+    "steps": [
+      "Create SchnitzelSchema with User, Post, Comment CRUD models",
+      "Generate mocks",
+      "Verify output contains MockUserRepository, MockPostRepository, MockCommentRepository",
+      "Verify output contains FakeUserRepository, FakePostRepository, FakeCommentRepository",
+      "Verify all are properly structured"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartMocksGenerator writes to correct output directory",
+    "steps": [
+      "Create SchnitzelSchema with User model",
+      "Create temp output directory",
+      "Call generate_to_file()",
+      "Verify file created at output_dir/test/mocks/user_repository_mock.dart or similar",
+      "Verify file contains valid Dart code"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFixturesGenerator class exists and can be imported",
+    "steps": [
+      "Navigate to src/schnitzel/generators/python/",
+      "Verify test_fixtures.py file exists",
+      "Import PythonTestFixturesGenerator from schnitzel.generators.python.test_fixtures",
+      "Verify class has generate() and generate_to_file() methods",
+      "Verify no import errors"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFixturesGenerator generates pytest fixtures for repositories",
+    "steps": [
+      "Create SchnitzelSchema with User CRUD model",
+      "Generate fixtures",
+      "Verify output contains @pytest.fixture decorator",
+      "Verify output contains fixture function for user_repository",
+      "Verify fixture uses unittest.mock.Mock or MagicMock",
+      "Verify generated code is valid Python"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFixturesGenerator generates fixtures for multiple repositories",
+    "steps": [
+      "Create SchnitzelSchema with User, Post, Comment models",
+      "Generate fixtures",
+      "Verify output contains fixtures for all repositories",
+      "Verify fixtures are properly decorated with @pytest.fixture",
+      "Verify generated code is valid Python"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFixturesGenerator can append to existing conftest.py",
+    "steps": [
+      "Create existing conftest.py with some fixtures",
+      "Generate new fixtures",
+      "Verify new fixtures are appended to conftest.py",
+      "Verify existing fixtures are not overwritten",
+      "Verify file structure remains valid"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFixturesGenerator writes to backend/app/tests/conftest.py",
+    "steps": [
+      "Create temp output directory",
+      "Generate fixtures",
+      "Verify file created at output_dir/backend/app/tests/conftest.py",
+      "Verify file contains valid Python code",
+      "Verify imports are correct"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "generate.py command integrates Dart test factory generation",
+    "steps": [
+      "Read src/schnitzel/cli/commands/generate.py",
+      "Verify DartTestFactoryGenerator is imported",
+      "Verify there's a generation step that calls DartTestFactoryGenerator",
+      "Verify step is added to generation pipeline",
+      "Verify step runs for --target=all or --target=dart"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "generate.py command integrates Python test factory generation",
+    "steps": [
+      "Read src/schnitzel/cli/commands/generate.py",
+      "Verify PythonTestFactoryGenerator is imported",
+      "Verify there's a generation step that calls PythonTestFactoryGenerator",
+      "Verify step is added to generation pipeline",
+      "Verify step runs for --target=all or --target=python"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "generate.py command integrates Dart mocks generation",
+    "steps": [
+      "Read src/schnitzel/cli/commands/generate.py",
+      "Verify DartMocksGenerator is imported",
+      "Verify there's a generation step that calls DartMocksGenerator",
+      "Verify step is added to generation pipeline",
+      "Verify step runs for --target=all or --target=dart"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "generate.py command integrates Python test fixtures generation",
+    "steps": [
+      "Read src/schnitzel/cli/commands/generate.py",
+      "Verify PythonTestFixturesGenerator is imported",
+      "Verify there's a generation step that calls PythonTestFixturesGenerator",
+      "Verify step is added to generation pipeline",
+      "Verify step runs for --target=all or --target=python"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator adds faker_dart to pubspec.yaml dev_dependencies",
+    "steps": [
+      "Generate Dart test factories",
+      "Check apps/{app}/pubspec.yaml or packages/shared/pubspec.yaml",
+      "Verify dev_dependencies section contains faker_dart",
+      "Verify version constraint is specified (e.g., ^1.0.0)",
+      "Verify YAML is valid"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartMocksGenerator adds mockito to pubspec.yaml dev_dependencies",
+    "steps": [
+      "Generate Dart mocks",
+      "Check apps/{app}/pubspec.yaml or packages/shared/pubspec.yaml",
+      "Verify dev_dependencies section contains mockito",
+      "Verify dev_dependencies section contains build_runner",
+      "Verify version constraints are specified",
+      "Verify YAML is valid"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator adds factory_boy to requirements.txt or pyproject.toml",
+    "steps": [
+      "Generate Python test factories",
+      "Check backend/requirements.txt or backend/pyproject.toml",
+      "Verify factory_boy is listed as dependency",
+      "Verify Faker is listed (dependency of factory_boy)",
+      "Verify version constraints if applicable"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFixturesGenerator adds pytest-mock to requirements",
+    "steps": [
+      "Generate Python test fixtures",
+      "Check backend/requirements.txt or backend/pyproject.toml",
+      "Verify pytest-mock is listed",
+      "Verify pytest is listed",
+      "Verify version constraints if applicable"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generated Dart factories compile without errors with flutter analyze",
+    "steps": [
+      "Generate Dart test factories for User model",
+      "Write to temp Flutter project",
+      "Run flutter pub get",
+      "Run dart analyze on generated factory file",
+      "Verify no errors reported",
+      "Verify no warnings reported"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generated Python factories pass mypy type checking",
+    "steps": [
+      "Generate Python test factories for User model",
+      "Write to temp Python project",
+      "Run mypy on generated factory file",
+      "Verify no type errors reported",
+      "Verify code is type-safe"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generated Dart mocks compile and generate .mocks.dart file",
+    "steps": [
+      "Generate Dart mocks for UserRepository",
+      "Write to temp Flutter project with repository interface",
+      "Add mockito and build_runner to pubspec.yaml",
+      "Run dart run build_runner build",
+      "Verify .mocks.dart file is generated",
+      "Verify MockUserRepository class exists in generated file"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generated Python factories can create instances successfully",
+    "steps": [
+      "Generate UserFactory",
+      "Write simple test: user = UserFactory.create()",
+      "Run pytest on test",
+      "Verify test passes",
+      "Verify user object has all required fields",
+      "Verify fields have realistic fake data"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generated Dart factories can create instances successfully",
+    "steps": [
+      "Generate UserFactory",
+      "Write simple Flutter test: final user = UserFactory.create()",
+      "Run flutter test",
+      "Verify test passes",
+      "Verify user object has all required fields",
+      "Verify fields have realistic fake data"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generated Dart factories support field overrides",
+    "steps": [
+      "Generate UserFactory",
+      "Write test: UserFactory.create(email: 'custom@test.com')",
+      "Run flutter test",
+      "Verify custom email is used",
+      "Verify other fields use defaults"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generated Python factories support field overrides",
+    "steps": [
+      "Generate UserFactory",
+      "Write test: UserFactory.create(email='custom@test.com')",
+      "Run pytest",
+      "Verify custom email is used",
+      "Verify other fields use factory defaults"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generated Dart FakeRepository stores and retrieves items correctly",
+    "steps": [
+      "Generate FakeUserRepository",
+      "Write test that creates a user via fake repo",
+      "Write test that retrieves user by ID",
+      "Run flutter test",
+      "Verify create and retrieve work correctly",
+      "Verify in-memory storage functions properly"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generated Python fixtures can be used in pytest tests",
+    "steps": [
+      "Generate pytest fixtures for UserRepository",
+      "Write test: def test_something(user_repository): ...",
+      "Run pytest",
+      "Verify fixture is injected",
+      "Verify test can use mocked repository"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator handles nullable fields appropriately",
+    "steps": [
+      "Create model with nullable field: bio: String?",
+      "Generate factory",
+      "Verify create() method has String? bio parameter",
+      "Verify bio defaults to null or fake value",
+      "Verify generated code compiles"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator handles optional fields appropriately",
+    "steps": [
+      "Create model with optional field: bio: str | None",
+      "Generate factory",
+      "Verify factory handles None default or generates fake value",
+      "Verify generated code is valid Python"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator generates factories in correct package structure",
+    "steps": [
+      "Generate factories for app named 'my_blog'",
+      "Verify files created at apps/my_blog/test/factories/",
+      "Verify barrel file exports all factories",
+      "Verify import paths are correct"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator generates factories in correct package structure",
+    "steps": [
+      "Generate factories",
+      "Verify files created at backend/app/tests/factories/",
+      "Verify __init__.py exists for package",
+      "Verify imports work correctly"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartMocksGenerator generates proper type annotations for flutter_test",
+    "steps": [
+      "Generate mocks",
+      "Verify MockRepository has proper type annotations",
+      "Verify when() calls are type-safe",
+      "Verify generated code passes dart analyzer"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generated test infrastructure handles models with relations correctly",
+    "steps": [
+      "Create schema: Post belongsTo User",
+      "Generate factories and mocks",
+      "Verify PostFactory references UserFactory for author",
+      "Verify FakePostRepository handles user_id correctly",
+      "Verify no circular dependency issues"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator includes usage examples in comments",
+    "steps": [
+      "Generate UserFactory",
+      "Verify generated file contains usage comment block",
+      "Verify examples show: UserFactory.create()",
+      "Verify examples show: UserFactory.create(email: 'custom@test.com')",
+      "Verify examples show: UserFactory.createList(10)"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "PythonTestFactoryGenerator includes usage examples in docstrings",
+    "steps": [
+      "Generate UserFactory",
+      "Verify factory class has docstring",
+      "Verify docstring shows usage: UserFactory.create()",
+      "Verify docstring shows override: UserFactory.create(email='test@example.com')",
+      "Verify examples are clear and helpful"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Test generators work with complex schemas (10+ models)",
+    "steps": [
+      "Create schema with 12 CRUD models of various types",
+      "Generate all test infrastructure",
+      "Verify all 12 factories are generated (Dart and Python)",
+      "Verify all 12 mock repositories are generated",
+      "Verify no errors or warnings",
+      "Verify performance is acceptable (< 5 seconds)"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Test generators handle edge case: schema with no CRUD models",
+    "steps": [
+      "Create schema with only non-CRUD models",
+      "Generate test infrastructure",
+      "Verify no factories are generated",
+      "Verify no mocks are generated",
+      "Verify graceful handling (no errors)",
+      "Verify informative message is shown"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Test generators handle List<T> fields appropriately",
+    "steps": [
+      "Create model with tags: List<String> field",
+      "Generate factories",
+      "Verify Dart factory generates List<String> with faker values",
+      "Verify Python factory uses factory.List or similar",
+      "Verify generated code compiles/runs"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Test generators handle enum fields appropriately",
+    "steps": [
+      "Create model with status: enum (pending, active, archived)",
+      "Generate factories",
+      "Verify factories generate valid enum values",
+      "Verify enum imports are correct",
+      "Verify generated code compiles"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generated test infrastructure works in CI/CD pipeline",
+    "steps": [
+      "Generate full test infrastructure",
+      "Set up GitHub Actions workflow",
+      "Run flutter test on Dart factories",
+      "Run pytest on Python factories",
+      "Verify all tests pass in CI",
+      "Verify no flakiness"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Generated Dart code follows Dart style guide",
+    "steps": [
+      "Generate Dart factories and mocks",
+      "Run dart format on generated files",
+      "Verify no formatting changes needed",
+      "Verify camelCase naming for variables",
+      "Verify PascalCase naming for classes"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Generated Python code follows PEP 8 style guide",
+    "steps": [
+      "Generate Python factories and fixtures",
+      "Run black formatter on generated files",
+      "Verify no formatting changes needed",
+      "Run flake8 linter",
+      "Verify no style violations"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Generated Dart files have consistent indentation (2 spaces)",
+    "steps": [
+      "Generate Dart test files",
+      "Verify indentation is 2 spaces throughout",
+      "Verify no tabs are used",
+      "Verify nested structures are properly indented"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Generated Python files have consistent indentation (4 spaces)",
+    "steps": [
+      "Generate Python test files",
+      "Verify indentation is 4 spaces throughout",
+      "Verify no tabs are used",
+      "Verify nested structures are properly indented"
+    ],
+    "passes": false
+  },
+  {
+    "category": "style",
+    "description": "Generated files have proper copyright/license headers",
+    "steps": [
+      "Generate test infrastructure files",
+      "Verify each file has header comment",
+      "Verify header mentions Schnitzel Framework",
+      "Verify header is consistent across all files"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "DartTestFactoryGenerator handles custom field types from schema",
+    "steps": [
+      "Create model with custom type like 'PhoneNumber' or 'URL'",
+      "Generate factory",
+      "Verify factory uses appropriate faker method (_faker.phoneNumber, _faker.internet.url())",
+      "Verify generated code compiles"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Test infrastructure generation is idempotent",
+    "steps": [
+      "Generate test infrastructure once",
+      "Generate again with same schema (force mode)",
+      "Compare outputs",
+      "Verify outputs are identical",
+      "Verify no data loss or corruption"
+    ],
+    "passes": false
+  },
+  {
+    "category": "functional",
+    "description": "Generated README documents how to use test factories",
+    "steps": [
+      "Generate test infrastructure",
+      "Check for README.md in test directories or project root",
+      "Verify README explains factory usage",
+      "Verify README shows examples",
+      "Verify README mentions dependencies needed"
+    ],
+    "passes": false
+  }
+]

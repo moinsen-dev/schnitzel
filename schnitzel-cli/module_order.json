@@ -1,0 +1,71 @@
+{
+  "project_name": "Schnitzel Framework - Missing Features",
+  "total_modules": 6,
+  "execution_strategy": "sequential",
+  "modules": [
+    {
+      "id": "module_00_test_infrastructure",
+      "name": "Test Infrastructure",
+      "spec_file": "modules/module_00_test_infrastructure.txt",
+      "depends_on": [],
+      "estimated_features": 8,
+      "priority": "HIGH",
+      "description": "Test factories, mocks, and fakes for Python and Dart"
+    },
+    {
+      "id": "module_01_field_validation",
+      "name": "Field Validation Rules",
+      "spec_file": "modules/module_01_field_validation.txt",
+      "depends_on": ["module_00_test_infrastructure"],
+      "estimated_features": 6,
+      "priority": "HIGH",
+      "description": "Schema validation rules with pattern, range, one_of, etc."
+    },
+    {
+      "id": "module_02_openapi_generation",
+      "name": "OpenAPI Generation",
+      "spec_file": "modules/module_02_openapi_generation.txt",
+      "depends_on": ["module_01_field_validation"],
+      "estimated_features": 5,
+      "priority": "HIGH",
+      "description": "OpenAPI spec and Postman collection generation"
+    },
+    {
+      "id": "module_03_cli_commands",
+      "name": "CLI Commands (lint, add, test)",
+      "spec_file": "modules/module_03_cli_commands.txt",
+      "depends_on": ["module_02_openapi_generation"],
+      "estimated_features": 9,
+      "priority": "MEDIUM",
+      "description": "Schema linting, interactive model addition, test runner"
+    },
+    {
+      "id": "module_04_ui_kit",
+      "name": "Flutter UI Kit (Atomic Design)",
+      "spec_file": "modules/module_04_ui_kit.txt",
+      "depends_on": ["module_03_cli_commands"],
+      "estimated_features": 12,
+      "priority": "MEDIUM",
+      "description": "Reusable UI components: atoms, molecules, organisms"
+    },
+    {
+      "id": "module_05_ai_features",
+      "name": "AI-First Features",
+      "spec_file": "modules/module_05_ai_features.txt",
+      "depends_on": ["module_04_ui_kit"],
+      "estimated_features": 6,
+      "priority": "MEDIUM",
+      "description": "CLAUDE.md generation and MCP server"
+    },
+    {
+      "id": "module_06_advanced_schema",
+      "name": "Advanced Schema Features",
+      "spec_file": "modules/module_06_advanced_schema.txt",
+      "depends_on": ["module_05_ai_features"],
+      "estimated_features": 9,
+      "priority": "LOW",
+      "description": "State machines, computed fields, triggers"
+    }
+  ],
+  "total_estimated_features": 55
+}

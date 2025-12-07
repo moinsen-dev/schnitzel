@@ -6,6 +6,11 @@ Updates the app's pubspec.yaml to add required dependencies:
 - go_router for navigation
 - flutter_bloc for state management
 - equatable for value equality in BLoC states
+
+Dev dependencies for testing:
+- faker for generating fake test data
+- mockito for mocking in tests
+- build_runner for code generation
 """
 
 from datetime import datetime
@@ -86,6 +91,27 @@ class FlutterAppPubspecGenerator:
             }
             changes_made = True
 
+        # Add dev_dependencies for testing
+        if 'dev_dependencies' not in pubspec:
+            pubspec['dev_dependencies'] = {}
+
+        dev_deps = pubspec['dev_dependencies']
+
+        # Add faker for test factories
+        if 'faker' not in dev_deps:
+            dev_deps['faker'] = '^2.2.0'
+            changes_made = True
+
+        # Add mockito for mocks
+        if 'mockito' not in dev_deps:
+            dev_deps['mockito'] = '^5.4.5'
+            changes_made = True
+
+        # Add build_runner for mockito code generation
+        if 'build_runner' not in dev_deps:
+            dev_deps['build_runner'] = '^2.4.15'
+            changes_made = True
+
         if dry_run:
             return pubspec_file, changes_made
 
@@ -110,11 +136,17 @@ class FlutterAppPubspecGenerator:
         lines = content.split('\n')
         result_lines = []
         in_dependencies = False
+        in_dev_dependencies = False
         dependencies_added = False
+        dev_dependencies_added = False
         dio_exists = 'dio:' in content
         flutter_bloc_exists = 'flutter_bloc:' in content
         equatable_exists = 'equatable:' in content
         shared_exists = f'{shared_package}:' in content
+        faker_exists = 'faker:' in content
+        mockito_exists = 'mockito:' in content
+        build_runner_exists = 'build_runner:' in content
+        has_dev_dependencies = 'dev_dependencies:' in content
 
         for i, line in enumerate(lines):
             result_lines.append(line)
@@ -122,6 +154,12 @@ class FlutterAppPubspecGenerator:
             # Check if we're entering dependencies section
             if line.strip() == 'dependencies:':
                 in_dependencies = True
+                continue
+
+            # Check if we're entering dev_dependencies section
+            if line.strip() == 'dev_dependencies:':
+                in_dev_dependencies = True
+                in_dependencies = False
                 continue
 
             # Add our dependencies after first dependency in the section
@@ -147,9 +185,49 @@ class FlutterAppPubspecGenerator:
                         dependencies_added = True
                         in_dependencies = False
 
+            # Add dev dependencies after first dev dependency
+            if in_dev_dependencies and not dev_dependencies_added:
+                if line.startswith('  ') and ':' in line and not line.strip().startswith('#'):
+                    # Check for flutter_test sdk line
+                    if 'sdk: flutter' in line:
+                        if not faker_exists:
+                            result_lines.append('  faker: ^2.2.0')
+                        if not mockito_exists:
+                            result_lines.append('  mockito: ^5.4.5')
+                        if not build_runner_exists:
+                            result_lines.append('  build_runner: ^2.4.15')
+                        dev_dependencies_added = True
+                        in_dev_dependencies = False
+
             # Exit dependencies when we hit another top-level key
             if in_dependencies and line and not line.startswith(' ') and not line.startswith('#') and ':' in line:
                 in_dependencies = False
+            if in_dev_dependencies and line and not line.startswith(' ') and not line.startswith('#') and ':' in line:
+                in_dev_dependencies = False
+
+        # If dev_dependencies section didn't exist, add it at the end before flutter section
+        if not has_dev_dependencies and not dev_dependencies_added:
+            # Find where to insert dev_dependencies (before flutter: or at end)
+            insert_pos = len(result_lines)
+            for i, line in enumerate(result_lines):
+                if line.strip() == 'flutter:':
+                    insert_pos = i
+                    break
+
+            dev_deps_lines = [
+                '',
+                'dev_dependencies:',
+                '  flutter_test:',
+                '    sdk: flutter',
+            ]
+            if not faker_exists:
+                dev_deps_lines.append('  faker: ^2.2.0')
+            if not mockito_exists:
+                dev_deps_lines.append('  mockito: ^5.4.5')
+            if not build_runner_exists:
+                dev_deps_lines.append('  build_runner: ^2.4.15')
+
+            result_lines = result_lines[:insert_pos] + dev_deps_lines + result_lines[insert_pos:]
 
         return '\n'.join(result_lines)
 

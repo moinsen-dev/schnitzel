@@ -40,6 +40,10 @@ from schnitzel.generators.dart.screens import FlutterScreensGenerator
 from schnitzel.generators.dart.app_pubspec import FlutterAppPubspecGenerator
 from schnitzel.generators.dart.bloc import BlocStateGenerator
 from schnitzel.generators.dart.repository import DartRepositoryGenerator
+from schnitzel.generators.dart.test_factory import DartTestFactoryGenerator
+from schnitzel.generators.dart.test_mocks import DartMocksGenerator
+from schnitzel.generators.python.test_factory import PythonTestFactoryGenerator
+from schnitzel.generators.python.test_fixtures import PythonTestFixturesGenerator
 from schnitzel.generators.docker.dockerfile import DockerfileGenerator
 from schnitzel.utils.logging import get_logger
 from schnitzel.utils.network_errors import NetworkErrorHandler
@@ -1170,6 +1174,173 @@ def _generate_flutter_repositories(schema, output_dir: Path, schema_path: Path, 
     }
 
 
+def _generate_dart_test_factories(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
+    """Generate Dart test factories using faker_dart.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        Dictionary with file info or None if skipped
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating Dart test factories...[/blue]")
+
+    # Determine output path: output_dir/packages/shared/lib/test_utils
+    app_name = _get_app_dir_name(schema)
+    test_output_dir = output_dir / "apps" / app_name / "test" / "factories"
+
+    if dry_run:
+        return {'path': test_output_dir / "factories.dart", 'size': 0, 'type': 'dart_test_factories'}
+
+    # Generate Dart test factories
+    generator = DartTestFactoryGenerator()
+    results = generator.generate_to_file(schema, test_output_dir, schema_source=schema_path.name, dry_run=dry_run)
+
+    total_size = sum(results.values())
+    factory_count = len(schema.models) if schema.models else 0
+
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated apps/{app_name}/test/factories/[/green] ({factory_count} factories)")
+
+    return {
+        'path': test_output_dir / "factories.dart",
+        'size': total_size,
+        'type': 'dart_test_factories'
+    }
+
+
+def _generate_dart_test_mocks(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
+    """Generate Dart mocks and fakes for testing.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        Dictionary with file info or None if skipped
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating Dart test mocks...[/blue]")
+
+    # Determine output path: output_dir/apps/{app_name}/test/mocks
+    app_name = _get_app_dir_name(schema)
+    mocks_output_dir = output_dir / "apps" / app_name / "test" / "mocks"
+
+    if dry_run:
+        return {'path': mocks_output_dir / "mocks.dart", 'size': 0, 'type': 'dart_test_mocks'}
+
+    # Generate Dart mocks and fakes
+    generator = DartMocksGenerator()
+    mocks_path, mocks_size = generator.generate_mocks_to_file(schema, mocks_output_dir, schema_source=schema_path.name, dry_run=dry_run)
+    fakes_path, fakes_size = generator.generate_fakes_to_file(schema, mocks_output_dir, schema_source=schema_path.name, dry_run=dry_run)
+
+    total_size = mocks_size + fakes_size
+    mock_count = sum(1 for m in schema.models.values() if m.crud) if schema.models else 0
+
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated apps/{app_name}/test/mocks/[/green] ({mock_count} mocks)")
+
+    return {
+        'path': mocks_output_dir / "mocks.dart",
+        'size': total_size,
+        'type': 'dart_test_mocks'
+    }
+
+
+def _generate_python_test_factories(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
+    """Generate Python factory_boy test factories.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        Dictionary with file info or None if skipped
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating Python test factories...[/blue]")
+
+    # Determine output path: output_dir/backend/app/tests
+    factories_output_dir = output_dir / "backend" / "app" / "tests"
+
+    # Check if factories.py already exists
+    factories_file = factories_output_dir / "factories.py"
+    if factories_file.exists() and not force and not dry_run:
+        console.print(f"[yellow]Warning: {factories_file} already exists. Use --force to overwrite.[/yellow]")
+        return None
+
+    if dry_run:
+        return {'path': factories_file, 'size': 0, 'type': 'python_test_factories'}
+
+    # Generate Python test factories
+    generator = PythonTestFactoryGenerator()
+    output_file, size = generator.generate_to_file(schema, factories_output_dir, schema_source=schema_path.name, dry_run=dry_run)
+
+    factory_count = len(schema.models) if schema.models else 0
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated backend/app/tests/factories.py[/green] ({factory_count} factories)")
+
+    return {
+        'path': output_file,
+        'size': size,
+        'type': 'python_test_factories'
+    }
+
+
+def _generate_python_test_fixtures(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> dict | None:
+    """Generate Python pytest fixtures.
+
+    Args:
+        schema: Parsed schema object
+        output_dir: Output directory for generated files
+        schema_path: Path to the schema file (for documentation)
+        force: Whether to overwrite existing files
+        dry_run: If True, show what would be generated without writing files
+
+    Returns:
+        Dictionary with file info or None if skipped
+    """
+    if not dry_run and not _is_quiet_mode():
+        console.print("[blue]Generating Python test fixtures...[/blue]")
+
+    # Determine output path: output_dir/backend/app/tests
+    fixtures_output_dir = output_dir / "backend" / "app" / "tests"
+
+    # Check if conftest.py already exists (fixtures go in conftest.py per pytest convention)
+    conftest_file = fixtures_output_dir / "conftest.py"
+    if conftest_file.exists() and not force and not dry_run:
+        console.print(f"[yellow]Warning: {conftest_file} already exists. Use --force to overwrite.[/yellow]")
+        return None
+
+    if dry_run:
+        return {'path': conftest_file, 'size': 0, 'type': 'python_test_fixtures'}
+
+    # Generate Python test fixtures to conftest.py
+    generator = PythonTestFixturesGenerator()
+    output_file, size = generator.generate_to_file(schema, fixtures_output_dir, schema_source=schema_path.name, dry_run=dry_run)
+
+    fixture_count = len(schema.models) if schema.models else 0
+    if not _is_quiet_mode():
+        console.print(f"[green]✓ Generated backend/app/tests/conftest.py[/green] ({fixture_count} fixtures)")
+
+    return {
+        'path': output_file,
+        'size': size,
+        'type': 'python_test_fixtures'
+    }
+
+
 def _generate_auth(schema, output_dir: Path, schema_path: Path, force: bool, dry_run: bool = False) -> list[dict]:
     """Generate authentication utilities based on schema configuration.
 
@@ -1482,15 +1653,15 @@ def _run_generation(
         # Count total generation steps for progress tracking
         generation_steps = []
         if target == "python":
-            generation_steps = ["requirements", "settings", "database", "python", "orm", "routes", "main", "dockerfile", "auth"]
+            generation_steps = ["requirements", "settings", "database", "python", "orm", "routes", "main", "dockerfile", "auth", "python_test_factories", "python_test_fixtures"]
         elif target == "dart":
-            generation_steps = ["dart", "dart_api", "flutter_pubspec", "flutter_main", "flutter_widget_test", "flutter_router", "flutter_screens", "flutter_bloc", "flutter_repositories"]
+            generation_steps = ["dart", "dart_api", "flutter_pubspec", "flutter_main", "flutter_widget_test", "flutter_router", "flutter_screens", "flutter_bloc", "flutter_repositories", "dart_test_factories", "dart_test_mocks"]
         elif target == "docker":
             generation_steps = ["docker", "dockerfile"]
         elif target == "auth":
             generation_steps = ["auth"]
         elif target == "all":
-            generation_steps = ["requirements", "settings", "database", "python", "orm", "routes", "main", "dockerfile", "auth", "dart", "dart_api", "flutter_pubspec", "flutter_main", "flutter_widget_test", "flutter_router", "flutter_screens", "flutter_bloc", "flutter_repositories", "docker"]
+            generation_steps = ["requirements", "settings", "database", "python", "orm", "routes", "main", "dockerfile", "auth", "python_test_factories", "python_test_fixtures", "dart", "dart_api", "flutter_pubspec", "flutter_main", "flutter_widget_test", "flutter_router", "flutter_screens", "flutter_bloc", "flutter_repositories", "dart_test_factories", "dart_test_mocks", "docker"]
 
         # Handle dry-run mode
         if dry_run:
@@ -1652,6 +1823,32 @@ def _run_generation(
                     for result in auth_results:
                         generated_files.append(result)
                         total_size += result['size']
+                elif step == "python_test_factories":
+                    result = _generate_python_test_factories(schema, output_path, schema_path, force, dry_run)
+                    if result:
+                        gen = PythonTestFactoryGenerator()
+                        content = gen.generate(schema)
+                        result['size'] = len(content.encode('utf-8'))
+                        generated_files.append(result)
+                        total_size += result['size']
+                elif step == "python_test_fixtures":
+                    result = _generate_python_test_fixtures(schema, output_path, schema_path, force, dry_run)
+                    if result:
+                        gen = PythonTestFixturesGenerator()
+                        content = gen.generate(schema)
+                        result['size'] = len(content.encode('utf-8'))
+                        generated_files.append(result)
+                        total_size += result['size']
+                elif step == "dart_test_factories":
+                    result = _generate_dart_test_factories(schema, output_path, schema_path, force, dry_run)
+                    if result:
+                        generated_files.append(result)
+                        total_size += result['size']
+                elif step == "dart_test_mocks":
+                    result = _generate_dart_test_mocks(schema, output_path, schema_path, force, dry_run)
+                    if result:
+                        generated_files.append(result)
+                        total_size += result['size']
 
             # Display each file
             if not _is_quiet_mode():
@@ -1680,7 +1877,11 @@ def _run_generation(
                         'auth_rbac': 'RBAC Permissions',
                         'auth_sessions': 'Session Management',
                         'auth_mfa': 'Multi-Factor Auth',
-                        'auth_migration': 'Auth Database Migration'
+                        'auth_migration': 'Auth Database Migration',
+                        'python_test_factories': 'Python test factories (factory_boy)',
+                        'python_test_fixtures': 'Python test fixtures (pytest)',
+                        'dart_test_factories': 'Dart test factories (faker_dart)',
+                        'dart_test_mocks': 'Dart test mocks (Mockito)'
                     }.get(file_info['type'], file_info['type'])
                     console.print(f"    Type: {type_display}")
 
@@ -1816,6 +2017,22 @@ def _run_generation(
                             auth_results = _generate_auth(schema, output_path, schema_path, force, dry_run)
                             for result in auth_results:
                                 generated_files.append(result['path'])
+                        elif step == "python_test_factories":
+                            result = _generate_python_test_factories(schema, output_path, schema_path, force, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
+                        elif step == "python_test_fixtures":
+                            result = _generate_python_test_fixtures(schema, output_path, schema_path, force, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
+                        elif step == "dart_test_factories":
+                            result = _generate_dart_test_factories(schema, output_path, schema_path, force, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
+                        elif step == "dart_test_mocks":
+                            result = _generate_dart_test_mocks(schema, output_path, schema_path, force, dry_run)
+                            if result:
+                                generated_files.append(result['path'])
 
                         progress.update(gen_task, completed=idx + 1)
 
@@ -1914,6 +2131,22 @@ def _run_generation(
                     elif step == "auth":
                         auth_results = _generate_auth(schema, output_path, schema_path, force, dry_run)
                         for result in auth_results:
+                            generated_files.append(result['path'])
+                    elif step == "python_test_factories":
+                        result = _generate_python_test_factories(schema, output_path, schema_path, force, dry_run)
+                        if result:
+                            generated_files.append(result['path'])
+                    elif step == "python_test_fixtures":
+                        result = _generate_python_test_fixtures(schema, output_path, schema_path, force, dry_run)
+                        if result:
+                            generated_files.append(result['path'])
+                    elif step == "dart_test_factories":
+                        result = _generate_dart_test_factories(schema, output_path, schema_path, force, dry_run)
+                        if result:
+                            generated_files.append(result['path'])
+                    elif step == "dart_test_mocks":
+                        result = _generate_dart_test_mocks(schema, output_path, schema_path, force, dry_run)
+                        if result:
                             generated_files.append(result['path'])
             except (PermissionError, IOError, OSError) as e:
                 _cleanup_files(generated_files)

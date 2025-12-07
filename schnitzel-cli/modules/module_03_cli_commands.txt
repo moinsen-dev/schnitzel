@@ -1,0 +1,174 @@
+<module_specification>
+  <module_name>CLI Commands - lint, add, test</module_name>
+  <module_id>module_03_cli_commands</module_id>
+  <depends_on>module_02_openapi_generation</depends_on>
+  <inherit_from>app_spec_master.txt</inherit_from>
+  <priority>MEDIUM</priority>
+
+  <overview>
+    Implement missing CLI commands for better developer experience:
+    - schnitzel lint: Validate schema with best practices
+    - schnitzel add: Interactively add models/endpoints
+    - schnitzel test: Run Flutter and backend tests
+  </overview>
+
+  <core_features>
+    <lint_command>
+      - Validate schema syntax and structure
+      - Check for naming conventions (snake_case models, etc.)
+      - Warn about missing indexes on foreign keys
+      - Check for circular dependencies
+      - Suggest optimizations
+      - Output: warnings, errors, suggestions
+    </lint_command>
+
+    <add_command>
+      - Interactive prompts to add new model
+      - Prompts: name, fields (type, optional, default), relations
+      - Interactive prompts to add new endpoint
+      - Updates schema.schnitzel.yaml automatically
+      - Option: --model, --endpoint, --field for non-interactive
+    </add_command>
+
+    <test_command>
+      - Run Flutter tests: flutter test
+      - Run Python tests: pytest
+      - Options: --flutter-only, --python-only, --coverage
+      - Show unified test results
+    </test_command>
+  </core_features>
+
+  <files_to_create>
+    <command>src/schnitzel/cli/commands/lint.py</command>
+    <command>src/schnitzel/cli/commands/add.py</command>
+    <command>src/schnitzel/cli/commands/test.py</command>
+  </files_to_create>
+
+  <files_to_modify>
+    <file>src/schnitzel/cli.py</file>
+    <reason>Register new commands</reason>
+  </files_to_modify>
+
+  <implementation_steps>
+    <step number="1">
+      <title>Lint Command</title>
+      <tasks>
+        - Create LintRule base class
+        - Implement naming convention rules
+        - Implement index suggestion rules
+        - Implement circular dependency detection
+        - Create lint.py with Click command
+        - Output with Rich formatting (warnings, errors)
+      </tasks>
+    </step>
+
+    <step number="2">
+      <title>Add Command</title>
+      <tasks>
+        - Create add.py with Click command
+        - Use questionary or click prompts for interactive mode
+        - Implement model addition flow
+        - Implement endpoint addition flow
+        - Use ruamel.yaml for round-trip YAML editing
+        - Preserve comments and formatting
+      </tasks>
+    </step>
+
+    <step number="3">
+      <title>Test Command</title>
+      <tasks>
+        - Create test.py with Click command
+        - Detect Flutter apps and Python backend
+        - Run appropriate test commands
+        - Aggregate and display results
+        - Support coverage flags
+      </tasks>
+    </step>
+
+    <step number="4">
+      <title>Integration</title>
+      <tasks>
+        - Register all commands in cli.py
+        - Add to --help documentation
+        - Test with example projects
+      </tasks>
+    </step>
+  </implementation_steps>
+
+  <example_usage>
+    <lint>
+```bash
+$ schnitzel lint
+
+Linting schema.schnitzel.yaml...
+
+Warnings:
+  ⚠ Model 'Comment' has foreign key 'post_id' without index
+  ⚠ Model 'Post' field 'slug' should have unique: true
+
+Suggestions:
+  💡 Consider adding 'updated_at' field to 'Comment' model
+
+Errors: 0
+Warnings: 2
+Suggestions: 1
+```
+    </lint>
+
+    <add>
+```bash
+$ schnitzel add --model
+
+Adding new model...
+
+Model name: Tag
+Description (optional): Blog post tags
+
+Add field:
+  Name: name
+  Type: string
+  Optional (y/n): n
+  Unique (y/n): y
+
+Add another field? (y/n): y
+
+  Name: color
+  Type: string
+  Optional (y/n): y
+  Default (optional): #000000
+
+Add another field? (y/n): n
+
+Enable CRUD? (y/n): y
+
+✓ Added model 'Tag' to schema.schnitzel.yaml
+  Run 'schnitzel generate' to update generated code
+```
+    </add>
+
+    <test>
+```bash
+$ schnitzel test --coverage
+
+Running tests...
+
+Flutter (my_blog):
+  ✓ 15 tests passed (2.3s)
+  Coverage: 78%
+
+Python (backend):
+  ✓ 23 tests passed (1.1s)
+  Coverage: 82%
+
+Summary: 38 tests passed, 0 failed
+```
+    </test>
+  </example_usage>
+
+  <success_criteria>
+    - schnitzel lint detects common issues
+    - schnitzel add modifies YAML correctly
+    - schnitzel test runs both Flutter and Python tests
+    - All commands have --help documentation
+  </success_criteria>
+</module_specification>

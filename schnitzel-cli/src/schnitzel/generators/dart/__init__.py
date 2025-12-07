@@ -9,6 +9,7 @@ from .app_main import FlutterAppMainGenerator
 from .router import FlutterRouterGenerator
 from .screens import FlutterScreensGenerator
 from .app_pubspec import FlutterAppPubspecGenerator
+from .test_mocks import DartMocksGenerator
 
 __all__ = [
     "DartModelGenerator",
@@ -20,4 +21,5 @@ __all__ = [
     "FlutterRouterGenerator",
     "FlutterScreensGenerator",
     "FlutterAppPubspecGenerator",
+    "DartMocksGenerator",
 ]

@@ -1,0 +1,284 @@
+<module_specification>
+  <module_name>Flutter UI Kit Package (Atomic Design)</module_name>
+  <module_id>module_04_ui_kit</module_id>
+  <depends_on>module_03_cli_commands</depends_on>
+  <inherit_from>app_spec_master.txt</inherit_from>
+  <priority>MEDIUM</priority>
+
+  <overview>
+    Generate a reusable UI kit package following Atomic Design principles.
+    Contains atoms, molecules, and organisms that can be used across features.
+  </overview>
+
+  <core_features>
+    <package_structure>
+      - packages/ui_kit/ Flutter package
+      - lib/atoms/ - Basic building blocks (buttons, inputs, text styles)
+      - lib/molecules/ - Combinations (form fields, cards, list items)
+      - lib/organisms/ - Complex components (forms, lists, detail views)
+      - lib/theme/ - Theme configuration and extensions
+    </package_structure>
+
+    <atoms>
+      - AppButton (primary, secondary, text, icon variants)
+      - AppTextField (with validation, decoration)
+      - AppText (heading, body, caption variants)
+      - AppIcon (wrapped Icon with sizing)
+      - AppSpacing (SizedBox helpers)
+      - AppDivider
+    </atoms>
+
+    <molecules>
+      - FormField (label + input + error)
+      - ListTileCard (elevated list tile)
+      - EmptyState (icon + message + action)
+      - LoadingIndicator (centered spinner)
+      - ErrorMessage (icon + text + retry)
+    </molecules>
+
+    <organisms>
+      - CrudList (generic list with loading, empty, error states)
+      - CrudDetail (generic detail view with fields)
+      - CrudForm (generic form with validation)
+      - ConfirmDialog (standard confirmation dialog)
+    </organisms>
+
+    <theme>
+      - AppTheme class with light/dark themes
+      - Color palette from schema or defaults
+      - Typography scale
+      - Spacing constants
+      - Border radius constants
+    </theme>
+  </core_features>
+
+  <files_to_create>
+    <generator>src/schnitzel/generators/dart/ui_kit.py</generator>
+  </files_to_create>
+
+  <files_to_modify>
+    <file>src/schnitzel/cli/commands/generate.py</file>
+    <reason>Add ui_kit generation step</reason>
+
+    <file>src/schnitzel/cli/commands/init.py</file>
+    <reason>Create ui_kit package on init</reason>
+  </files_to_modify>
+
+  <implementation_steps>
+    <step number="1">
+      <title>Package Generator</title>
+      <tasks>
+        - Create UIKitGenerator class
+        - Generate package structure (pubspec.yaml, lib/, etc.)
+        - Generate barrel exports (ui_kit.dart)
+      </tasks>
+    </step>
+
+    <step number="2">
+      <title>Atoms Generation</title>
+      <tasks>
+        - Generate AppButton with variants
+        - Generate AppTextField with validation
+        - Generate AppText with styles
+        - Generate spacing and divider widgets
+      </tasks>
+    </step>
+
+    <step number="3">
+      <title>Molecules Generation</title>
+      <tasks>
+        - Generate FormField wrapper
+        - Generate ListTileCard
+        - Generate state widgets (empty, loading, error)
+      </tasks>
+    </step>
+
+    <step number="4">
+      <title>Organisms Generation</title>
+      <tasks>
+        - Generate CrudList generic widget
+        - Generate CrudDetail generic widget
+        - Generate CrudForm generic widget
+        - Generate ConfirmDialog
+      </tasks>
+    </step>
+
+    <step number="5">
+      <title>Theme Generation</title>
+      <tasks>
+        - Parse theme settings from schema (if present)
+        - Generate AppTheme with light/dark modes
+        - Generate ThemeExtensions for custom colors
+      </tasks>
+    </step>
+
+    <step number="6">
+      <title>Update Screens to Use UI Kit</title>
+      <tasks>
+        - Modify screens.py to import ui_kit
+        - Replace inline widgets with ui_kit components
+        - Ensure backward compatibility
+      </tasks>
+    </step>
+  </implementation_steps>
+
+  <example_output>
+    <app_button>
+```dart
+// packages/ui_kit/lib/atoms/app_button.dart
+import 'package:flutter/material.dart';
+
+enum AppButtonVariant { primary, secondary, text, icon }
+
+class AppButton extends StatelessWidget {
+  final String? label;
+  final IconData? icon;
+  final VoidCallback? onPressed;
+  final AppButtonVariant variant;
+  final bool isLoading;
+
+  const AppButton({
+    super.key,
+    this.label,
+    this.icon,
+    this.onPressed,
+    this.variant = AppButtonVariant.primary,
+    this.isLoading = false,
+  });
+
+  const AppButton.primary({
+    super.key,
+    required String this.label,
+    this.icon,
+    this.onPressed,
+    this.isLoading = false,
+  }) : variant = AppButtonVariant.primary;
+
+  const AppButton.secondary({
+    super.key,
+    required String this.label,
+    this.icon,
+    this.onPressed,
+    this.isLoading = false,
+  }) : variant = AppButtonVariant.secondary;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading) {
+      return const SizedBox(
+        height: 48,
+        width: 48,
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    switch (variant) {
+      case AppButtonVariant.primary:
+        return ElevatedButton(
+          onPressed: onPressed,
+          child: _buildChild(),
+        );
+      case AppButtonVariant.secondary:
+        return OutlinedButton(
+          onPressed: onPressed,
+          child: _buildChild(),
+        );
+      case AppButtonVariant.text:
+        return TextButton(
+          onPressed: onPressed,
+          child: _buildChild(),
+        );
+      case AppButtonVariant.icon:
+        return IconButton(
+          onPressed: onPressed,
+          icon: Icon(icon),
+        );
+    }
+  }
+
+  Widget _buildChild() {
+    if (icon != null && label != null) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon),
+          const SizedBox(width: 8),
+          Text(label!),
+        ],
+      );
+    }
+    return Text(label ?? '');
+  }
+}
+```
+    </app_button>
+
+    <crud_list>
+```dart
+// packages/ui_kit/lib/organisms/crud_list.dart
+import 'package:flutter/material.dart';
+import '../molecules/molecules.dart';
+
+class CrudList<T> extends StatelessWidget {
+  final List<T> items;
+  final bool isLoading;
+  final String? error;
+  final Widget Function(T item) itemBuilder;
+  final VoidCallback? onRefresh;
+  final VoidCallback? onAdd;
+  final String emptyMessage;
+  final String addLabel;
+
+  const CrudList({
+    super.key,
+    required this.items,
+    required this.itemBuilder,
+    this.isLoading = false,
+    this.error,
+    this.onRefresh,
+    this.onAdd,
+    this.emptyMessage = 'No items found',
+    this.addLabel = 'Add',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading) {
+      return const LoadingIndicator();
+    }
+
+    if (error != null) {
+      return ErrorMessage(
+        message: error!,
+        onRetry: onRefresh,
+      );
+    }
+
+    if (items.isEmpty) {
+      return EmptyState(
+        message: emptyMessage,
+        actionLabel: addLabel,
+        onAction: onAdd,
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async => onRefresh?.call(),
+      child: ListView.builder(
+        itemCount: items.length,
+        itemBuilder: (context, index) => itemBuilder(items[index]),
+      ),
+    );
+  }
+}
+```
+    </crud_list>
+  </example_output>
+
+  <success_criteria>
+    - ui_kit package generates with all components
+    - Components are type-safe and well-documented
+    - Screens use ui_kit components
+    - flutter analyze passes on ui_kit package
+  </success_criteria>
+</module_specification>

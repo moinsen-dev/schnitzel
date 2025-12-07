@@ -1,0 +1,170 @@
+<module_specification>
+  <module_name>AI-First Features (CLAUDE.md, MCP)</module_name>
+  <module_id>module_05_ai_features</module_id>
+  <depends_on>module_04_ui_kit</depends_on>
+  <inherit_from>app_spec_master.txt</inherit_from>
+  <priority>MEDIUM</priority>
+
+  <overview>
+    Generate AI context files and MCP server for AI-assisted development.
+    CLAUDE.md provides project context for Claude/AI assistants.
+    MCP server enables AI tools to interact with the project.
+  </overview>
+
+  <core_features>
+    <claude_md_generation>
+      - Generate CLAUDE.md with project context
+      - Include: tech stack, architecture, key patterns
+      - Include: model definitions and relationships
+      - Include: API endpoints summary
+      - Include: coding conventions and style guide
+      - Update on each `schnitzel generate`
+    </claude_md_generation>
+
+    <mcp_server>
+      - Generate MCP server for project tools
+      - Tools: add_model, add_field, add_endpoint
+      - Tools: validate_schema, generate_code
+      - Resources: schema.yaml, models list, endpoints list
+      - Prompts: feature request template, bug fix template
+    </mcp_server>
+
+    <ai_command>
+      - `schnitzel ai context` - Generate/update CLAUDE.md
+      - `schnitzel ai mcp` - Generate MCP server
+      - `schnitzel ai serve` - Start MCP server
+    </ai_command>
+  </core_features>
+
+  <files_to_create>
+    <generator>src/schnitzel/generators/ai/claude_md.py</generator>
+    <generator>src/schnitzel/generators/ai/mcp_server.py</generator>
+    <command>src/schnitzel/cli/commands/ai.py</command>
+  </files_to_create>
+
+  <implementation_steps>
+    <step number="1">
+      <title>CLAUDE.md Generator</title>
+      <tasks>
+        - Create ClaudeMdGenerator class
+        - Extract project metadata from schema
+        - Generate architecture section
+        - Generate models and relationships section
+        - Generate API endpoints section
+        - Generate coding conventions section
+        - Include common commands and workflows
+      </tasks>
+    </step>
+
+    <step number="2">
+      <title>MCP Server Generator</title>
+      <tasks>
+        - Create MCPServerGenerator class
+        - Generate Python MCP server using mcp package
+        - Implement add_model tool
+        - Implement add_field tool
+        - Implement validate_schema tool
+        - Implement generate_code tool
+        - Add resources for schema access
+      </tasks>
+    </step>
+
+    <step number="3">
+      <title>AI CLI Command</title>
+      <tasks>
+        - Create ai.py with subcommands
+        - Implement `context` subcommand
+        - Implement `mcp` subcommand
+        - Implement `serve` subcommand
+        - Register in cli.py
+      </tasks>
+    </step>
+
+    <step number="4">
+      <title>Integration</title>
+      <tasks>
+        - Auto-generate CLAUDE.md on `schnitzel generate`
+        - Add MCP server to project structure
+        - Document AI features in README
+      </tasks>
+    </step>
+  </implementation_steps>
+
+  <example_output>
+    <claude_md>
+```markdown
+# My Blog - AI Context
+
+## Overview
+A blog application built with Schnitzel Framework.
+- **Frontend**: Flutter with BLoC pattern
+- **Backend**: FastAPI with SQLAlchemy
+- **Database**: PostgreSQL
+
+## Architecture
+
+### Models
+| Model | Fields | Relations |
+|-------|--------|-----------|
+| User | id, email, name, created_at | has_many: posts, comments |
+| Post | id, title, content, author_id | belongs_to: user, has_many: comments |
+| Comment | id, content, post_id, user_id | belongs_to: post, user |
+
+### API Endpoints
+- `GET /api/users` - List users (paginated)
+- `POST /api/users` - Create user
+- `GET /api/users/:id` - Get user by ID
+...
+
+## Key Files
+- `schema.schnitzel.yaml` - Data model definitions
+- `apps/my_blog/lib/` - Flutter app source
+- `backend/app/` - FastAPI backend source
+
+## Commands
+- `schnitzel generate` - Regenerate code from schema
+- `schnitzel serve` - Start backend server
+- `schnitzel test` - Run all tests
+
+## Conventions
+- Models use PascalCase, fields use snake_case
+- BLoC pattern for state management
+- Repository pattern for data access
+```
+    </claude_md>
+
+    <mcp_server>
+```python
+# Generated MCP Server for My Blog
+from mcp import Server, Tool, Resource
+import yaml
+
+server = Server("my-blog-schnitzel")
+
+@server.tool()
+async def add_model(name: str, fields: dict) -> str:
+    """Add a new model to schema.schnitzel.yaml"""
+    # Load schema, add model, save
+    ...
+
+@server.tool()
+async def validate_schema() -> dict:
+    """Validate the current schema"""
+    # Run validation, return results
+    ...
+
+@server.resource("schema://models")
+async def list_models() -> list:
+    """List all models in the schema"""
+    ...
+```
+    </mcp_server>
+  </example_output>
+
+  <success_criteria>
+    - CLAUDE.md generated with accurate project info
+    - MCP server starts and responds to tool calls
+    - AI tools can modify schema correctly
+    - Documentation updated for AI features
+  </success_criteria>
+</module_specification>
